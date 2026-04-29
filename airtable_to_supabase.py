@@ -1,13 +1,17 @@
+import os
 import requests
 import time
+from dotenv import load_dotenv
 
-# ===== 1. ВСТАВЬ СВОИ ДАННЫЕ =====
-AIRTABLE_TOKEN = "patX4NzkGX41sRQ9C.f5afb8603c18ab57bece97031eb879f536f8bd02f9cd2c2195b6577a61bc4524"
-AIRTABLE_BASE_ID = "app9iyPkp63WZ0lPn"
-AIRTABLE_TABLE_ID = "tblwiTtRRC8DVT9ki"
+load_dotenv()
 
-SUPABASE_URL = "https://fdaxiedifkikasudcygx.supabase.co"
-SUPABASE_SECRET_KEY = "sb_secret_ce-xAaFg_C2JjtC_6dqHiQ_1LPLLDtl"
+# ===== 1. ДАННЫЕ ИЗ .env =====
+AIRTABLE_TOKEN = os.getenv("AIRTABLE_TOKEN")
+AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
+AIRTABLE_TABLE_ID = os.getenv("AIRTABLE_TABLE_ID")
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 SUPABASE_TABLE = "boq_master_api"
 
@@ -17,8 +21,8 @@ AIRTABLE_HEADERS = {
 }
 
 SUPABASE_HEADERS = {
-    "apikey": SUPABASE_SECRET_KEY,
-    "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
     "Prefer": "return=minimal",
 }

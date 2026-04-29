@@ -270,37 +270,20 @@ data_quality_f = apply_common_filters(
 data_quality_issues_f = apply_common_filters(
     data_quality_issues, selected_project, selected_month, "Все", "Все"
 )
+# ---------- Crew / Budget / Execution filters ----------
+
 if selected_crew != "Все":
-    if not plan_line_f.empty:
+    if not plan_line_f.empty and "plan_crews" in plan_line_f.columns and "fact_crews" in plan_line_f.columns:
         plan_line_f = plan_line_f[
-            (
-                plan_line_f["plan_crews"]
-                .astype(str)
-                .str.contains(selected_crew, na=False)
-            )
-            | (
-                plan_line_f["fact_crews"]
-                .astype(str)
-                .str.contains(selected_crew, na=False)
-            )
+            plan_line_f["plan_crews"].astype(str).str.contains(selected_crew, na=False)
+            | plan_line_f["fact_crews"].astype(str).str.contains(selected_crew, na=False)
         ]
 
-    if not problem_aggregation_f.empty:
+    if not problem_aggregation_f.empty and "plan_crews" in problem_aggregation_f.columns and "fact_crews" in problem_aggregation_f.columns:
         problem_aggregation_f = problem_aggregation_f[
-            (
-                problem_aggregation_f["plan_crews"]
-                .astype(str)
-                .str.contains(selected_crew, na=False)
-            )
-            | (
-                problem_aggregation_f["fact_crews"]
-                .astype(str)
-                .str.contains(selected_crew, na=False)
-            )
+            problem_aggregation_f["plan_crews"].astype(str).str.contains(selected_crew, na=False)
+            | problem_aggregation_f["fact_crews"].astype(str).str.contains(selected_crew, na=False)
         ]
-
-    if not crew_control_f.empty and "crew_id" in crew_control_f.columns:
-        crew_control_f = crew_control_f[crew_control_f["crew_id"] == selected_crew]
 
     if not crew_control_f.empty and "crew_id" in crew_control_f.columns:
         crew_control_f = crew_control_f[crew_control_f["crew_id"] == selected_crew]
@@ -311,23 +294,37 @@ if budget_status != "Все" and "budget_statuses" in plan_line_f.columns:
     ]
 
 if execution_status != "Все" and "execution_status" in plan_line_f.columns:
-    plan_line_f = plan_line_f[plan_line_f["execution_status"] == execution_status]
+    plan_line_f = plan_line_f[
+        plan_line_f["execution_status"] == execution_status
+    ]
 
 
 # ---------------- KPI ----------------
 
 # ---------------- KPI ----------------
+
+# ---------- KPI calculations ----------
 
 if selected_crew != "Все":
     crew_kpi = crew_control_f.copy()
 
     plan_total = (
-        crew_kpi["planned_value"].sum() if "planned_value" in crew_kpi.columns else 0
+        crew_kpi["planned_value"].sum()
+        if "planned_value" in crew_kpi.columns
+        else 0
     )
 
-    approved_plan = plan_total
+    approved_plan = (
+        crew_kpi["approved_planned_value"].sum()
+        if "approved_planned_value" in crew_kpi.columns
+        else plan_total
+    )
 
-    matched_ev = crew_kpi["actual_ev"].sum() if "actual_ev" in crew_kpi.columns else 0
+    matched_ev = (
+        crew_kpi["actual_ev"].sum()
+        if "actual_ev" in crew_kpi.columns
+        else 0
+    )
 
     fact_only_ev = 0
 
@@ -351,10 +348,7 @@ else:
     )
 
     fact_only_ev = 0
-    if (
-        not reconciliation_f.empty
-        and "reconciliation_status" in reconciliation_f.columns
-    ):
+    if not reconciliation_f.empty and "reconciliation_status" in reconciliation_f.columns:
         fact_only_ev = reconciliation_f[
             reconciliation_f["reconciliation_status"] == "FACT_ONLY"
         ]["ev_value"].sum()
@@ -485,6 +479,7 @@ if not reconciliation_f.empty:
             rows_count=("reconciliation_status", "count"),
             plan_qty=("plan_qty", "sum"),
             actual_qty=("actual_qty", "sum"),
+            approved_plan_value=("approved_plan_value", "sum"),
             plan_value=("plan_value", "sum"),
             ev_value=("ev_value", "sum"),
         )
@@ -687,16 +682,6 @@ st.subheader("7. ТОП проблем / Кто ломает план")
 if not problem_aggregation_f.empty:
     problem_df = problem_aggregation_f.copy()
 
-    if selected_crew != "Все":
-        problem_df = problem_df[
-            (problem_df["plan_crews"] == selected_crew)
-            | (
-                problem_df["fact_crews"]
-                .astype(str)
-                .str.contains(selected_crew, na=False)
-            )
-        ]
-
     problem_cols = [
         "month_key",
         "facility_building",
@@ -712,8 +697,12 @@ if not problem_aggregation_f.empty:
 
     existing_cols = [c for c in problem_cols if c in problem_df.columns]
 
+    problem_view = problem_df[existing_cols].sort_values(
+        "value_loss", ascending=False
+    )
+
     st.dataframe(
-        problem_df[existing_cols].sort_values("value_loss", ascending=False),
+        format_money_columns(problem_view),
         use_container_width=True,
         height=350,
     )
@@ -731,7 +720,10 @@ if not problem_aggregation_f.empty:
     )
 
     st.markdown("#### Сводка проблем по статусам")
-    st.dataframe(problem_summary, use_container_width=True)
+    st.dataframe(
+        format_money_columns(problem_summary),
+        use_container_width=True,
+    )
 
     st.caption(
         "Этот блок показывает, где концентрируются потери: по звеньям, дисциплинам, зданиям и статусам исполнения."

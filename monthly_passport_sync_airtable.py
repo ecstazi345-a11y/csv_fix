@@ -1,15 +1,19 @@
+import os
 import requests
 import time
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 
-AIRTABLE_TOKEN = (
-    "patv4p3Z6I60zw6fk.e4eaa7afd024c58d3d894446e8ccd99324223fdd55dc5baeb0f5c1a7dd88278d"
-)
-AIRTABLE_BASE_ID = "app9iyPkp63WZ0lPn"
-AIRTABLE_TABLE_ID = "tblH995HFw5L41p54"
+load_dotenv()
 
-SUPABASE_URL = "https://fdaxiedifkikasudcygx.supabase.co"
-SUPABASE_SECRET_KEY = "sb_secret_0Nzo8TLwFA6N9LeoTCobvQ_hOMZhamd"
+AIRTABLE_TOKEN = os.getenv("AIRTABLE_TOKEN")
+AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
+AIRTABLE_TABLE_ID = os.getenv("AIRTABLE_MONTHLY_PASSPORT_PLAN_TABLE_ID")
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY")
+
+SUPABASE_TABLE = "monthly_passport_plan"
 
 SUPABASE_TABLE = "monthly_passport_plan"
 AIRTABLE_HEADERS = {

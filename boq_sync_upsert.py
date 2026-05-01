@@ -1,14 +1,17 @@
+import os
 import requests
 import time
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 
-# ===== 1. ВСТАВЬ СВОИ ДАННЫЕ =====
-AIRTABLE_TOKEN = "patv4p3Z6I60zw6fk.e4eaa7afd024c58d3d894446e8ccd99324223fdd55dc5baeb0f5c1a7dd88278d"
-AIRTABLE_BASE_ID = "app9iyPkp63WZ0lPn"
-AIRTABLE_TABLE_ID = "tblwiTtRRC8DVT9ki"
+load_dotenv()
 
-SUPABASE_URL = "https://fdaxiedifkikasudcygx.supabase.co"
-SUPABASE_SECRET_KEY = "sb_secret_0Nzo8TLwFA6N9LeoTCobvQ_hOMZhamd"
+AIRTABLE_TOKEN = os.getenv("AIRTABLE_TOKEN")
+AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
+AIRTABLE_TABLE_ID = os.getenv("AIRTABLE_BOQ_TABLE_ID")
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY")
 
 SUPABASE_TABLE = "boq_master_api"
 

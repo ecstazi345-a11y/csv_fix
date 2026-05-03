@@ -94,6 +94,7 @@ def map_fields(record):
             fields.get("Year_Quarter_Month_Week_ID")
         ),
         "month_key": clean_value(fields.get("Month_Key")),
+        "week_key": clean_value(fields.get("Week_ISO")),
         "boq_code": clean_value(fields.get("BOQ")),
         "boq_name": clean_value(fields.get("BOQ_Name")),
         "iwp_id_export": clean_value(fields.get("IWP_ID_EXPORT")),

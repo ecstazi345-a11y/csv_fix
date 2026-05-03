@@ -78,6 +78,7 @@ def map_fields(record):
         "airtable_record_id": record.get("id"),
         "project_code": clean_value(fields.get("Project")),
         "month_key": clean_value(fields.get("Month_Key")),
+        "week_key": clean_value(fields.get("Week_Key")),
         "created_time": clean_value(fields.get("Created_Time")),
         "facility_building": clean_value(fields.get("Facility_Building")),
         "construction_discipline": clean_value(fields.get("Construction_Discipline")),

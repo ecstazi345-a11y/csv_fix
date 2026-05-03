@@ -12,7 +12,7 @@ st.caption(
 
 # ---------------- helpers ----------------
 
-
+@st.cache_data(ttl=300)
 def load_table(table_name: str, limit: int = 5000) -> pd.DataFrame:
     response = supabase.table(table_name).select("*").limit(limit).execute()
     return pd.DataFrame(response.data or [])

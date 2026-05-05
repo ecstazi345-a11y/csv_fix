@@ -140,12 +140,19 @@ numeric_cols = [
     "actual_ev",
     "value_variance",
     "raw_ev",
+    "ev_total",
+    "ac_total",
+    "cv_evm_total",
+    "direct_work_hours_total",
+    "idle_hours_total",
+    "idle_loss_value_total",
 ]
 
 for df in [
     month_summary,
     plan_line,
     reconciliation,
+    daily_progress_monthly_agg,
     crew_control,
     problem_aggregation,
     data_quality,
@@ -330,12 +337,19 @@ if selected_facility != "Все" and "facility_building" in weekly_fact_f.column
         weekly_fact_f["facility_building"].astype(str).str.strip()
         == str(selected_facility).strip()
     ]
-
+    
 if selected_discipline != "Все" and "construction_discipline" in weekly_fact_f.columns:
     weekly_fact_f = weekly_fact_f[
         weekly_fact_f["construction_discipline"].astype(str).str.strip()
         == str(selected_discipline).strip()
     ]
+
+if selected_crew != "Все" and "crew_id" in weekly_fact_f.columns:
+    weekly_fact_f = weekly_fact_f[
+        weekly_fact_f["crew_id"].astype(str).str.strip()
+        == str(selected_crew).strip()
+    ]   
+    
 # ---------- Crew / Budget / Execution filters ----------
 
 if selected_crew != "Все":
@@ -590,9 +604,148 @@ if approved_remaining > 0:
         "Это Approved-объём, который ещё не закрыт фактом."
     )
 else:
-    st.success("🟢 Approved-план по выбранным фильтрам закрыт фактом.")
+    st.success("🟢 Approved-план по выбранным фильтрам закрыт фактом.")  
+    # ---------- Monthly / selected period cost KPI ----------
 
+st.divider()
+st.subheader("1.0 Фактические затраты / AC / CV / Потери")
 
+period_fact_f = weekly_fact_f.copy()
+
+period_ev = period_fact_f["ev_total"].sum() if "ev_total" in period_fact_f.columns else total_ev
+period_ac = period_fact_f["ac_total"].sum() if "ac_total" in period_fact_f.columns else 0
+period_cv = period_fact_f["cv_evm_total"].sum() if "cv_evm_total" in period_fact_f.columns else period_ev - period_ac
+period_hours = period_fact_f["direct_work_hours_total"].sum() if "direct_work_hours_total" in period_fact_f.columns else 0
+period_idle = period_fact_f["idle_hours_total"].sum() if "idle_hours_total" in period_fact_f.columns else 0
+period_idle_loss = period_fact_f["idle_loss_value_total"].sum() if "idle_loss_value_total" in period_fact_f.columns else 0
+
+period_total_loss = 0
+
+if period_cv < 0:
+    period_total_loss += abs(period_cv)
+
+if period_idle_loss > 0:
+    period_total_loss += period_idle_loss
+
+period_cv_percent = period_cv / period_ev * 100 if period_ev else 0
+period_idle_percent = period_idle / period_hours * 100 if period_hours else 0
+
+c1, c2, c3, c4, c5, c6, c7, c8 = st.columns(8)
+
+c1.metric("Заявленный EV", money(period_ev))
+c2.metric("AC direct", money(period_ac))
+c3.metric("CV direct / отклонение", money(period_cv))
+c4.metric("CV direct %", pct(period_cv_percent))
+c5.metric("Прямой труд, чел.-ч", f"{period_hours:,.0f}".replace(",", " "))
+c6.metric("Простой, чел.-ч", f"{period_idle:,.0f}".replace(",", " "))
+c7.metric("Доля простоя", pct(period_idle_percent))
+c8.metric("Риск потерь", money(period_total_loss))
+
+if period_cv < 0:
+    st.error(
+        f"🔴 Отрицательный CV direct: {money(period_cv)}. "
+        "Фактические затраты прямого персонала AC direct выше заявленного EV. "
+        "Indirect-персонал здесь не учитывается; для полной оценки может применяться коэффициент 1.6–1.9."
+    )
+else:
+    st.success(
+        f"🟢 CV direct не отрицательный: {money(period_cv)}. "
+        "Заявленный EV покрывает фактические затраты прямого персонала."
+    )
+
+if period_idle_loss > 0:
+    st.warning(
+        f"🟡 Стоимость простоя direct: {money(period_idle_loss)}. "
+        "Это расчетная стоимость простоя прямого персонала в чел.-ч. "
+        "Причины требуют разбора: фронт, МТР, допуск, РД, заказчик, организация работ."
+    )
+
+if period_total_loss > 0:
+    st.warning(
+        f"🟠 Управленческий риск потерь: {money(period_total_loss)}. "
+        "Считается как отрицательное отклонение CV direct плюс расчетная стоимость простоя. "
+        "Это не бухгалтерский убыток, а управленческий индикатор: фактические затраты прямого труда, "
+        "отклонение по стоимости и стоимость простоя."
+    ) 
+    st.caption(
+    "Примечание: AC direct учитывает только прямой производственный персонал. "
+    "Indirect-персонал, ИТР, ПТО, механизмы, временная инфраструктура и накладные расходы здесь не включены. "
+    "Для полной оценки фактической стоимости работ может применяться коэффициент к direct-затратам ориентировочно 1.6–1.9."
+)
+    st.markdown("#### AI-анализ исполнения: ответственность участка")
+
+if execution_percent_value < 70 and period_cv < 0 and period_idle_percent > 10:
+    st.error(
+        f"🔴 Критическое отклонение по управлению участком. "
+        f"Approved-план закрыт только на {pct(execution_percent_value)}, "
+        f"при этом direct-затраты выше заявленного EV на {money(abs(period_cv))}, "
+        f"а простои составляют {pct(period_idle_percent)} от прямого рабочего времени. "
+        "Это означает, что участок не только не выполнил утверждённый объём, "
+        "но и израсходовал больше прямого труда, чем должен был при таком уровне факта."
+    )
+
+    st.warning(
+        "⚠️ Возможные ошибки мастеров / начальника участка: "
+        "1) завышенный ввод часов при недостаточном объёме; "
+        "2) несвоевременная фиксация простоев; "
+        "3) выполнение работ без проверки соответствия Monthly Passport; "
+        "4) слабый контроль выработки звеньев; "
+        "5) ожидание фронта, МТР или РД без своевременного оформления причины; "
+        "6) отсутствие ежедневного разбора: сколько людей работало, что реально сделано, почему EV не покрывает AC."
+    )
+
+    st.error(
+        "🔴 Версия «объёмов было меньше, потому что BOQ не совпадает с реальностью» "
+        "не снимает вопрос с участка. Если объём действительно меньше, то при нормальном управлении "
+        "должны быть меньше и трудозатраты. Если объём меньше, а direct-часы высокие — значит люди "
+        "либо простаивали, либо работали с низкой производительностью, либо выполняли операции, "
+        "которые не конвертировались в заявленный EV."
+    )
+
+elif execution_percent_value < 70 and period_cv < 0:
+    st.error(
+        f"🔴 Недоисполнение плана при перерасходе direct-труда. "
+        f"Approved-план закрыт на {pct(execution_percent_value)}, "
+        f"CV direct: {money(period_cv)}. "
+        "Участок не обеспечил достаточную выработку на использованные трудозатраты."
+    )
+
+    st.warning(
+        "Проверить мастеров и начальника участка: корректность Daily Progress, "
+        "реальную численность звеньев, завышение direct-часов, переделки, ожидание фронта "
+        "и выполнение работ вне утверждённого месячного плана."
+    )
+
+elif execution_percent_value < 70 and period_idle_percent > 10:
+    st.warning(
+        f"🟡 Низкое исполнение Approved-плана: {pct(execution_percent_value)} "
+        f"при доле простоев {pct(period_idle_percent)}. "
+        "Это сигнал слабого управления фронтом работ. "
+        "Если участок видел отсутствие фронта, МТР, допуска или РД, причины должны были быть "
+        "ежедневно зафиксированы в Daily Progress."
+    )
+
+elif period_cv < 0:
+    st.error(
+        f"🔴 Отрицательный CV direct: {money(period_cv)}. "
+        "Даже при наличии заявленного факта прямые трудозатраты выше освоенного EV. "
+        "Проверить производительность звеньев, корректность введённых часов и качество планирования работ мастером."
+    )
+
+else:
+    st.success(
+        "🟢 Критических отклонений по direct-затратам не выявлено. "
+        "Тем не менее требуется выборочная проверка Daily Progress и подтверждение факта."
+    )
+
+st.info(
+    "Что должен сделать начальник участка: "
+    "1) объяснить строки с отрицательным CV direct; "
+    "2) дать причины простоев по каждому звену; "
+    "3) подтвердить, какие часы были реально производительными; "
+    "4) разделить BOQ Quantity Mismatch и реальное недоисполнение; "
+    "5) показать, почему при меньшем объёме возникли такие direct-трудозатраты."
+)
 # ---------- Weekly fact KPI ----------
 
 st.divider()

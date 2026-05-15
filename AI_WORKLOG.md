@@ -23,6 +23,14 @@
 
 ---
 
+## 2026-05-15 — P0 foundation block closed
+
+**Участники:** Architect / AI Agent (Cursor)  
+**Сделано:** блок P0 полностью закрыт — проектная память в git (`c8653bb`), чеклист нового ПК (`SETUP_NEW_PC.md`), удалён вложенный git-скелет.  
+**Следующий шаг:** P1 DATA — Data Quality Dashboard или Sync Regulation.
+
+---
+
 ## 2026-05-15 — New PC setup checklist (P0.2)
 
 **Участники:** Architect / AI Agent (Cursor)  

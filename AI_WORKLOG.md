@@ -23,6 +23,25 @@
 
 ---
 
+## 2026-05-15 — New PC setup checklist (P0.2)
+
+**Участники:** Architect / AI Agent (Cursor)  
+**Цель сессии:** чеклист переноса проекта на другой компьютер.
+
+**Сделано:**
+- Создан `SETUP_NEW_PC.md`: Cursor, clone, `.env`, venv, зависимости, Streamlit, промпт для агента.
+- Обновлён `NEXT_STEPS.md` (P0.2 ✅).
+
+**Решения:**
+- Отдельный файл вместо раздувания README; `PROJECT_CONTEXT.md` §6 остаётся справочником.
+
+**Проблемы / блокеры:**
+- нет
+
+**Следующий шаг:** см. `NEXT_STEPS.md` → P1 DATA (качество данных / синк).
+
+---
+
 ## 2026-05-15 — Cleanup nested git shell (P0.3)
 
 **Участники:** Architect / AI Agent (Cursor)  

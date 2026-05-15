@@ -23,6 +23,19 @@
 
 ---
 
+## 2026-05-15 — Data quality page + sync regulation (P1.1, P1.2)
+
+**Участники:** Architect / AI Agent (Cursor)  
+**Сделано:**
+- Страница `pages/06_Качество_данных.py` (KPI, фильтры, таблица из `smr_data_quality_issues`).
+- `SYNC_REGULATION.md` — когда и как синкать Airtable → Supabase.
+- `05_Исполнение.py` не менялся.
+- Обновлены `README.md`, `NEXT_STEPS.md`.
+
+**Следующий шаг:** P1.3 — инструкция мастерам по полям ввода.
+
+---
+
 ## 2026-05-15 — P0 foundation block closed
 
 **Участники:** Architect / AI Agent (Cursor)  

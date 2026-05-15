@@ -23,7 +23,7 @@
 |---|--------|-------|--------|
 | 1.1 | Регламент синка: когда жать `ОБНОВИТЬ_ВСЕ_ДАННЫЕ.bat` | Актуальные KPI на витрине | ✅ `SYNC_REGULATION.md` |
 | 1.2 | Дашборд data quality | Быстро видеть WRONG_FACILITY / DISCIPLINE | ✅ `pages/06_Качество_данных.py` |
-| 1.3 | Инструкция мастерам: поля Project / Facility / IWP / System / Discipline | Снижение «ломания» план-факт | ⬜ |
+| 1.3 | Инструкция мастерам: поля Project / Facility / IWP / System / Discipline | Снижение «ломания» план-факт | ✅ `DATA_ENTRY_GUIDE.md` |
 
 ---
 
@@ -92,6 +92,7 @@
 - [x] 2026-05-15 — Чеклист `SETUP_NEW_PC.md` (P0.2)
 - [x] 2026-05-15 — **P0 закрыт:** memory layer в git, setup checklist, cleanup nested git
 - [x] 2026-05-15 — P1.1 + P1.2: `SYNC_REGULATION.md`, страница «Качество данных»
+- [x] 2026-05-15 — P1.3: `DATA_ENTRY_GUIDE.md`; перенумерация страниц 07–11
 
 ---
 

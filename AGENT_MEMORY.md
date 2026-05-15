@@ -57,8 +57,9 @@ cd C:\csv_fix
 | Landing | `app.py` |
 | План-факт (главный дашборд) | `pages/05_Исполнение.py` |
 | KPI главная | `pages/01_Главная.py` |
-| AI агент v0 | `pages/10_AI_Агенты.py` |
-| PTO / приёмка | `pages/06_Приемка_и_признание.py` |
+| AI агент v0 | `pages/11_AI_Агенты.py` |
+| PTO / приёмка | `pages/07_Приемка_и_признание.py` |
+| Качество данных | `pages/06_Качество_данных.py` |
 | Supabase client | `services/supabase_client.py` |
 | Синки | `*_sync*.py`, `update_all_sync.py` |
 | Доменная логика | `README_SMR_EXECUTION_LOGIC.md` |

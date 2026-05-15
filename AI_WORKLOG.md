@@ -23,6 +23,18 @@
 
 ---
 
+## 2026-05-15 — Data entry guide + page reorder (P1.3)
+
+**Участники:** Architect / AI Agent (Cursor)  
+**Сделано:**
+- Перенумерация страниц: Приёмка → `07_`, Потери → `08_`, … AI → `11_` (убран дубль `06_`).
+- `DATA_ENTRY_GUIDE.md` — инструкция мастерам по полям Daily Progress.
+- Обновлены `README.md`, `NEXT_STEPS.md` (P1.3 ✅).
+
+**Следующий шаг:** P1 EXECUTION — ТОП проблем на Главной (2.2) или KPI «за 60 секунд» (2.1).
+
+---
+
 ## 2026-05-15 — Data quality page + sync regulation (P1.1, P1.2)
 
 **Участники:** Architect / AI Agent (Cursor)  

@@ -1,6 +1,14 @@
 import streamlit as st
 import pandas as pd
+import os
+import json
+import tempfile
+from dotenv import load_dotenv
+from openai import OpenAI
 
+load_dotenv()
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 st.set_page_config(page_title="ВОР по РД", layout="wide")
 
 
@@ -74,6 +82,66 @@ AI Extraction
 Деньги"""
 
 
+def analyze_pdf_with_ai(uploaded_file, prompt):
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(uploaded_file.getvalue())
+            temp_path = tmp.name
+
+        uploaded_openai_file = client.files.create(
+            file=open(temp_path, "rb"),
+            purpose="assistants",
+        )
+
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_file",
+                            "file_id": uploaded_openai_file.id,
+                        },
+                        {
+                            "type": "input_text",
+                            "text": prompt
+                            + """
+
+Верни результат СТРОГО как JSON массив.
+
+Без текста.
+Без объяснений.
+
+Формат:
+
+[
+  {
+    "Раздел": "",
+    "Система": "",
+    "Зона": "",
+    "Наименование работ": "",
+    "Ед. изм.": "",
+    "Кол-во": "",
+    "Основание": "",
+    "Уверенность": "",
+    "Комментарий": ""
+  }
+]
+""",
+                        },
+                    ],
+                }
+            ],
+        )
+
+        return json.loads(response.output_text)
+
+    except Exception as e:
+        st.error(f"Ошибка AI-анализа: {str(e)}")
+        return None
+
+
 st.title("ВОР по РД")
 st.caption("AI-агент формирования ведомости объемов работ по чертежам и спецификациям")
 
@@ -122,34 +190,47 @@ st.text_area(
 
 st.divider()
 
+AI_PASSWORD = os.getenv("VOR_AI_PASSWORD", "")
+
+st.subheader("Доступ к AI-анализу")
+
+user_password = st.text_input(
+    "Введите пароль для AI-анализа",
+    type="password",
+)
+
+is_ai_allowed = user_password == AI_PASSWORD
+
 st.subheader("Черновая ВОР")
 
 if uploaded is None:
-    st.info("Загрузите файл РД, чтобы подготовить черновую структуру ВОР.")
+    st.info("Загрузите файл РД для анализа.")
+
 else:
-    st.warning(
-        "Файл загружен, но автоматическое чтение PDF/DWG пока не подключено. "
-        "Ниже показана пустая структура ВОР для текущего файла."
-    )
+    if not is_ai_allowed:
 
-    empty_vor_df = pd.DataFrame(
-        [
-            {
-                "Исходный файл": file_name,
-                "Раздел": "",
-                "Система": "",
-                "Зона": "",
-                "Наименование работ": "",
-                "Ед. изм.": "",
-                "Кол-во": "",
-                "Основание": "требуется AI-анализ файла",
-                "Уверенность": "не определена",
-                "Комментарий": "реальное распознавание будет подключено на следующем этапе",
-            }
-        ]
-    )
+        st.warning("AI-анализ временно доступен только администраторам.")
 
-    st.dataframe(empty_vor_df, use_container_width=True, hide_index=True)
+    else:
+
+        st.success("Доступ к AI-анализу разрешён")
+
+        if st.button("AI-анализ PDF"):
+
+            with st.spinner("AI анализирует PDF..."):
+
+                ai_result = analyze_pdf_with_ai(uploaded, DEFAULT_PROMPT)
+
+                if ai_result:
+
+                    df = pd.DataFrame(ai_result)
+
+                    st.success("Черновая ВОР сформирована")
+
+                    st.dataframe(df, use_container_width=True, hide_index=True)
+
+                else:
+                    st.warning("AI-анализ не вернул данные.")
 
 st.divider()
 

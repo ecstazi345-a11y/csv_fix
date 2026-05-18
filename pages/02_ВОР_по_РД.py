@@ -8,7 +8,15 @@ from openai import OpenAI
 
 load_dotenv()
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+if not OPENAI_API_KEY:
+    try:
+        OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+    except Exception:
+        OPENAI_API_KEY = None
+
+client = OpenAI(api_key=OPENAI_API_KEY)
 st.set_page_config(page_title="ВОР по РД", layout="wide")
 
 
@@ -190,7 +198,13 @@ st.text_area(
 
 st.divider()
 
-AI_PASSWORD = os.getenv("VOR_AI_PASSWORD", "")
+AI_PASSWORD = os.getenv("VOR_AI_PASSWORD")
+
+if not AI_PASSWORD:
+    try:
+        AI_PASSWORD = st.secrets["VOR_AI_PASSWORD"]
+    except Exception:
+        AI_PASSWORD = ""
 
 st.subheader("Доступ к AI-анализу")
 

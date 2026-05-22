@@ -82,31 +82,326 @@ def apply_common_filters(df: pd.DataFrame, project, month, facility, discipline)
 
 def format_money_columns(df: pd.DataFrame) -> pd.DataFrame:
     result = df.copy()
-
-    money_cols = [
-        "plan_total",
-        "approved_plan",
-        "matched_ev",
-        "approved_remaining",
-        "plan_value",
-        "approved_plan_value",
-        "ev_value",
-        "fact_only_ev",
-        "value_variance",
-        "value_loss",
-        "wrong_crew_ev",
-        "planned_value",
-        "actual_ev",
-        "raw_ev",
-        "smr_ev",
-        "ev_difference",
-    ]
-
-    for col in money_cols:
-        if col in result.columns:
+    for col in result.columns:
+        if is_money_col(col):
             result[col] = result[col].apply(lambda x: money(x))
-
     return result
+
+
+TOTAL_LABEL = "ИТОГО"
+
+TEXT_COLS = {
+    "facility_building",
+    "construction_discipline",
+    "month_key",
+    "week_key",
+    "work_boq_code",
+    "boq_code",
+    "work_iwp_id",
+    "iwp_id_export",
+    "work_system_label",
+    "system_label",
+    "reconciliation_status",
+    "budget_statuses",
+    "plan_crews",
+    "fact_crews",
+    "crew",
+    "crew_code",
+    "crew_id",
+    "project_code",
+    "project",
+    "boq_name",
+    "iwp_id",
+    "system_label_iwp",
+    "execution_status",
+    "crew_status",
+    "issue_type",
+    "boq",
+    "raw_facility_building",
+    "smr_facility_building",
+    "raw_construction_discipline",
+    "smr_construction_discipline",
+}
+
+MONEY_COLS = {
+    "plan_value",
+    "approved_plan_value",
+    "ev_value",
+    "ac_value",
+    "actual_work_value",
+    "value_variance",
+    "cost_variance",
+    "cost_var",
+    "cv",
+    "sv",
+    "idle_loss_value",
+    "plan_direct_cost",
+    "actual_direct_cost",
+    "direct_cost",
+    "forecast_ev",
+    "forecast_margin",
+    "margin",
+    "margin_after_direct",
+    "plan_total",
+    "approved_plan",
+    "matched_ev",
+    "approved_remaining",
+    "fact_only_ev",
+    "value_loss",
+    "wrong_crew_ev",
+    "planned_value",
+    "actual_ev",
+    "raw_ev",
+    "smr_ev",
+    "ev_difference",
+    "ev_total",
+    "ac_total",
+    "idle_loss_value_total",
+    "cv_evm_total",
+    "ev_value_at_risk",
+}
+
+SUM_COLS = {
+    "plan_qty",
+    "actual_qty",
+    "actual_qty_total",
+    "qty_variance",
+    "direct_work_hours",
+    "idle_hours",
+    "direct_work_hours_total",
+    "idle_hours_total",
+    "rows_count",
+    "fact_rows",
+    "total_rows",
+    "missing_boq",
+    "missing_iwp_id",
+    "missing_system_label",
+}
+
+CV_DERIVED_COLS = {"cv_evm_total"}
+
+PERCENT_COLS = {
+    "execution_percent",
+    "burn_percent",
+    "chaos_percent",
+    "idle_percent",
+    "idle_percent_total",
+    "cv_direct_percent",
+    "cv_percent",
+    "direct_cost_share",
+}
+
+PERCENT_RECALC_RULES = {
+    "execution_percent": ("ev_value", "approved_plan_value"),
+    "burn_percent": ("actual_qty", "plan_qty"),
+    "chaos_percent": ("fact_only_ev", "ev_value"),
+    "idle_percent": ("idle_hours", "direct_work_hours"),
+    "idle_percent_total": ("idle_hours_total", "direct_work_hours_total"),
+    "cv_direct_percent": ("cv_evm_total", "ev_total"),
+    "cv_percent": ("cv_evm_total", "ev_total"),
+}
+
+
+def _safe_num(series: pd.Series) -> pd.Series:
+    return pd.to_numeric(series, errors="coerce").fillna(0)
+
+
+def is_text_col(col: str) -> bool:
+    return col in TEXT_COLS
+
+
+def is_money_col(col: str) -> bool:
+    return col in MONEY_COLS
+
+
+def is_sum_col(col: str) -> bool:
+    if is_text_col(col) or is_money_col(col):
+        return False
+    if col in SUM_COLS:
+        return True
+    c = col.lower()
+    return (
+        c.endswith("_qty")
+        or c.endswith("_hours")
+        or c.endswith("_count")
+        or "rows" in c
+    )
+
+
+def is_percent_col(col: str) -> bool:
+    return col in PERCENT_COLS or (
+        "percent" in col.lower() and col not in MONEY_COLS
+    )
+
+
+def is_cv_derived_col(col: str) -> bool:
+    return col in CV_DERIVED_COLS
+
+
+def infer_label_col(df: pd.DataFrame) -> str:
+    for col in df.columns:
+        if is_text_col(col):
+            return col
+    return df.columns[0]
+
+
+def build_total_row(df: pd.DataFrame, label_col: str | None = None) -> dict:
+    if df.empty:
+        return {}
+
+    label_col = label_col or infer_label_col(df)
+    sums: dict[str, float] = {}
+
+    for col in df.columns:
+        if is_money_col(col) or is_sum_col(col):
+            sums[col] = float(_safe_num(df[col]).sum())
+
+    total: dict = {}
+
+    for col in df.columns:
+        if col == label_col:
+            total[col] = TOTAL_LABEL
+        elif is_text_col(col):
+            total[col] = ""
+        elif is_money_col(col) or is_sum_col(col):
+            total[col] = sums.get(col, 0.0)
+        elif is_percent_col(col):
+            rule = PERCENT_RECALC_RULES.get(col)
+            if rule:
+                num_col, den_col = rule
+                den = sums.get(
+                    den_col,
+                    float(_safe_num(df[den_col]).sum()) if den_col in df.columns else 0.0,
+                )
+                num = sums.get(
+                    num_col,
+                    float(_safe_num(df[num_col]).sum()) if num_col in df.columns else 0.0,
+                )
+                total[col] = (num / den * 100) if den else 0.0
+            else:
+                total[col] = ""
+        elif is_cv_derived_col(col):
+            ev = sums.get("ev_total", sums.get("ev_value", 0.0))
+            ac = sums.get("ac_total", sums.get("ac_value", 0.0))
+            total[col] = ev - ac
+        elif col in ("cpi",):
+            ev = sums.get("ev_total", sums.get("ev_value", 0.0))
+            ac = sums.get("ac_total", sums.get("ac_value", 0.0))
+            total[col] = (ev / ac) if ac else 0.0
+        elif col in ("spi",):
+            ev = sums.get("ev_total", sums.get("ev_value", 0.0))
+            pv = sums.get(
+                "plan_value",
+                sums.get("approved_plan_value", sums.get("planned_value", 0.0)),
+            )
+            total[col] = (ev / pv) if pv else 0.0
+        else:
+            total[col] = ""
+
+    for col in ("ev_per_hour", "ev_per_direct_hour"):
+        if col in df.columns:
+            ev = sums.get("ev_value", sums.get("ev_total", 0.0))
+            hours = sums.get(
+                "direct_work_hours", sums.get("direct_work_hours_total", 0.0)
+            )
+            total[col] = (ev / hours) if hours else 0.0
+
+    return total
+
+
+def append_total_row(df: pd.DataFrame, label_col: str | None = None) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df.copy() if df is not None else pd.DataFrame()
+    total = build_total_row(df, label_col)
+    return pd.concat([df.reset_index(drop=True), pd.DataFrame([total])], ignore_index=True)
+
+
+def _format_cell_value(col: str, value):
+    if value == TOTAL_LABEL:
+        return TOTAL_LABEL
+    if value == "" or value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+
+    if is_text_col(col):
+        return str(value)
+
+    if is_money_col(col) or is_cv_derived_col(col):
+        return money(value)
+
+    if is_percent_col(col):
+        return pct(value)
+
+    if is_sum_col(col):
+        try:
+            return f"{int(round(float(value))):,}".replace(",", " ")
+        except (TypeError, ValueError):
+            return str(value)
+
+    if col in ("cpi", "spi"):
+        try:
+            return f"{float(value):.2f}"
+        except (TypeError, ValueError):
+            return str(value)
+
+    return str(value)
+
+
+def format_table_for_display(df: pd.DataFrame) -> pd.DataFrame:
+    result = df.copy()
+    for col in result.columns:
+        result[col] = result[col].apply(lambda x, c=col: _format_cell_value(c, x))
+    return result
+
+
+def style_total_row(df: pd.DataFrame, label_col: str | None = None):
+    label_col = label_col or infer_label_col(df)
+
+    def _row_style(row):
+        is_total = str(row.get(label_col, "")) == TOTAL_LABEL or TOTAL_LABEL in row.astype(str).values
+        if is_total:
+            css = (
+                "font-weight: 700; background-color: #F3F4F6; "
+                "border-top: 2px solid #D1D5DB;"
+            )
+            return [css] * len(row)
+        return [""] * len(row)
+
+    return df.style.apply(_row_style, axis=1)
+
+
+def show_dataframe_with_total(
+    df: pd.DataFrame,
+    *,
+    label_col: str | None = None,
+    format_display: bool = True,
+    height: int | None = None,
+    hide_index: bool = False,
+    sort_by: str | None = None,
+    ascending: bool = False,
+):
+    """Таблица с нижней строкой ИТОГО; пересчёт % и CPI/SPI от общих сумм."""
+    if df is None or df.empty:
+        return
+
+    view = df.copy()
+    if sort_by and sort_by in view.columns:
+        view = view.sort_values(sort_by, ascending=ascending, na_position="last")
+
+    label = label_col or infer_label_col(view)
+    display_df = append_total_row(view, label)
+    if format_display:
+        display_df = format_table_for_display(display_df)
+
+    styled = style_total_row(display_df, label)
+    kwargs = {"use_container_width": True, "hide_index": hide_index}
+    if height is not None:
+        kwargs["height"] = height
+    st.dataframe(styled, **kwargs)
 
 
 # ---------------- load data ----------------
@@ -501,25 +796,7 @@ if not data_quality_f.empty:
             + ". Эти записи могут выпадать из план-факта."
         )
 
-    dq_view = dq.copy()
-
-    if "total_rows" in dq_view.columns:
-        dq_view["total_rows"] = dq_view["total_rows"].apply(
-            lambda x: f"{int(round(float(x))):,}".replace(",", " ")
-        )
-
-    if "ev_value_at_risk" in dq_view.columns:
-        dq_view["ev_value_at_risk"] = dq_view["ev_value_at_risk"].apply(
-            lambda x: f"{int(round(float(x))):,}".replace(",", " ") + " ₽"
-        )
-
-    for col in issue_cols:
-        if col in dq_view.columns:
-            dq_view[col] = dq_view[col].apply(
-                lambda x: f"{int(round(float(x))):,}".replace(",", " ")
-            )
-
-    st.dataframe(dq_view, use_container_width=True)
+    show_dataframe_with_total(dq)
 
 else:
     st.warning("🟡 Нет данных в smr_data_quality_check по выбранным фильтрам.")
@@ -552,17 +829,10 @@ if not data_quality_issues_f.empty:
 
     existing_issue_cols = [c for c in issue_cols if c in data_quality_issues_f.columns]
 
-    issue_view = data_quality_issues_f[existing_issue_cols].copy()
-
-    # 💰 формат денег
-    if "raw_ev" in issue_view.columns:
-        issue_view["raw_ev"] = issue_view["raw_ev"].apply(
-            lambda x: f"{int(round(float(x))):,}".replace(",", " ") + " ₽"
-        )
-
-    st.dataframe(
-        issue_view.sort_values("raw_ev", ascending=False),
-        use_container_width=True,
+    show_dataframe_with_total(
+        data_quality_issues_f[existing_issue_cols],
+        label_col="issue_type" if "issue_type" in existing_issue_cols else None,
+        sort_by="raw_ev" if "raw_ev" in existing_issue_cols else None,
         height=280,
     )
 
@@ -843,34 +1113,9 @@ else:
             c for c in weekly_show_cols if c in weekly_fact_f.columns
         ]
 
-        weekly_table = weekly_fact_f[weekly_show_cols].copy()
-
-        money_cols = [
-            "ev_total",
-            "ac_total",
-            "cv_evm_total",
-            "idle_loss_value_total",
-        ]
-
-        hours_cols = [
-            "direct_work_hours_total",
-            "idle_hours_total",
-        ]
-
-        for col in money_cols:
-            if col in weekly_table.columns:
-                weekly_table[col] = weekly_table[col].apply(format_rub)
-
-        for col in hours_cols:
-            if col in weekly_table.columns:
-                weekly_table[col] = weekly_table[col].apply(format_num)
-
-        if "actual_qty_total" in weekly_table.columns:
-            weekly_table["actual_qty_total"] = weekly_table["actual_qty_total"].apply(format_num)
-
-        st.dataframe(
-            weekly_table,
-            use_container_width=True,
+        show_dataframe_with_total(
+            weekly_fact_f[weekly_show_cols],
+            label_col="week_key" if "week_key" in weekly_show_cols else None,
             hide_index=True,
         )
 
@@ -893,7 +1138,7 @@ if not reconciliation_f.empty:
         .reset_index()
     )
 
-    st.dataframe(format_money_columns(rec_summary), use_container_width=True)
+    show_dataframe_with_total(rec_summary, label_col="reconciliation_status")
 
     fact_only_sum = (
         rec_summary.loc[
@@ -946,9 +1191,9 @@ if not reconciliation_f.empty:
 
         show_cols = [c for c in show_cols if c in reconciliation_f.columns]
 
-        st.dataframe(
-            format_money_columns(reconciliation_f[show_cols]),
-            use_container_width=True,
+        show_dataframe_with_total(
+            reconciliation_f[show_cols],
+            label_col="reconciliation_status",
             height=420,
         )
 
@@ -986,13 +1231,10 @@ if not plan_line_f.empty:
 
         existing_cols = [c for c in plan_cols if c in plan_line_f.columns]
 
-        plan_line_view = plan_line_f[existing_cols].sort_values(
-            "value_variance", ascending=False
-        )
-
-        st.dataframe(
-            format_money_columns(plan_line_view),
-            use_container_width=True,
+        show_dataframe_with_total(
+            plan_line_f[existing_cols],
+            label_col="execution_status",
+            sort_by="value_variance",
             height=420,
         )
 
@@ -1008,7 +1250,7 @@ if not plan_line_f.empty:
             .reset_index()
         )
 
-        st.dataframe(format_money_columns(status_summary), use_container_width=True)
+        show_dataframe_with_total(status_summary, label_col="execution_status")
 
     wrong_crew_total = (
         plan_line_f["wrong_crew_ev"].sum()
@@ -1056,16 +1298,11 @@ if not fact_only_df.empty:
 
     existing_cols = [c for c in fact_cols if c in fact_only_df.columns]
 
-    fact_view = fact_only_df[existing_cols].copy()
-
-    # формат денег
-    if "ev_value" in fact_view.columns:
-        fact_view["ev_value"] = fact_view["ev_value"].apply(money)
-
     with st.expander("Показать детализацию факта вне плана"):
-        st.dataframe(
-            fact_view.sort_values("ev_value", ascending=False),
-            use_container_width=True,
+        show_dataframe_with_total(
+            fact_only_df[existing_cols],
+            label_col="month_key",
+            sort_by="ev_value" if "ev_value" in existing_cols else None,
             height=350,
         )
 
@@ -1109,16 +1346,11 @@ if not plan_only_df.empty:
 
     existing_cols = [c for c in plan_only_cols if c in plan_only_df.columns]
 
-    plan_view = plan_only_df[existing_cols].copy()
-
-    # формат денег
-    if "plan_value" in plan_view.columns:
-        plan_view["plan_value"] = plan_view["plan_value"].apply(money)
-
     with st.expander("Показать детализацию плана без факта"):
-        st.dataframe(
-            plan_view.sort_values("plan_value", ascending=False),
-            use_container_width=True,
+        show_dataframe_with_total(
+            plan_only_df[existing_cols],
+            label_col="month_key",
+            sort_by="plan_value" if "plan_value" in existing_cols else None,
             height=350,
         )
 
@@ -1157,17 +1389,11 @@ if not crew_control_f.empty:
 
     existing_cols = [c for c in crew_cols if c in crew_control_f.columns]
 
-    crew_view = crew_control_f[existing_cols].copy()
-
-    # формат денег
-    for col in ["planned_value", "actual_ev", "value_variance"]:
-        if col in crew_view.columns:
-            crew_view[col] = crew_view[col].apply(money)
-
     with st.expander("Показать детализацию по звеньям"):
-        st.dataframe(
-            crew_view.sort_values("value_variance", ascending=False),
-            use_container_width=True,
+        show_dataframe_with_total(
+            crew_control_f[existing_cols],
+            label_col="crew_id",
+            sort_by="value_variance" if "value_variance" in existing_cols else None,
             height=350,
         )
 
@@ -1183,7 +1409,7 @@ if not crew_control_f.empty:
             .reset_index()
         )
 
-        st.dataframe(format_money_columns(crew_summary), use_container_width=True)
+        show_dataframe_with_total(crew_summary, label_col="crew_status")
 
     variance_total = (
         crew_control_f["value_variance"].sum()
@@ -1229,14 +1455,11 @@ if not problem_aggregation_f.empty:
 
     existing_cols = [c for c in problem_cols if c in problem_df.columns]
 
-    problem_view = problem_df[existing_cols].sort_values(
-        "value_loss", ascending=False
-    )
-
     with st.expander("Показать детализацию проблем"):
-        st.dataframe(
-            format_money_columns(problem_view),
-            use_container_width=True,
+        show_dataframe_with_total(
+            problem_df[existing_cols],
+            label_col="execution_status",
+            sort_by="value_loss" if "value_loss" in existing_cols else None,
             height=350,
         )
 
@@ -1253,10 +1476,7 @@ if not problem_aggregation_f.empty:
     )
 
     st.markdown("#### Сводка проблем по статусам")
-    st.dataframe(
-        format_money_columns(problem_summary),
-        use_container_width=True,
-    )
+    show_dataframe_with_total(problem_summary, label_col="execution_status")
 
     total_value_loss = (
         problem_df["value_loss"].sum()

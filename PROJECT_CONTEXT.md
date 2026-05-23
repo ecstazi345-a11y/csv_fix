@@ -117,7 +117,8 @@ C:\csv_fix\
 ├── daily_progress_sync_upsert.py   # Синк факта Airtable → Supabase
 ├── boq_sync_upsert.py              # Синк BOQ
 ├── monthly_passport_sync_airtable.py
-├── update_all_sync.py              # Запуск всех синков
+├── monthly_labor_summary_sync_upsert.py  # Crew_Register → monthly_labor_summary
+├── update_all_sync.py              # Запуск всех синков (4 потока)
 ├── ОБНОВИТЬ_ВСЕ_ДАННЫЕ.bat         # One-click синк для Windows
 ├── .venv/                          # Локальное окружение (не в git)
 ├── .env                            # Секреты (не в git)
@@ -167,7 +168,7 @@ cd C:\csv_fix
 python update_all_sync.py
 ```
 
-Порядок скриптов: `daily_progress` → `boq` → `monthly_passport`.
+Порядок скриптов: `daily_progress` → `boq` → `monthly_passport` → `monthly_labor_summary` (Crew_Register).
 
 ### Запуск витрины
 

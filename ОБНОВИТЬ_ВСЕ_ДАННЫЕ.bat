@@ -1,11 +1,12 @@
 @echo off
 chcp 65001 >nul
-cd /d C:\csv_fix
+cd /d "%~dp0"
 
 echo Активирую виртуальное окружение...
 call .venv\Scripts\activate.bat
 
-echo Запускаю обновление всех данных...
+set PYTHONIOENCODING=utf-8
+echo Запускаю 4 синка: Daily Progress, BOQ, Monthly Passport, Crew_Register...
 python update_all_sync.py
 
 echo.

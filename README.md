@@ -45,6 +45,6 @@ cd C:\csv_fix
 
 ## Синхронизация данных
 
-Двойной клик `ОБНОВИТЬ_ВСЕ_ДАННЫЕ.bat` или `python update_all_sync.py` (из `.venv`).
+Двойной клик `ОБНОВИТЬ_ВСЕ_ДАННЫЕ.bat` или `python update_all_sync.py` (из `.venv`) — **4 синка** за один запуск: факт, BOQ, план месяца, Crew_Register / `monthly_labor_summary`.
 
 Регламент синка: [SYNC_REGULATION.md](SYNC_REGULATION.md) · Ввод факта: [DATA_ENTRY_GUIDE.md](DATA_ENTRY_GUIDE.md)

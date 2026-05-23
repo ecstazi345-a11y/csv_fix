@@ -41,7 +41,7 @@ Airtable → [Python sync] → Supabase (tables + views) → Streamlit
 ```powershell
 cd C:\csv_fix
 .\.venv\Scripts\streamlit.exe run app.py    # UI → http://localhost:8501
-.\.venv\Scripts\python.exe update_all_sync.py   # все синки
+.\.venv\Scripts\python.exe update_all_sync.py   # 4 синка (факт, BOQ, план, Crew_Register)
 # или: ОБНОВИТЬ_ВСЕ_ДАННЫЕ.bat
 ```
 

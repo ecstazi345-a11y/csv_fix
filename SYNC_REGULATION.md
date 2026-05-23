@@ -35,11 +35,12 @@ cd C:\csv_fix
 python update_all_sync.py
 ```
 
-**Порядок скриптов внутри `update_all_sync.py`:**
+**Порядок скриптов внутри `update_all_sync.py` (4 синка):**
 
-1. `daily_progress` — факт с площадки  
-2. `boq` — справочник BOQ  
-3. `monthly_passport` — план месяца  
+1. `daily_progress_sync_upsert.py` — факт с площадки (Daily Progress)  
+2. `boq_sync_upsert.py` — справочник BOQ  
+3. `monthly_passport_sync_airtable.py` — план месяца (Monthly Passport)  
+4. `monthly_labor_summary_sync_upsert.py` — звенья / трудозатраты (Airtable `Crew_Register`, view `SUPABASE_MONTHLY_LABOR_SUMMARY` → Supabase `monthly_labor_summary`)  
 
 ---
 

@@ -26,6 +26,7 @@ cd C:\csv_fix
 | [README_SMR_EXECUTION_LOGIC.md](README_SMR_EXECUTION_LOGIC.md) | Логика план-факт СМР |
 | [DATA_ENTRY_GUIDE.md](DATA_ENTRY_GUIDE.md) | Инструкция мастерам по полям Daily Progress |
 | [SYNC_REGULATION.md](SYNC_REGULATION.md) | Регламент синхронизации Airtable → Supabase |
+| [EXECUTION_OS_ARCHITECTURE.md](EXECUTION_OS_ARCHITECTURE.md) | Архитектура Contractor Execution OS: Month → Week → Day → Crew → Worker |
 
 ## Разделы Streamlit
 

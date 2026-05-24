@@ -39,6 +39,25 @@ DATA → EXECUTABILITY → EXECUTION → ACCEPTANCE → CASH
 
 ---
 
+## Execution OS Architecture
+
+Проект развивается от **витрины план-факт** к **Contractor Execution OS** — системе управления исполнением по цепочке:
+
+```
+Month → Week → Day → Crew → Worker
+```
+
+С двумя обязательными допусками перед исполнением и признанием:
+
+| Допуск | Вопрос |
+|--------|--------|
+| **Execution Admittance** | Можно ли исполнять? (фронт, РД, IWP, МТР, люди, ОТ/ТБ, качество) |
+| **Acceptance Admittance** | Можно ли признать и оплатить? (КС, QA/QC, расценка, commercial risk) |
+
+Полное описание целевой архитектуры, engines, views и MVP: **`EXECUTION_OS_ARCHITECTURE.md`**.
+
+---
+
 ## 3. Архитектура данных
 
 ```

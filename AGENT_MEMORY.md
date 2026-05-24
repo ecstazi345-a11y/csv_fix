@@ -20,6 +20,8 @@
 
 Строительный **AI-first execution OS**: данные из Airtable → аналитика в Supabase → витрина Streamlit для управления СМР (план, факт, приёмка, деньги).
 
+**Стратегическая тема (2026-05):** **Contractor Execution OS** — ядро планирования и перепланирования по цепочке **Month → Week → Day → Crew → Worker** с учётом остатка BOQ, исторической производительности, мощности звеньев, **Execution Admittance**, **Acceptance Admittance** и ежедневного факта Daily Progress. Архитектура: `EXECUTION_OS_ARCHITECTURE.md`.
+
 ---
 
 ## Architecture (не ломать без запроса)
@@ -63,6 +65,7 @@ cd C:\csv_fix
 | Supabase client | `services/supabase_client.py` |
 | Синки | `*_sync*.py`, `update_all_sync.py` |
 | Доменная логика | `README_SMR_EXECUTION_LOGIC.md` |
+| Execution OS (целевая архитектура) | `EXECUTION_OS_ARCHITECTURE.md` |
 
 ---
 

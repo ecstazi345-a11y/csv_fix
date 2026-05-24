@@ -39,16 +39,32 @@ def esc(value) -> str:
     return html_lib.escape(str(value))
 
 
-# --- design tokens ---
-C_BG = "#ffffff"
-C_BORDER = "#E5E7EB"
-C_TEXT = "#111827"
-C_MUTED = "#6B7280"
-C_BLUE = "#2563EB"
-C_GREEN = "#16A34A"
-C_AMBER = "#D97706"
-C_RED = "#DC2626"
-C_GRAY = "#6B7280"
+# --- design tokens (enterprise calm) ---
+C_BG = "#FFFFFF"
+C_SURFACE = "#FAFAFA"
+C_SURFACE_ALT = "#F4F4F5"
+C_BORDER = "#E4E4E7"
+C_TEXT = "#18181B"
+C_MUTED = "#71717A"
+C_SUBTLE = "#A1A1AA"
+C_BLUE = "#64748B"
+C_BAR_BASE = "#D4D4D8"
+C_BAR_OK = "#A8C5B0"
+C_BAR_WARN = "#C9B896"
+C_BAR_CRIT = "#9F3A3A"
+
+STATUS_STYLES = {
+    "ok": ("#F4FAF6", "#3D5C48", "#DCE8E0"),
+    "warn": ("#FAF8F3", "#6B5A3E", "#EDE6D6"),
+    "crit": ("#FAF5F5", "#6B4040", "#E8D8D8"),
+    "neutral": ("#F4F4F5", "#52525B", "#E4E4E7"),
+}
+
+# Legacy aliases for Layer 2 (unchanged logic, softer use)
+C_GREEN = STATUS_STYLES["ok"][1]
+C_AMBER = STATUS_STYLES["warn"][1]
+C_RED = STATUS_STYLES["crit"][1]
+C_GRAY = C_MUTED
 
 st.set_page_config(layout="wide")
 
@@ -57,15 +73,30 @@ DP_TABLE = "daily_progress_active"
 LABOR_TABLE = "monthly_labor_summary"
 FACT_PENDING_STATUS = "Факт ещё не поступил"
 MOBILIZED_NO_REPORT_STATUS = "MOBILIZED_NO_REPORT"
-MOBILIZED_NO_REPORT_TEXT = (
-    "Мобилизовано, но нет Daily Progress"
-)
+MOBILIZED_NO_REPORT_TEXT = "Мобилизовано / нет Daily Progress"
 MOBILIZED_NO_REPORT_EXPLANATION = (
-    "Звено числится мобилизованным, но за выбранный период нет ни одной записи "
-    "Daily Progress. Нужно проверить: работа не велась, простой не зафиксирован "
-    "или мастер не подаёт отчёт."
+    "Звено мобилизовано, но за выбранный период нет отчёта Daily Progress. "
+    "Нужно проверить: работа не велась, простой не зафиксирован или мастер не подал отчёт."
 )
 MOBILIZED_HEADER_NOTE = "Звено мобилизовано, но Daily Progress отсутствует"
+
+PLANNED_NOT_ADMITTED_LABEL = "⛔ Запланировано, но не допущено к оплате"
+PLANNED_NOT_ADMITTED_EXPLANATION = (
+    "Работа может выполняться по производственной необходимости, но утверждённая расценка "
+    "или основание оплаты отсутствует. Трудозатраты и операции фиксируются, однако освоенный "
+    "объём и оплата по позиции заблокированы до получения допуска."
+)
+
+RISK_CAUSE_ITEMS = [
+    ("front_not_ready", "Фронт не готов"),
+    ("master_no_dp", "Мастер не подал Daily Progress"),
+    ("idle_not_recorded", "Простой не зафиксирован"),
+    ("people_not_working", "Люди не работают"),
+    ("work_outside_boq", "Работа вне BOQ / вне пакета"),
+    ("chaotic_work", "Хаотичная работа без фиксации"),
+    ("no_admit_materials", "Нет допуска / IWP / материалов"),
+    ("planned_not_admitted", PLANNED_NOT_ADMITTED_LABEL),
+]
 
 MONTH_NAME_TO_NUM = {
     "January": 1,
@@ -189,35 +220,53 @@ DP_NUMERIC_COLS = [
 ]
 
 RISK_LABELS = {
-    "OK": "OK",
-    "MEDIUM_DIRECT_COST": "MEDIUM",
-    "HIGH_DIRECT_COST": "HIGH",
-    "CRITICAL_DIRECT_LOSS": "CRITICAL",
-    "NO_LABOR_DATA": "NO DATA",
-    "MOBILIZED_NO_REPORT": "MOBILIZED / NO DP",
+    "OK": "Норма",
+    "MEDIUM_DIRECT_COST": "Средний риск",
+    "HIGH_DIRECT_COST": "Высокий риск",
+    "CRITICAL_DIRECT_LOSS": "Критично",
+    "NO_LABOR_DATA": "Нет данных",
+    "MOBILIZED_NO_REPORT": "Мобилизовано / нет Daily Progress",
 }
 
 RISK_COLORS = {
-    "OK": C_GREEN,
-    "MEDIUM_DIRECT_COST": C_AMBER,
-    "HIGH_DIRECT_COST": C_AMBER,
-    "CRITICAL_DIRECT_LOSS": C_RED,
-    "NO_LABOR_DATA": C_GRAY,
-    "MOBILIZED_NO_REPORT": "#991B1B",
+    "OK": STATUS_STYLES["ok"][1],
+    "MEDIUM_DIRECT_COST": STATUS_STYLES["warn"][1],
+    "HIGH_DIRECT_COST": STATUS_STYLES["warn"][1],
+    "CRITICAL_DIRECT_LOSS": STATUS_STYLES["crit"][1],
+    "NO_LABOR_DATA": STATUS_STYLES["neutral"][1],
+    "MOBILIZED_NO_REPORT": STATUS_STYLES["crit"][1],
+}
+
+RISK_LEVEL = {
+    "OK": "ok",
+    "MEDIUM_DIRECT_COST": "warn",
+    "HIGH_DIRECT_COST": "warn",
+    "CRITICAL_DIRECT_LOSS": "crit",
+    "NO_LABOR_DATA": "neutral",
+    "MOBILIZED_NO_REPORT": "crit",
+}
+
+FORECAST_LEVEL = {
+    "ON_TRACK": "ok",
+    "AT_RISK": "warn",
+    "LOSS": "crit",
+    "NO_FACT": "neutral",
 }
 
 FORECAST_LABELS = {
-    "ON_TRACK": "ON TRACK",
-    "AT_RISK": "AT RISK",
-    "LOSS": "LOSS",
-    "NO_FACT": "NO FACT",
+    "ON_TRACK": "По плану",
+    "AT_RISK": "Риск",
+    "LOSS": "Убыток",
+    "NO_FACT": "Нет факта",
 }
 
+MOBILIZED_FORECAST_LABEL = "Мобилизовано / нет DP"
+
 FORECAST_COLORS = {
-    "ON_TRACK": C_GREEN,
-    "AT_RISK": C_AMBER,
-    "LOSS": C_RED,
-    "NO_FACT": C_GRAY,
+    "ON_TRACK": STATUS_STYLES["ok"][1],
+    "AT_RISK": STATUS_STYLES["warn"][1],
+    "LOSS": STATUS_STYLES["crit"][1],
+    "NO_FACT": STATUS_STYLES["neutral"][1],
 }
 
 FORECAST_TEXTS = {
@@ -229,31 +278,54 @@ FORECAST_TEXTS = {
 
 PAGE_CSS = f"""
 <style>
-    .block-container {{ padding-top: 1rem; padding-bottom: 1.25rem; max-width: 100%; }}
-    div[data-testid="stVerticalBlock"] > div {{ gap: 0.2rem; }}
-    h5 {{ font-size: 0.9rem !important; color: {C_TEXT}; margin: 0.5rem 0 0.35rem !important; }}
+    .block-container {{ padding-top: 1.25rem; padding-bottom: 2rem; max-width: 100%; }}
+    div[data-testid="stVerticalBlock"] > div {{ gap: 0.45rem; }}
+    h5 {{
+        font-size: 0.875rem !important;
+        font-weight: 600 !important;
+        color: {C_TEXT} !important;
+        margin: 1.25rem 0 0.65rem !important;
+        letter-spacing: -0.01em;
+    }}
     section.main div[data-testid="stHorizontalBlock"]:has([data-testid="stSelectbox"]) [data-testid="stSelectbox"] > div {{
         max-width: 168px;
     }}
     section.main [data-testid="stSelectbox"] label {{
         font-size: 11px !important;
         color: {C_MUTED} !important;
-        padding-bottom: 1px !important;
+        padding-bottom: 2px !important;
         margin-bottom: 0 !important;
     }}
     section.main [data-baseweb="select"] > div {{
         min-height: 32px !important;
         font-size: 13px !important;
+        border-color: {C_BORDER} !important;
     }}
     section.main [data-testid="stButton"] button {{
         min-height: 32px !important;
         padding: 0 10px !important;
         border-color: {C_BORDER} !important;
         color: {C_TEXT} !important;
+        background: {C_BG} !important;
     }}
     section.main [data-testid="column"] {{
         padding-top: 0 !important;
         padding-bottom: 0 !important;
+    }}
+    section.main [data-testid="stExpander"] {{
+        margin: 0.5rem 0 1rem 0 !important;
+        border: 1px solid {C_BORDER} !important;
+        border-radius: 10px !important;
+        background: {C_SURFACE} !important;
+    }}
+    section.main [data-testid="stExpander"] summary {{
+        font-size: 13px !important;
+        color: {C_TEXT} !important;
+        font-weight: 500 !important;
+        padding: 0.65rem 0.85rem !important;
+    }}
+    section.main [data-testid="stExpander"] [data-testid="stMarkdown"] {{
+        padding: 0 0.85rem 0.85rem 0.85rem !important;
     }}
 </style>
 """
@@ -382,18 +454,16 @@ def burn_ratio(fact, planned):
 
 
 def get_burn_color(pct) -> str:
-    """Semantic color for progress bar; pct — доля плана в процентах (0–100+)."""
+    """Спокойный цвет полосы burn-down; акцент только при перерасходе."""
     if pct is None:
-        return C_GRAY
-    if pct < 25:
-        return "#2563EB"  # blue
-    if pct < 60:
-        return "#16A34A"  # green
-    if pct < 85:
-        return "#EAB308"  # yellow
+        return C_BAR_BASE
+    if pct < 70:
+        return C_BAR_BASE
+    if pct < 95:
+        return C_BAR_OK
     if pct <= 100:
-        return "#D97706"  # amber
-    return "#DC2626"  # red
+        return C_BAR_WARN
+    return C_BAR_CRIT
 
 
 def burn_pct_percent(ratio: float | None) -> float:
@@ -422,6 +492,199 @@ def remaining_value(plan, fact):
     if p is None:
         return None
     return p - f
+
+
+def forecast_display_label(status: str, mobilized_no_dp: bool = False) -> str:
+    if mobilized_no_dp:
+        return MOBILIZED_FORECAST_LABEL
+    return FORECAST_LABELS.get(status, status)
+
+
+def is_budget_approved(status) -> bool:
+    text = norm_str(status).lower()
+    if not text:
+        return False
+    return "approved" in text or "утвержден" in text
+
+
+def roster_has_unapproved_budget(roster: pd.DataFrame) -> bool:
+    if roster.empty or "budget_status" not in roster.columns:
+        return False
+    return any(
+        not is_budget_approved(person.get("budget_status"))
+        for _, person in roster.iterrows()
+    )
+
+
+def count_dp_operations(dp_slice: pd.DataFrame) -> int:
+    if dp_slice.empty:
+        return 0
+    if "operation_type" in dp_slice.columns:
+        return int(dp_slice["operation_type"].notna().sum())
+    return len(dp_slice)
+
+
+def detect_planned_not_admitted(
+    row: pd.Series,
+    roster: pd.DataFrame,
+    dp_slice: pd.DataFrame,
+) -> bool:
+    hours = safe_float(row.get("actual_direct_hours")) or 0.0
+    dp_rows = int(safe_float(row.get("fact_rows")) or 0)
+    has_work = hours > 0 or dp_rows > 0 or count_dp_operations(dp_slice) > 0
+    if not has_work:
+        return False
+
+    ev = safe_float(row.get("actual_work_value")) or 0.0
+    cost = safe_float(row.get("actual_direct_cost")) or 0.0
+    approved_plan = safe_float(row.get("approved_plan_value"))
+    if approved_plan is None:
+        approved_plan = safe_float(row.get("plan_work_value_month")) or 0.0
+
+    return (
+        ev == 0
+        or cost == 0
+        or approved_plan == 0
+        or roster_has_unapproved_budget(roster)
+    )
+
+
+def detect_crew_risk_types(
+    row: pd.Series,
+    roster: pd.DataFrame,
+    risk: str,
+    forecast: dict,
+    dp_slice: pd.DataFrame,
+) -> dict:
+    forecast_status = forecast.get("forecast_status", "NO_FACT")
+    margin = safe_float(row.get("margin_after_direct"))
+    ev = safe_float(row.get("actual_work_value")) or 0.0
+    hours = safe_float(row.get("actual_direct_hours")) or 0.0
+    dp_rows = int(safe_float(row.get("fact_rows")) or 0)
+
+    mobilized_no_dp = risk == MOBILIZED_NO_REPORT_STATUS
+    no_fact = forecast_status == "NO_FACT" or not has_burn_fact(row)
+    loss_risk = forecast_status == "LOSS" or risk == "CRITICAL_DIRECT_LOSS"
+    underutilization = forecast_status == "AT_RISK"
+    negative_margin = margin is not None and margin < 0
+    work_no_ev = (hours > 0 or dp_rows > 0) and ev == 0
+    planned_not_admitted = detect_planned_not_admitted(row, roster, dp_slice)
+    direct_cost_risk = risk in ("MEDIUM_DIRECT_COST", "HIGH_DIRECT_COST")
+
+    any_risk = any(
+        [
+            mobilized_no_dp,
+            no_fact,
+            loss_risk,
+            underutilization,
+            negative_margin,
+            work_no_ev,
+            planned_not_admitted,
+            direct_cost_risk,
+            risk == "CRITICAL_DIRECT_LOSS",
+        ]
+    )
+
+    return {
+        "any": any_risk,
+        "mobilized_no_dp": mobilized_no_dp,
+        "no_fact": no_fact,
+        "loss_risk": loss_risk,
+        "underutilization": underutilization,
+        "negative_margin": negative_margin,
+        "work_no_ev": work_no_ev,
+        "planned_not_admitted": planned_not_admitted,
+    }
+
+
+def build_risk_diagnosis(
+    row: pd.Series,
+    roster: pd.DataFrame,
+    risk: str,
+    forecast: dict,
+    dp_slice: pd.DataFrame,
+) -> dict | None:
+    flags = detect_crew_risk_types(row, roster, risk, forecast, dp_slice)
+    if not flags["any"]:
+        return None
+
+    highlighted: set[str] = set()
+    if flags["mobilized_no_dp"]:
+        highlighted.update(
+            {
+                "master_no_dp",
+                "idle_not_recorded",
+                "front_not_ready",
+                "no_admit_materials",
+            }
+        )
+    if flags["no_fact"]:
+        highlighted.update(
+            {
+                "master_no_dp",
+                "people_not_working",
+                "front_not_ready",
+                "idle_not_recorded",
+            }
+        )
+    if flags["work_no_ev"]:
+        highlighted.update(
+            {
+                "chaotic_work",
+                "work_outside_boq",
+                "planned_not_admitted",
+            }
+        )
+    if flags["underutilization"]:
+        highlighted.update({"front_not_ready", "no_admit_materials"})
+    if flags["loss_risk"] or flags["negative_margin"]:
+        highlighted.add("planned_not_admitted")
+    if flags["planned_not_admitted"]:
+        highlighted.add("planned_not_admitted")
+
+    notes: list[str] = []
+    if flags["mobilized_no_dp"]:
+        notes.append(MOBILIZED_NO_REPORT_EXPLANATION)
+    if flags["planned_not_admitted"]:
+        notes.append(PLANNED_NOT_ADMITTED_EXPLANATION)
+
+    return {"highlighted": highlighted, "notes": notes}
+
+
+def risk_cause_chips_html(highlighted: set[str]) -> str:
+    chips = []
+    for key, label in RISK_CAUSE_ITEMS:
+        active = key in highlighted
+        if active:
+            if key == "planned_not_admitted":
+                bg, color, border = "#FAF5F5", C_TEXT, "#E8D8D8"
+            else:
+                bg, color, border = "#FAFAF9", "#3F3F46", C_BORDER
+            weight = "500"
+        else:
+            bg, color, border = C_SURFACE, C_SUBTLE, "#F0F0F2"
+            weight = "400"
+        chips.append(
+            f'<span style="display:inline-block;margin:0 8px 8px 0;padding:5px 11px;'
+            f"border-radius:6px;font-size:11px;font-weight:{weight};"
+            f'background:{bg};color:{color};border:1px solid {border};">{esc(label)}</span>'
+        )
+    return (
+        f'<div style="display:flex;flex-wrap:wrap;gap:0;margin:4px 0 4px;">'
+        f'{"".join(chips)}</div>'
+    )
+
+
+def render_risk_diagnosis_expander(diagnosis: dict | None) -> None:
+    if not diagnosis:
+        return
+    with st.expander("🔎 Возможные причины риска", expanded=False):
+        render_html(risk_cause_chips_html(diagnosis["highlighted"]))
+        for note in diagnosis["notes"]:
+            render_html(
+                f'<p style="font-size:12px;color:{C_MUTED};line-height:1.55;'
+                f'margin:14px 0 6px;">{esc(note)}</p>'
+            )
 
 
 def has_burn_fact(row: pd.Series) -> bool:
@@ -1214,22 +1477,56 @@ def labor_summary_stats(roster: pd.DataFrame, month_key: str = "") -> dict:
     }
 
 
-def badge_html(label: str, color: str) -> str:
+def status_badge_html(label: str, level: str = "neutral") -> str:
+    bg, color, border = STATUS_STYLES.get(level, STATUS_STYLES["neutral"])
     return (
-        '<span style="display:inline-block;white-space:nowrap;padding:3px 9px;'
-        f"border-radius:4px;background:{color};color:#fff;font-weight:600;"
-        f'font-size:10px;line-height:1.2;">{esc(label)}</span>'
+        '<span style="display:inline-block;white-space:nowrap;padding:4px 10px;'
+        f"border-radius:6px;background:{bg};color:{color};"
+        f'border:1px solid {border};font-size:11px;font-weight:500;'
+        f'line-height:1.35;">{esc(label)}</span>'
     )
 
 
+def badge_html(label: str, color: str) -> str:
+    return status_badge_html(label, "neutral")
+
+
 def risk_badge_html(risk: str) -> str:
-    return badge_html(RISK_LABELS.get(risk, risk), RISK_COLORS.get(risk, C_GRAY))
+    return status_badge_html(
+        RISK_LABELS.get(risk, risk), RISK_LEVEL.get(risk, "neutral")
+    )
 
 
 def forecast_badge_html(status: str) -> str:
-    return badge_html(
-        FORECAST_LABELS.get(status, status),
-        FORECAST_COLORS.get(status, C_GRAY),
+    return status_badge_html(
+        FORECAST_LABELS.get(status, status), FORECAST_LEVEL.get(status, "neutral")
+    )
+
+
+def risk_notice_html(title: str, body: str = "", level: str = "warn") -> str:
+    bg, color, border = STATUS_STYLES.get(level, STATUS_STYLES["warn"])
+    body_html = (
+        f'<div style="font-size:12px;color:{C_MUTED};margin-top:8px;line-height:1.55;">'
+        f"{esc(body)}</div>"
+        if body
+        else ""
+    )
+    inner = (
+        f'<div style="font-size:13px;font-weight:500;color:{color};">{esc(title)}</div>'
+        f"{body_html}"
+    )
+    return card_shell(
+        inner,
+        f"margin:14px 0 18px;background:{bg};border-color:{border};",
+    )
+
+
+def table_status_pill(label: str, level: str = "neutral") -> str:
+    bg, color, border = STATUS_STYLES.get(level, STATUS_STYLES["neutral"])
+    return (
+        f'<span style="display:inline-block;background:{bg};color:{color};'
+        f"border:1px solid {border};padding:2px 8px;border-radius:5px;"
+        f'font-size:10px;font-weight:500;white-space:nowrap;">{esc(label)}</span>'
     )
 
 
@@ -1337,7 +1634,7 @@ def build_month_crews_total_row(table_df: pd.DataFrame) -> dict:
 
 def card_shell(inner: str, extra_style: str = "") -> str:
     return (
-        f'<div style="border:1px solid {C_BORDER};border-radius:8px;padding:11px 12px;'
+        f'<div style="border:1px solid {C_BORDER};border-radius:10px;padding:14px 16px;'
         f"background:{C_BG};{extra_style}\">{inner}</div>"
     )
 
@@ -1367,21 +1664,21 @@ def progress_card_html(
     )
 
     inner = f"""
-        <div style="font-size:10px;font-weight:600;color:{C_MUTED};text-transform:uppercase;
-                    letter-spacing:0.04em;margin-bottom:6px;">{esc(title)}</div>
-        <div style="font-size:18px;font-weight:700;color:{C_TEXT};line-height:1.1;">
-            {esc(current_value)}</div>
-        <div style="font-size:10px;color:{C_MUTED};margin:2px 0 7px;">{esc(current_label)}</div>
-        <div style="display:flex;justify-content:space-between;font-size:10px;
-                    color:{C_MUTED};margin-bottom:5px;">
-            <span>План: <strong style="color:{C_TEXT};">{esc(plan_value)}</strong></span>
-            <span>Остаток: <strong style="color:{C_TEXT};">{esc(remaining_value_str)}</strong></span>
+        <div style="font-size:10px;font-weight:500;color:{C_MUTED};text-transform:uppercase;
+                    letter-spacing:0.04em;margin-bottom:8px;">{esc(title)}</div>
+        <div style="font-size:20px;font-weight:600;color:{C_TEXT};line-height:1.15;
+                    letter-spacing:-0.02em;">{esc(current_value)}</div>
+        <div style="font-size:11px;color:{C_SUBTLE};margin:4px 0 10px;">{esc(current_label)}</div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;
+                    color:{C_MUTED};margin-bottom:6px;">
+            <span>План: {esc(plan_value)}</span>
+            <span>Остаток: {esc(remaining_value_str)}</span>
         </div>
-        <div style="height:6px;background:{C_BORDER};border-radius:2px;overflow:hidden;
-                    margin-bottom:3px;">
-            <div style="width:{bar_width:.1f}%;height:100%;background:{bar_color};"></div>
+        <div style="height:4px;background:{C_SURFACE_ALT};border-radius:2px;overflow:hidden;
+                    margin-bottom:4px;">
+            <div style="width:{bar_width:.1f}%;height:100%;background:{bar_color};opacity:0.9;"></div>
         </div>
-        <div style="font-size:10px;font-weight:600;color:{C_TEXT};">{esc(pct_text)}</div>
+        <div style="font-size:11px;color:{C_MUTED};">{esc(pct_text)}</div>
         {footnote_html}
     """
     return card_shell(inner)
@@ -1432,7 +1729,7 @@ def metrics_grid_html(row: pd.Series, period_note: str = "") -> str:
             )),
             work_value_burn_pct,
             bar_color=work_value_color,
-            footnote=f"{pending_note}Записей DP: {fact_rows}. {period_note}".strip(),
+            footnote=f"Записей DP: {fact_rows}. {period_note}".strip(),
         ),
         progress_card_html(
             "Direct Hours Burn",
@@ -1444,7 +1741,7 @@ def metrics_grid_html(row: pd.Series, period_note: str = "") -> str:
             )),
             direct_hours_burn_pct,
             bar_color=hours_color,
-            footnote=(pending_note or "План → факт → остаток.").strip(),
+            footnote=(period_note or "План → факт → остаток.").strip(),
         ),
         progress_card_html(
             "Direct Cost Burn",
@@ -1456,14 +1753,14 @@ def metrics_grid_html(row: pd.Series, period_note: str = "") -> str:
             )),
             direct_cost_burn_pct,
             bar_color=cost_color,
-            footnote=(pending_note or "План → факт → остаток.").strip(),
+            footnote=(period_note or "План → факт → остаток.").strip(),
         ),
         quantity_info_card_html(row, period_note),
     ]
 
     return (
         '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));'
-        f'gap:8px;margin-top:8px;">{"".join(cards)}</div>'
+        f'gap:12px;margin-top:16px;">{"".join(cards)}</div>'
     )
 
 
@@ -1482,43 +1779,33 @@ def crew_header_html(
     fact_note = (
         ""
         if has_burn_fact(row)
-        else (
-            f'<span style="color:{C_MUTED};font-size:10px;font-weight:600;">'
-            f"{esc(FACT_PENDING_STATUS)}</span> · "
-        )
+        else f"{esc(FACT_PENDING_STATUS)} · "
     )
     period_html = (
-        f'<div style="font-size:10px;color:{C_MUTED};">{esc(period_label)}</div>'
+        f'<div style="font-size:11px;color:{C_MUTED};margin-top:2px;">'
+        f"{esc(period_label)}</div>"
         if period_label
-        else ""
-    )
-    mobil_note_html = (
-        f'<div style="font-size:11px;color:#991B1B;font-weight:600;margin-top:2px;">'
-        f"{esc(MOBILIZED_HEADER_NOTE)}</div>"
-        if mobilized_no_report
         else ""
     )
 
     inner = f"""
         <div style="display:flex;justify-content:space-between;align-items:flex-start;
-                    flex-wrap:wrap;gap:6px;">
+                    flex-wrap:wrap;gap:12px;">
             <div style="min-width:0;">
-                <div style="font-size:10px;color:{C_MUTED};text-transform:uppercase;
-                            letter-spacing:0.04em;">Crew Burn-Down · Layer 1</div>
-                <div style="font-size:18px;font-weight:700;color:{C_TEXT};line-height:1.2;">
-                    {crew_name}</div>
-                {mobil_note_html}
-                <div style="font-size:11px;color:{C_MUTED};">{month}</div>
+                <div style="font-size:10px;color:{C_SUBTLE};text-transform:uppercase;
+                            letter-spacing:0.05em;margin-bottom:4px;">Crew Burn-Down</div>
+                <div style="font-size:22px;font-weight:600;color:{C_TEXT};line-height:1.2;
+                            letter-spacing:-0.02em;">{crew_name}</div>
+                <div style="font-size:12px;color:{C_MUTED};margin-top:4px;">{month}</div>
                 {period_html}
-                <div style="font-size:10px;color:{C_MUTED};margin-top:2px;">
-                    {fact_note}DP: <strong style="color:{C_TEXT};">{fact_rows}</strong>
-                    · share {share} · маржа {margin}
+                <div style="font-size:11px;color:{C_SUBTLE};margin-top:8px;">
+                    {fact_note}DP: {fact_rows} · share {share} · маржа {margin}
                 </div>
             </div>
-            <div style="flex-shrink:0;">{badge}</div>
+            <div style="flex-shrink:0;padding-top:2px;">{badge}</div>
         </div>
     """
-    return card_shell(inner, "margin-bottom:8px;")
+    return card_shell(inner, "margin-bottom:14px;")
 
 
 def forecast_block_html(row: pd.Series, forecast: dict) -> str:
@@ -1537,11 +1824,11 @@ def forecast_block_html(row: pd.Series, forecast: dict) -> str:
             else ""
         )
         return (
-            f'<div style="border:1px solid {C_BORDER};border-radius:6px;padding:8px 10px;'
-            f'background:{C_BG};">'
-            f'<div style="font-size:9px;color:{C_MUTED};text-transform:uppercase;'
+            f'<div style="border:1px solid {C_BORDER};border-radius:8px;padding:10px 12px;'
+            f'background:{C_SURFACE};">'
+            f'<div style="font-size:10px;color:{C_MUTED};text-transform:uppercase;'
             f'letter-spacing:0.03em;">{esc(label)}</div>'
-            f'<div style="font-size:15px;font-weight:600;color:{C_TEXT};margin-top:3px;">'
+            f'<div style="font-size:15px;font-weight:600;color:{C_TEXT};margin-top:4px;">'
             f"{value}</div>{sub_html}</div>"
         )
 
@@ -1556,38 +1843,40 @@ def forecast_block_html(row: pd.Series, forecast: dict) -> str:
 
     inner = f"""
         <div style="display:flex;justify-content:space-between;align-items:center;
-                    flex-wrap:wrap;gap:6px;margin-bottom:8px;">
-            <div style="font-size:11px;font-weight:700;color:{C_TEXT};text-transform:uppercase;
+                    flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+            <div style="font-size:11px;font-weight:500;color:{C_MUTED};text-transform:uppercase;
                         letter-spacing:0.04em;">Прогноз исполнения</div>
             <div>{badge}</div>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;
-                    margin-bottom:6px;">{metrics}</div>
-        <div style="font-size:10px;color:{C_MUTED};line-height:1.4;">{text}</div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;
+                    margin-bottom:10px;">{metrics}</div>
+        <div style="font-size:11px;color:{C_MUTED};line-height:1.5;">{text}</div>
     """
-    return card_shell(inner, "margin-top:8px;")
+    return card_shell(inner, f"margin-top:16px;background:{C_SURFACE};")
 
 
 def roster_summary_html(stats: dict) -> str:
     rate = money_per_hour(stats["avg_rate"]) if stats["avg_rate"] is not None else "—"
     inner = f"""
-        <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;">
-            <div><div style="font-size:9px;color:{C_MUTED};">Людей</div>
-                <div style="font-size:15px;font-weight:600;color:{C_TEXT};">{stats['headcount']}</div></div>
-            <div><div style="font-size:9px;color:{C_MUTED};">Мобилизовано людей</div>
-                <div style="font-size:15px;font-weight:600;color:{C_TEXT};">
+        <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;">
+            <div><div style="font-size:10px;color:{C_MUTED};">Людей</div>
+                <div style="font-size:16px;font-weight:600;color:{C_TEXT};margin-top:4px;">
+                    {stats['headcount']}</div></div>
+            <div><div style="font-size:10px;color:{C_MUTED};">Мобилизовано людей</div>
+                <div style="font-size:16px;font-weight:600;color:{C_TEXT};margin-top:4px;">
                     {stats['mobilized_count']}</div></div>
-            <div><div style="font-size:9px;color:{C_MUTED};">Direct ч</div>
-                <div style="font-size:15px;font-weight:600;color:{C_TEXT};">
+            <div><div style="font-size:10px;color:{C_MUTED};">Direct ч</div>
+                <div style="font-size:16px;font-weight:600;color:{C_TEXT};margin-top:4px;">
                     {esc(hours_fmt(stats['hours']))}</div></div>
-            <div><div style="font-size:9px;color:{C_MUTED};">Direct cost</div>
-                <div style="font-size:15px;font-weight:600;color:{C_TEXT};">
+            <div><div style="font-size:10px;color:{C_MUTED};">Direct cost</div>
+                <div style="font-size:16px;font-weight:600;color:{C_TEXT};margin-top:4px;">
                     {esc(money(stats['cost']))}</div></div>
-            <div><div style="font-size:9px;color:{C_MUTED};">Средняя ставка</div>
-                <div style="font-size:15px;font-weight:600;color:{C_TEXT};">{esc(rate)}</div></div>
+            <div><div style="font-size:10px;color:{C_MUTED};">Средняя ставка</div>
+                <div style="font-size:16px;font-weight:600;color:{C_TEXT};margin-top:4px;">
+                    {esc(rate)}</div></div>
         </div>
     """
-    return card_shell(inner, "margin-bottom:8px;")
+    return card_shell(inner, "margin-bottom:12px;background:{C_SURFACE};")
 
 
 def roster_table_html(roster: pd.DataFrame) -> str:
@@ -1607,24 +1896,32 @@ def roster_table_html(roster: pd.DataFrame) -> str:
             f"{esc(hours_fmt(person.get('direct_hours_month')))}</td>"
             f"<td style='padding:5px 8px;border-bottom:1px solid {C_BORDER};color:{C_TEXT};'>"
             f"{esc(money(person.get('direct_cost_rub_month')))}</td>"
-            f"<td style='padding:5px 8px;border-bottom:1px solid {C_BORDER};color:{C_TEXT};'>"
-            f"{esc(person.get('budget_status'))}</td>"
+            f"<td style='padding:8px 10px;border-bottom:1px solid {C_BORDER};color:{C_MUTED};'>"
+            f"{roster_status_cell(person.get('budget_status'))}</td>"
             "</tr>"
         )
     th = (
-        f"padding:6px 8px;font-size:10px;font-weight:600;color:{C_MUTED};"
-        f"border-bottom:1px solid {C_BORDER};"
+        f"padding:8px 10px;font-size:10px;font-weight:500;color:{C_MUTED};"
+        f"border-bottom:1px solid {C_BORDER};background:{C_SURFACE};"
     )
     return (
-        f"<div style='overflow-x:auto;border:1px solid {C_BORDER};border-radius:8px;"
-        f"margin-top:8px;'>"
+        f"<div style='overflow-x:auto;border:1px solid {C_BORDER};border-radius:10px;"
+        f"margin-top:10px;'>"
         f"<table style='width:100%;border-collapse:collapse;font-size:11px;background:{C_BG};'>"
-        f"<thead><tr style='background:#F9FAFB;text-align:left;'>"
+        f"<thead><tr style='text-align:left;'>"
         f"<th style='{th}'>ФИО</th><th style='{th}'>Роль</th>"
         f"<th style='{th}'>Дата мобилизации</th>"
         f"<th style='{th}'>План ч</th><th style='{th}'>План cost</th><th style='{th}'>Статус</th>"
         f"</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
     )
+
+
+def roster_status_cell(status) -> str:
+    text = norm_str(status)
+    if not text:
+        return "—"
+    level = "ok" if is_budget_approved(status) else "neutral"
+    return table_status_pill(text, level)
 
 
 def render_roster_block(month_key: str, crew: str, labor: pd.DataFrame):
@@ -1644,32 +1941,32 @@ def month_crews_table_row_html(row, td: str, is_total: bool = False) -> str:
 
     if is_total:
         td = (
-            f"padding:6px 8px;border-top:2px solid {C_BORDER};"
-            f"background:#F9FAFB;color:{C_TEXT};font-weight:700;"
+            f"padding:8px 10px;border-top:2px solid {C_BORDER};"
+            f"background:{C_SURFACE};color:{C_TEXT};font-weight:600;"
         )
         risk_label = esc(data.get("risk", "SUMMARY"))
-        risk_color = C_GRAY
+        risk_level_key = "neutral"
         mobil_date = "—"
         mobilized_label = "—"
         fc_label = esc(FORECAST_LABELS.get(data.get("forecast_status", "NO_FACT"), "—"))
-        fc_color = C_GRAY
+        fc_level = "neutral"
     else:
         risk = data.get("crew_risk") or calc_risk(data.get("direct_cost_share"))
-        risk_label = esc(RISK_LABELS.get(risk, risk))
-        risk_color = RISK_COLORS.get(risk, C_GRAY)
+        risk_label = RISK_LABELS.get(risk, risk)
+        risk_level_key = RISK_LEVEL.get(risk, "neutral")
         mobil_date = esc(date_fmt(data.get("first_mobilization_date")))
         mobilized_label = "Да" if data.get("mobilized") else "Нет"
         fc_status = data.get("forecast_status", "NO_FACT")
         if data.get("mobilized_no_dp"):
-            fc_label = esc("MOBILIZED NO DP")
-            fc_color = "#991B1B"
+            fc_label = MOBILIZED_FORECAST_LABEL
+            fc_level = "crit"
         else:
-            fc_label = esc(FORECAST_LABELS.get(fc_status, fc_status))
-            fc_color = FORECAST_COLORS.get(fc_status, C_GRAY)
+            fc_label = forecast_display_label(fc_status)
+            fc_level = FORECAST_LEVEL.get(fc_status, "neutral")
 
     return (
         "<tr>"
-        f"<td style='{td}'><strong style='color:{C_TEXT};'>"
+        f"<td style='{td}'><strong style='color:{C_TEXT};font-weight:600;'>"
         f"{esc(data.get('crew'))}</strong></td>"
         f"<td style='{td}'>{esc(money(data.get('plan_work_value_month')))}</td>"
         f"<td style='{td}'>{esc(hours_fmt(data.get('plan_direct_hours_month')))}</td>"
@@ -1681,17 +1978,11 @@ def month_crews_table_row_html(row, td: str, is_total: bool = False) -> str:
         f"<td style='{td}'>{mobilized_label}</td>"
         f"<td style='{td}'>{esc(money(data.get('margin_after_direct')))}</td>"
         f"<td style='{td}'>{esc(pct_fmt(data.get('direct_cost_share')))}</td>"
-        f'<td style="{td}">'
-        f'<span style="display:inline-block;background:{risk_color};color:#fff;'
-        f'padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;">'
-        f"{risk_label}</span></td>"
+        f'<td style="{td}">{table_status_pill(risk_label, risk_level_key) if not is_total else esc(risk_label)}</td>'
         f"<td style='{td}'>{esc(money_per_hour(data.get('work_value_per_hour')))}</td>"
         f"<td style='{td}'>{esc(money(data.get('forecast_ev_capped')))}</td>"
         f"<td style='{td}'>{esc(money(data.get('forecast_margin_at_completion')))}</td>"
-        f'<td style="{td}">'
-        f'<span style="display:inline-block;background:{fc_color};color:#fff;'
-        f'padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;">'
-        f"{fc_label}</span></td>"
+        f'<td style="{td}">{table_status_pill(fc_label, fc_level) if not is_total else fc_label}</td>'
         "</tr>"
     )
 
@@ -1759,6 +2050,7 @@ def render_crew_dashboard(
     period_label: str = "",
     month_key: str = "",
     labor_df: pd.DataFrame | None = None,
+    dp_slice: pd.DataFrame | None = None,
 ):
     crew = norm_str(row.get("crew"))
     roster = (
@@ -1766,16 +2058,23 @@ def render_crew_dashboard(
         if labor_df is not None
         else pd.DataFrame()
     )
+    dp_slice = dp_slice if dp_slice is not None else pd.DataFrame()
     risk = resolve_crew_risk(row, roster, month_key)
     mobilized_no_report = risk == MOBILIZED_NO_REPORT_STATUS
     forecast = calc_forecast(row)
+    diagnosis = build_risk_diagnosis(row, roster, risk, forecast, dp_slice)
     render_html(
         crew_header_html(row, risk, period_label, mobilized_no_report=mobilized_no_report)
     )
     if mobilized_no_report:
-        st.warning(
-            f"**{MOBILIZED_NO_REPORT_TEXT}** — {MOBILIZED_NO_REPORT_EXPLANATION}"
+        render_html(
+            risk_notice_html(
+                MOBILIZED_NO_REPORT_TEXT,
+                "За выбранный период нет отчёта Daily Progress.",
+                level="crit",
+            )
         )
+    render_risk_diagnosis_expander(diagnosis)
     render_html(metrics_grid_html(row, period_note))
     render_html(forecast_block_html(row, forecast))
 
@@ -1850,14 +2149,15 @@ period_active = period_filter_active(selected_week, selected_day)
 period_label = build_period_label(selected_week, selected_day)
 period_note = ""
 display_row = None
+dp_crew_slice = pd.DataFrame()
 
 if selected_crew != "Все" and not filtered.empty:
     display_row = filtered.iloc[0].copy()
+    dp_crew_slice = filter_dp_slice(
+        dp_df, selected_month, selected_week, selected_day, selected_crew
+    )
     if period_active:
-        dp_slice = filter_dp_slice(
-            dp_df, selected_month, selected_week, selected_day, selected_crew
-        )
-        period_fact = aggregate_dp_fact(dp_slice, empty_ok=True)
+        period_fact = aggregate_dp_fact(dp_crew_slice, empty_ok=True)
         display_row = merge_period_fact(display_row, period_fact)
         period_note = f"Факт за период: {period_label}. План — месячный."
 
@@ -1869,7 +2169,12 @@ elif display_row is None:
     st.warning("Нет данных для выбранного звена.")
 else:
     render_crew_dashboard(
-        display_row, period_note, period_label, selected_month, labor_df
+        display_row,
+        period_note,
+        period_label,
+        selected_month,
+        labor_df,
+        dp_crew_slice,
     )
 
 if selected_month != "Все" and selected_crew != "Все":

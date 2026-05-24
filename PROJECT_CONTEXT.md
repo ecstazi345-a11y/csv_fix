@@ -47,14 +47,35 @@ DATA → EXECUTABILITY → EXECUTION → ACCEPTANCE → CASH
 Month → Week → Day → Crew → Worker
 ```
 
-С двумя обязательными допусками перед исполнением и признанием:
+Перед финальным исполняемым месяцем — **Three Admittance Model** (три обязательных gate):
 
-| Допуск | Вопрос |
-|--------|--------|
-| **Execution Admittance** | Можно ли исполнять? (фронт, РД, IWP, МТР, люди, ОТ/ТБ, качество) |
-| **Acceptance Admittance** | Можно ли признать и оплатить? (КС, QA/QC, расценка, commercial risk) |
+| Gate | Допуск | Ключевой вопрос |
+|------|--------|-----------------|
+| **1 — Execution** | Физическая исполнимость | Можно ли физически выполнить? |
+| **2 — Acceptance** | Коммерческое признание | Можно ли довести до признания и денег? |
+| **3 — Economic** | Экономическая целесообразность | Имеет ли смысл выполнять scope этим звеном? |
+
+**Принципы:**
+
+- Запланировано ≠ Исполнимо  
+- Исполнимо ≠ Признаваемо  
+- Признаваемо ≠ Выгодно  
+
+**Кейс-напоминание:** АСИ-16 — план исполним и признаваем, но `ECONOMIC_FAIL` (EV ≈ 476k ₽ vs cost ≈ 1.87m ₽).
 
 Полное описание целевой архитектуры, engines, views и MVP: **`EXECUTION_OS_ARCHITECTURE.md`**.
+
+---
+
+## Execution OS — Three Admittance Model
+
+Краткая фиксация для паспорта проекта (детали — в `EXECUTION_OS_ARCHITECTURE.md`):
+
+1. **Execution Admittance** — фронт, РД, IWP, МТР, люди, техника, HSE, конфликты. Статусы: EXECUTABLE / PARTIALLY_EXECUTABLE / BLOCKED.  
+2. **Acceptance Admittance** — basis, КС, QA/QC, ИД, расценка, MTR, commercial risk. Статусы: ACCEPTABLE / HIGH_COMMERCIAL_RISK / BLOCKED_FOR_ACCEPTANCE.  
+3. **Economic Admittance** — EV, crew cost, direct hours, норма, break-even, маржа. Статусы: ECONOMIC_OK … ECONOMIC_FAIL / LOW_VALUE_SCOPE.
+
+Только после согласования трёх gate формируется **Final Executable Month**, затем breakdown Week → Day → Crew → Worker.
 
 ---
 

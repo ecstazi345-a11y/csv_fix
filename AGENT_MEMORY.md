@@ -20,7 +20,15 @@
 
 Строительный **AI-first execution OS**: данные из Airtable → аналитика в Supabase → витрина Streamlit для управления СМР (план, факт, приёмка, деньги).
 
-**Стратегическая тема (2026-05):** **Contractor Execution OS** — ядро планирования и перепланирования по цепочке **Month → Week → Day → Crew → Worker** с учётом остатка BOQ, исторической производительности, мощности звеньев, **Execution Admittance**, **Acceptance Admittance** и ежедневного факта Daily Progress. Архитектура: `EXECUTION_OS_ARCHITECTURE.md`.
+**Стратегическая тема (2026-05):** **Contractor Execution OS** — ядро планирования и перепланирования по цепочке **Month → Week → Day → Crew → Worker** с учётом остатка BOQ, исторической производительности, мощности звеньев, **Three Admittance Model** (Execution + Acceptance + **Economic** Admittance) и ежедневного факта Daily Progress. Архитектура: `EXECUTION_OS_ARCHITECTURE.md`.
+
+**Three Admittance Model (обязательно):**
+
+1. **Execution Admittance** — физическая исполнимость  
+2. **Acceptance Admittance** — коммерческое признание  
+3. **Economic Admittance** — экономическая целесообразность для подрядчика  
+
+**Economic Admittance** стал обязательным после открытия Draft Month Engine: работа может быть физически исполнима и коммерчески признаваема, но **экономически разрушительна** для звена (пример АСИ-16: исполнимо + признаваемо, убыток).
 
 ---
 

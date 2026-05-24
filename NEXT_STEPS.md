@@ -85,9 +85,26 @@
 | E.1 | Спроектировать Supabase views для остатка по BOQ за весь период (`boq_lifetime_balance`) | ⬜ |
 | E.2 | Спроектировать view исторической производительности по каждому BOQ-коду (`boq_productivity_history`) | ⬜ |
 | E.3 | Спроектировать `draft_month_plan` | ⬜ |
+| E.3.1 | **Plan Diagnostics Engine** — диагностика плана месяца и объяснение «почему план плохой» (коды: `ECONOMIC_FAIL`, `LOW_VALUE_SCOPE`, `NO_HISTORY_NORM`, `PRODUCTIVITY_UNSTABLE`, `OVER_REMAINING_SCOPE`, `NO_LABOR_PLAN`, `LABOR_CAPACITY_FAIL`) | ⬜ |
 | E.4 | Спроектировать `constraint_register` | ⬜ |
-| E.5 | Спроектировать `final_month_passport` | ⬜ |
-| E.6 | Только после E.1–E.5 — переходить к Streamlit-странице / UI под Execution OS | ⬜ |
+| E.5 | Спроектировать `final_month_passport` (с учётом трёх gate, incl. Economic) | ⬜ |
+| E.6 | Только после E.1–E.5 и E.3.1 — переходить к Streamlit-странице / UI под Execution OS | ⬜ |
+
+### E.3.1 — Plan Diagnostics Engine
+
+**Цель:** диагностика плана месяца и объяснение причин, почему план не проходит допуски или финальный паспорт.
+
+**Коды диагностики (минимальный набор):**
+
+- `ECONOMIC_FAIL`  
+- `LOW_VALUE_SCOPE`  
+- `NO_HISTORY_NORM`  
+- `PRODUCTIVITY_UNSTABLE`  
+- `OVER_REMAINING_SCOPE`  
+- `NO_LABOR_PLAN`  
+- `LABOR_CAPACITY_FAIL`  
+
+**Продуктовое требование:** система должна отвечать на вопрос **«Почему план плохой?»** — с привязкой к gate (Execution / Acceptance / Economic) и к строкам draft / passport.
 
 ---
 

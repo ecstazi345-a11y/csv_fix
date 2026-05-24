@@ -8,6 +8,8 @@
 # ============================================================
 
 import html as html_lib
+from calendar import monthrange
+from datetime import date
 
 import pandas as pd
 import streamlit as st
@@ -54,6 +56,31 @@ VIEW_NAME = "v_crew_burndown_with_fact"
 DP_TABLE = "daily_progress_active"
 LABOR_TABLE = "monthly_labor_summary"
 FACT_PENDING_STATUS = "Факт ещё не поступил"
+MOBILIZED_NO_REPORT_STATUS = "MOBILIZED_NO_REPORT"
+MOBILIZED_NO_REPORT_TEXT = (
+    "Мобилизовано, но нет Daily Progress"
+)
+MOBILIZED_NO_REPORT_EXPLANATION = (
+    "Звено числится мобилизованным, но за выбранный период нет ни одной записи "
+    "Daily Progress. Нужно проверить: работа не велась, простой не зафиксирован "
+    "или мастер не подаёт отчёт."
+)
+MOBILIZED_HEADER_NOTE = "Звено мобилизовано, но Daily Progress отсутствует"
+
+MONTH_NAME_TO_NUM = {
+    "January": 1,
+    "February": 2,
+    "March": 3,
+    "April": 4,
+    "May": 5,
+    "June": 6,
+    "July": 7,
+    "August": 8,
+    "September": 9,
+    "October": 10,
+    "November": 11,
+    "December": 12,
+}
 
 LAYER_INFO = (
     "**Layer 1** — burn-down звена по месяцу: план работ, direct часы/cost, прогноз, состав. "
@@ -167,6 +194,7 @@ RISK_LABELS = {
     "HIGH_DIRECT_COST": "HIGH",
     "CRITICAL_DIRECT_LOSS": "CRITICAL",
     "NO_LABOR_DATA": "NO DATA",
+    "MOBILIZED_NO_REPORT": "MOBILIZED / NO DP",
 }
 
 RISK_COLORS = {
@@ -175,6 +203,7 @@ RISK_COLORS = {
     "HIGH_DIRECT_COST": C_AMBER,
     "CRITICAL_DIRECT_LOSS": C_RED,
     "NO_LABOR_DATA": C_GRAY,
+    "MOBILIZED_NO_REPORT": "#991B1B",
 }
 
 FORECAST_LABELS = {
@@ -280,13 +309,17 @@ def load_daily_progress(limit: int = 15000) -> pd.DataFrame:
 def load_labor_summary(limit: int = 8000) -> pd.DataFrame:
     cols = (
         "month_key,crew_code,full_name_ru,role,direct_hours_month,"
-        "direct_cost_rub_month,budget_status"
+        "direct_cost_rub_month,budget_status,actual_mobilization_date"
     )
     response = supabase.table(LABOR_TABLE).select(cols).limit(limit).execute()
     df = pd.DataFrame(response.data or [])
     for col in ("direct_hours_month", "direct_cost_rub_month"):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
+    if "actual_mobilization_date" in df.columns:
+        df["actual_mobilization_date"] = pd.to_datetime(
+            df["actual_mobilization_date"], errors="coerce"
+        ).dt.date
     if "crew_code" in df.columns:
         df["crew_code"] = df["crew_code"].astype(str).str.strip()
     if "month_key" in df.columns:
@@ -893,6 +926,68 @@ def calc_risk(direct_cost_share) -> str:
     return "OK"
 
 
+def is_mobilized_no_report(
+    row: pd.Series, roster: pd.DataFrame, month_key: str
+) -> bool:
+    if not month_key or month_key == "Все":
+        return False
+    plan_hours = safe_float(row.get("plan_direct_hours_month")) or 0.0
+    if plan_hours <= 0:
+        return False
+    people_count = (
+        len(roster)
+        if not roster.empty
+        else int(safe_float(row.get("people_count")) or 0)
+    )
+    if people_count <= 0:
+        return False
+    if count_mobilized_people(roster, month_key) <= 0:
+        return False
+    fact_rows = int(safe_float(row.get("fact_rows")) or 0)
+    actual_hours = safe_float(row.get("actual_direct_hours")) or 0.0
+    return fact_rows == 0 and actual_hours == 0
+
+
+def resolve_crew_risk(
+    row: pd.Series, roster: pd.DataFrame, month_key: str
+) -> str:
+    if is_mobilized_no_report(row, roster, month_key):
+        return MOBILIZED_NO_REPORT_STATUS
+    return calc_risk(row.get("direct_cost_share"))
+
+
+def enrich_month_table_with_mobilization(
+    table_df: pd.DataFrame, labor: pd.DataFrame, month_key: str
+) -> pd.DataFrame:
+    if table_df.empty or not month_key or month_key == "Все":
+        return table_df
+    result = table_df.copy()
+    first_dates = []
+    mobilized_flags = []
+    mobilized_counts = []
+    crew_risks = []
+    mobilized_no_dp_flags = []
+    for _, row in result.iterrows():
+        crew = norm_str(row.get("crew"))
+        roster = filter_labor_roster(labor, month_key, crew)
+        mob_count = count_mobilized_people(roster, month_key)
+        first_dates.append(first_mobilization_date(roster))
+        mobilized_flags.append(mob_count > 0)
+        mobilized_counts.append(mob_count)
+        crew_risks.append(resolve_crew_risk(row, roster, month_key))
+        fact_rows = int(safe_float(row.get("fact_rows")) or 0)
+        actual_hours = safe_float(row.get("actual_direct_hours")) or 0.0
+        mobilized_no_dp_flags.append(
+            mob_count > 0 and fact_rows == 0 and actual_hours == 0
+        )
+    result["first_mobilization_date"] = first_dates
+    result["mobilized"] = mobilized_flags
+    result["mobilized_people_count"] = mobilized_counts
+    result["crew_risk"] = crew_risks
+    result["mobilized_no_dp"] = mobilized_no_dp_flags
+    return result
+
+
 def filter_options(values, include_all: bool = True) -> list[str]:
     if not values:
         return ["Все"] if include_all else []
@@ -1015,10 +1110,89 @@ def filter_labor_roster(
     return result
 
 
-def labor_summary_stats(roster: pd.DataFrame) -> dict:
+def parse_iso_date(value) -> date | None:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, pd.Timestamp):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    s = str(value).strip()[:10]
+    if not s:
+        return None
+    try:
+        return date.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def date_fmt(value) -> str:
+    parsed = parse_iso_date(value)
+    if parsed is None:
+        return "—"
+    return parsed.strftime("%d.%m.%Y")
+
+
+def month_key_last_day(month_key: str) -> date | None:
+    if not month_key or month_key == "Все":
+        return None
+    parts = str(month_key).strip().split("-", 1)
+    if len(parts) != 2:
+        return None
+    month_name, year_str = parts[0], parts[1]
+    try:
+        year = int(year_str)
+        month = MONTH_NAME_TO_NUM.get(month_name)
+        if not month:
+            return None
+        return date(year, month, monthrange(year, month)[1])
+    except ValueError:
+        return None
+
+
+def is_person_mobilized_in_month(mobilization_date, month_key: str) -> bool:
+    mob = parse_iso_date(mobilization_date)
+    last_day = month_key_last_day(month_key)
+    if mob is None or last_day is None:
+        return False
+    return mob <= last_day
+
+
+def count_mobilized_people(roster: pd.DataFrame, month_key: str) -> int:
+    if roster.empty or "actual_mobilization_date" not in roster.columns:
+        return 0
+    return sum(
+        1
+        for _, person in roster.iterrows()
+        if is_person_mobilized_in_month(
+            person.get("actual_mobilization_date"), month_key
+        )
+    )
+
+
+def first_mobilization_date(roster: pd.DataFrame) -> date | None:
+    if roster.empty or "actual_mobilization_date" not in roster.columns:
+        return None
+    dates = [
+        parsed
+        for parsed in (
+            parse_iso_date(value) for value in roster["actual_mobilization_date"]
+        )
+        if parsed is not None
+    ]
+    return min(dates) if dates else None
+
+
+def labor_summary_stats(roster: pd.DataFrame, month_key: str = "") -> dict:
     if roster.empty:
         return {
             "headcount": 0,
+            "mobilized_count": 0,
             "hours": 0.0,
             "cost": 0.0,
             "avg_rate": None,
@@ -1026,8 +1200,14 @@ def labor_summary_stats(roster: pd.DataFrame) -> dict:
     hours = float(roster["direct_hours_month"].fillna(0).sum())
     cost = float(roster["direct_cost_rub_month"].fillna(0).sum())
     avg_rate = cost / hours if hours > 0 else None
+    mobilized_count = (
+        count_mobilized_people(roster, month_key)
+        if month_key and month_key != "Все"
+        else 0
+    )
     return {
         "headcount": len(roster),
+        "mobilized_count": mobilized_count,
         "hours": hours,
         "cost": cost,
         "avg_rate": avg_rate,
@@ -1291,6 +1471,7 @@ def crew_header_html(
     row: pd.Series,
     risk: str,
     period_label: str = "",
+    mobilized_no_report: bool = False,
 ) -> str:
     crew_name = esc(row.get("crew"))
     month = esc(row.get("month_key"))
@@ -1311,6 +1492,12 @@ def crew_header_html(
         if period_label
         else ""
     )
+    mobil_note_html = (
+        f'<div style="font-size:11px;color:#991B1B;font-weight:600;margin-top:2px;">'
+        f"{esc(MOBILIZED_HEADER_NOTE)}</div>"
+        if mobilized_no_report
+        else ""
+    )
 
     inner = f"""
         <div style="display:flex;justify-content:space-between;align-items:flex-start;
@@ -1320,6 +1507,7 @@ def crew_header_html(
                             letter-spacing:0.04em;">Crew Burn-Down · Layer 1</div>
                 <div style="font-size:18px;font-weight:700;color:{C_TEXT};line-height:1.2;">
                     {crew_name}</div>
+                {mobil_note_html}
                 <div style="font-size:11px;color:{C_MUTED};">{month}</div>
                 {period_html}
                 <div style="font-size:10px;color:{C_MUTED};margin-top:2px;">
@@ -1383,9 +1571,12 @@ def forecast_block_html(row: pd.Series, forecast: dict) -> str:
 def roster_summary_html(stats: dict) -> str:
     rate = money_per_hour(stats["avg_rate"]) if stats["avg_rate"] is not None else "—"
     inner = f"""
-        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;">
+        <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;">
             <div><div style="font-size:9px;color:{C_MUTED};">Людей</div>
                 <div style="font-size:15px;font-weight:600;color:{C_TEXT};">{stats['headcount']}</div></div>
+            <div><div style="font-size:9px;color:{C_MUTED};">Мобилизовано людей</div>
+                <div style="font-size:15px;font-weight:600;color:{C_TEXT};">
+                    {stats['mobilized_count']}</div></div>
             <div><div style="font-size:9px;color:{C_MUTED};">Direct ч</div>
                 <div style="font-size:15px;font-weight:600;color:{C_TEXT};">
                     {esc(hours_fmt(stats['hours']))}</div></div>
@@ -1411,6 +1602,8 @@ def roster_table_html(roster: pd.DataFrame) -> str:
             f"<td style='padding:5px 8px;border-bottom:1px solid {C_BORDER};color:{C_TEXT};'>"
             f"{esc(person.get('role'))}</td>"
             f"<td style='padding:5px 8px;border-bottom:1px solid {C_BORDER};color:{C_TEXT};'>"
+            f"{esc(date_fmt(person.get('actual_mobilization_date')))}</td>"
+            f"<td style='padding:5px 8px;border-bottom:1px solid {C_BORDER};color:{C_TEXT};'>"
             f"{esc(hours_fmt(person.get('direct_hours_month')))}</td>"
             f"<td style='padding:5px 8px;border-bottom:1px solid {C_BORDER};color:{C_TEXT};'>"
             f"{esc(money(person.get('direct_cost_rub_month')))}</td>"
@@ -1428,6 +1621,7 @@ def roster_table_html(roster: pd.DataFrame) -> str:
         f"<table style='width:100%;border-collapse:collapse;font-size:11px;background:{C_BG};'>"
         f"<thead><tr style='background:#F9FAFB;text-align:left;'>"
         f"<th style='{th}'>ФИО</th><th style='{th}'>Роль</th>"
+        f"<th style='{th}'>Дата мобилизации</th>"
         f"<th style='{th}'>План ч</th><th style='{th}'>План cost</th><th style='{th}'>Статус</th>"
         f"</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
     )
@@ -1435,7 +1629,7 @@ def roster_table_html(roster: pd.DataFrame) -> str:
 
 def render_roster_block(month_key: str, crew: str, labor: pd.DataFrame):
     roster = filter_labor_roster(labor, month_key, crew)
-    stats = labor_summary_stats(roster)
+    stats = labor_summary_stats(roster, month_key)
     render_html(roster_summary_html(stats))
     render_html(roster_table_html(roster))
     if roster.empty:
@@ -1455,13 +1649,23 @@ def month_crews_table_row_html(row, td: str, is_total: bool = False) -> str:
         )
         risk_label = esc(data.get("risk", "SUMMARY"))
         risk_color = C_GRAY
+        mobil_date = "—"
+        mobilized_label = "—"
+        fc_label = esc(FORECAST_LABELS.get(data.get("forecast_status", "NO_FACT"), "—"))
+        fc_color = C_GRAY
     else:
-        risk = calc_risk(data.get("direct_cost_share"))
+        risk = data.get("crew_risk") or calc_risk(data.get("direct_cost_share"))
         risk_label = esc(RISK_LABELS.get(risk, risk))
         risk_color = RISK_COLORS.get(risk, C_GRAY)
-
-    fc_status = data.get("forecast_status", "NO_FACT")
-    fc_color = FORECAST_COLORS.get(fc_status, C_GRAY)
+        mobil_date = esc(date_fmt(data.get("first_mobilization_date")))
+        mobilized_label = "Да" if data.get("mobilized") else "Нет"
+        fc_status = data.get("forecast_status", "NO_FACT")
+        if data.get("mobilized_no_dp"):
+            fc_label = esc("MOBILIZED NO DP")
+            fc_color = "#991B1B"
+        else:
+            fc_label = esc(FORECAST_LABELS.get(fc_status, fc_status))
+            fc_color = FORECAST_COLORS.get(fc_status, C_GRAY)
 
     return (
         "<tr>"
@@ -1473,6 +1677,8 @@ def month_crews_table_row_html(row, td: str, is_total: bool = False) -> str:
         f"<td style='{td}'>{esc(hours_fmt(data.get('actual_direct_hours')))}</td>"
         f"<td style='{td}'>{esc(money(data.get('actual_direct_cost')))}</td>"
         f"<td style='{td}'>{int(safe_float(data.get('fact_rows')) or 0)}</td>"
+        f"<td style='{td}'>{mobil_date}</td>"
+        f"<td style='{td}'>{mobilized_label}</td>"
         f"<td style='{td}'>{esc(money(data.get('margin_after_direct')))}</td>"
         f"<td style='{td}'>{esc(pct_fmt(data.get('direct_cost_share')))}</td>"
         f'<td style="{td}">'
@@ -1485,17 +1691,23 @@ def month_crews_table_row_html(row, td: str, is_total: bool = False) -> str:
         f'<td style="{td}">'
         f'<span style="display:inline-block;background:{fc_color};color:#fff;'
         f'padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;">'
-        f"{esc(FORECAST_LABELS.get(fc_status, fc_status))}</span></td>"
+        f"{fc_label}</span></td>"
         "</tr>"
     )
 
 
-def render_compact_table(df: pd.DataFrame):
+def render_compact_table(
+    df: pd.DataFrame,
+    labor: pd.DataFrame | None = None,
+    month_key: str = "",
+):
     if df.empty:
         st.info("Нет данных для отображения.")
         return
 
     table_df = enrich_with_forecast(df)
+    if labor is not None and month_key and month_key != "Все":
+        table_df = enrich_month_table_with_mobilization(table_df, labor, month_key)
     td = f"padding:5px 8px;border-bottom:1px solid {C_BORDER};color:{C_TEXT};"
     rows_html = [
         month_crews_table_row_html(row, td) for _, row in table_df.iterrows()
@@ -1518,6 +1730,8 @@ def render_compact_table(df: pd.DataFrame):
         f"<th style='{th}'>Факт ч</th>"
         f"<th style='{th}'>Факт cost</th>"
         f"<th style='{th}'>DP</th>"
+        f"<th style='{th}'>Первая мобилизация</th>"
+        f"<th style='{th}'>Мобилизовано</th>"
         f"<th style='{th}'>Маржа</th>"
         f"<th style='{th}'>Share</th>"
         f"<th style='{th}'>Риск</th>"
@@ -1543,10 +1757,25 @@ def render_crew_dashboard(
     row: pd.Series,
     period_note: str = "",
     period_label: str = "",
+    month_key: str = "",
+    labor_df: pd.DataFrame | None = None,
 ):
-    risk = calc_risk(row.get("direct_cost_share"))
+    crew = norm_str(row.get("crew"))
+    roster = (
+        filter_labor_roster(labor_df, month_key, crew)
+        if labor_df is not None
+        else pd.DataFrame()
+    )
+    risk = resolve_crew_risk(row, roster, month_key)
+    mobilized_no_report = risk == MOBILIZED_NO_REPORT_STATUS
     forecast = calc_forecast(row)
-    render_html(crew_header_html(row, risk, period_label))
+    render_html(
+        crew_header_html(row, risk, period_label, mobilized_no_report=mobilized_no_report)
+    )
+    if mobilized_no_report:
+        st.warning(
+            f"**{MOBILIZED_NO_REPORT_TEXT}** — {MOBILIZED_NO_REPORT_EXPLANATION}"
+        )
     render_html(metrics_grid_html(row, period_note))
     render_html(forecast_block_html(row, forecast))
 
@@ -1639,7 +1868,9 @@ if selected_crew == "Все":
 elif display_row is None:
     st.warning("Нет данных для выбранного звена.")
 else:
-    render_crew_dashboard(display_row, period_note, period_label)
+    render_crew_dashboard(
+        display_row, period_note, period_label, selected_month, labor_df
+    )
 
 if selected_month != "Все" and selected_crew != "Все":
     st.markdown("##### Состав звена")
@@ -1668,4 +1899,4 @@ else:
 if month_table_df.empty:
     st.info("Нет строк для выбранного месяца.")
 else:
-    render_compact_table(month_table_df)
+    render_compact_table(month_table_df, labor_df, selected_month)

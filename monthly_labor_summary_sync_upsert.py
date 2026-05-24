@@ -97,6 +97,9 @@ def map_fields(record):
         "actual_demobilization_date": to_date(
             fields.get("Actual_Demobilization_Date")
         ),
+        "actual_mobilization_date": to_date(
+            fields.get("Actual_Mobilization_Date")
+        ),
         "direct_hours_month": to_num(fields.get("Direct_Hours_Month")),
         "indirect_hours_month": to_num(fields.get("Indirect_Hours_Month")),
         "lab_hours_month": to_num(fields.get("LAB_Hours_Month")),
@@ -126,8 +129,11 @@ def fetch_airtable_records():
 
         for rec in data.get("records", []):
             row = map_fields(rec)
-            if row.get("assignment_period_id"):
-                all_rows.append(row)
+            if not row.get("airtable_record_id"):
+                continue
+            if not row.get("assignment_period_id"):
+                continue
+            all_rows.append(row)
 
         offset = data.get("offset")
         if not offset:
@@ -144,14 +150,27 @@ def fetch_airtable_records():
 
 
 def deduplicate_rows(rows):
+    """Оставить одну запись на airtable_record_id (последняя в snapshot)."""
     deduped = {}
+    duplicate_keys = 0
+
     for row in rows:
-        key = row.get("assignment_period_id")
-        if not key:
-            key = row.get("airtable_record_id")
+        key = row.get("airtable_record_id")
         if not key:
             continue
+        if key in deduped:
+            duplicate_keys += 1
+            prev_name = deduped[key].get("full_name_ru")
+            new_name = row.get("full_name_ru")
+            print(
+                f"WARNING: duplicate airtable_record_id in snapshot: {key} "
+                f"({prev_name!r} -> {new_name!r}); keeping last"
+            )
         deduped[key] = row
+
+    if duplicate_keys:
+        print(f"WARNING: {duplicate_keys} duplicate airtable_record_id(s) in Airtable snapshot")
+
     return list(deduped.values())
 
 
@@ -161,7 +180,7 @@ def upsert_to_supabase(rows):
 
     url = (
         f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}"
-        f"?on_conflict=assignment_period_id"
+        f"?on_conflict=airtable_record_id"
     )
     batch_size = 100
     total = len(rows)

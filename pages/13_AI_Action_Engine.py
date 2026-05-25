@@ -6,15 +6,17 @@
 import html as html_lib
 import os
 from datetime import datetime, timezone
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 import pandas as pd
 import streamlit as st
-from dotenv import load_dotenv
 from supabase import Client, create_client
 
 from services.supabase_client import supabase
-
-load_dotenv()
 
 
 def esc(value) -> str:
@@ -112,14 +114,20 @@ st.markdown(
 )
 
 
+def has_write_credentials() -> bool:
+    secret_key = os.getenv("SUPABASE_SECRET_KEY")
+    url = os.getenv("SUPABASE_URL")
+    return bool(secret_key and url)
+
+
 @st.cache_resource
 def get_supabase_write_client() -> Client | None:
     """Запись в plan_corrective_actions — нужен service key (RLS блокирует publishable key)."""
     url = os.getenv("SUPABASE_URL")
-    secret = os.getenv("SUPABASE_SECRET_KEY")
-    if not url or not secret:
+    secret_key = os.getenv("SUPABASE_SECRET_KEY")
+    if not url or not secret_key:
         return None
-    return create_client(url, secret)
+    return create_client(url, secret_key)
 
 
 @st.cache_data(ttl=300)
@@ -358,21 +366,18 @@ def render_decision_controls(row: pd.Series) -> None:
         st.caption("Нет идентификатора решения — обновление недоступно.")
         return
 
-    st.caption(f"action_id: {action_id}")
-
-    if get_supabase_write_client() is None:
-        st.error(
-            "В .env нет SUPABASE_SECRET_KEY — статус решения не сохранится. "
-            "Добавьте service key (как для sync-скриптов)."
+    write_enabled = has_write_credentials()
+    if not write_enabled:
+        st.warning(
+            "SUPABASE_SECRET_KEY не найден в C:\\csv_fix\\.env — кнопки отключены. "
+            "Перезапустите Streamlit после правки .env."
         )
-        return
 
     _, foot_btn1, foot_btn2 = st.columns([4, 1, 1])
     with foot_btn1:
-        if st.button("Одобрить", key=f"approve_{action_id}"):
+        if st.button("Одобрить", key=f"approve_{action_id}", disabled=not write_enabled):
             try:
-                response = approve_action(action_id)
-                st.write("DEBUG update response:", response)
+                approve_action(action_id)
                 load_actions.clear()
                 st.success("Решение одобрено")
                 st.rerun()
@@ -380,10 +385,9 @@ def render_decision_controls(row: pd.Series) -> None:
                 st.error("Не удалось обновить статус решения")
                 st.exception(e)
     with foot_btn2:
-        if st.button("Отклонить", key=f"reject_{action_id}"):
+        if st.button("Отклонить", key=f"reject_{action_id}", disabled=not write_enabled):
             try:
-                response = reject_action(action_id)
-                st.write("DEBUG update response:", response)
+                reject_action(action_id)
                 load_actions.clear()
                 st.warning("Решение отклонено")
                 st.rerun()

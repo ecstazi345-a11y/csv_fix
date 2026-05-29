@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 import streamlit as st
+from services.constraints_service import create_constraints_for_review_queue
 from services.supabase_client import supabase
 
 
@@ -369,6 +370,22 @@ def main() -> None:
         review_status_sel,
     )
 
+    gen_col, _ = st.columns([1, 4])
+    with gen_col:
+        if st.button("Сформировать проверки по отделам", key="gen_department_constraints"):
+            summary = create_constraints_for_review_queue(
+                project_code=None if project_sel == "Все" else project_sel,
+                month_key=None if month_sel == "Все" else month_sel,
+            )
+            st.success(
+                f"Создано: {summary['created_count']} · "
+                f"Пропущено (дубли): {summary['skipped_count']} · "
+                f"Исходных строк очереди: {summary['source_rows_count']}"
+            )
+            if summary["errors"]:
+                for err in summary["errors"]:
+                    st.error(err)
+
     needed_numeric = [
         "planned_qty",
         "planning_remaining_qty",
@@ -512,7 +529,7 @@ def main() -> None:
     status_cols_ru = [COLUMN_RU[c] for c in status_cols if c in COLUMN_RU]
     result_col_ru = COLUMN_RU["executability_result"]
 
-    def style_df(df_in: pd.DataFrame) -> pd.io.formats.style.Styler:
+    def style_df(df_in: pd.DataFrame):
         styler = df_in.style
         for col in status_cols_ru:
             if col in df_in.columns:

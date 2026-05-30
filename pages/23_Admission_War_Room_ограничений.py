@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import streamlit as st
 
+from services.monthly_passport_service import create_monthly_passport
 from services.supabase_client import supabase
 
 st.set_page_config(layout="wide")
@@ -305,6 +306,61 @@ def translate_resolution(series: pd.Series) -> pd.Series:
     )
 
 
+def render_passport_formation(project_sel: str, month_sel: str) -> None:
+    st.markdown("### Формирование паспорта месяца")
+    st.caption(
+        "После снятия HOLD/FAIL ограничений можно сформировать Approved Monthly Plan Passport. "
+        "В паспорт попадут только строки, готовые к выполнению, либо строки, допущенные "
+        "управленческим override."
+    )
+
+    if project_sel == "Все" or month_sel == "Все":
+        st.warning("Выберите конкретный проект и месяц для формирования паспорта.")
+        return
+
+    created_by = st.text_input(
+        "Кто утверждает (created_by / approved_by)",
+        value="Пользователь Streamlit",
+        key="passport_created_by",
+    )
+
+    if st.button("Сформировать Monthly Plan Passport", key="create_monthly_passport_btn"):
+        summary = create_monthly_passport(
+            project_code=project_sel,
+            month_key=month_sel,
+            created_by=created_by.strip() or "Пользователь Streamlit",
+        )
+        status = summary.get("status")
+
+        if status == "created":
+            st.success("Паспорт месяца сформирован")
+            c1, c2, c3, c4 = st.columns(4)
+            c5, c6, c7, c8 = st.columns(4)
+            c1.metric("passport_id", display_dash(summary.get("passport_id")))
+            c2.metric("Строк включено", summary.get("created_lines", 0))
+            c3.metric("Пропущено (BLOCKED)", summary.get("skipped_blocked", 0))
+            c4.metric("BLOCKED без override", summary.get("blocked_without_override", 0))
+            c5.metric("Override включено", summary.get("override_included_rows", 0))
+            c6.metric("Пропущено (ожидание)", summary.get("skipped_waiting", 0))
+            c7.metric("Стоимость плана", money_ru(summary.get("total_value")))
+            c8.metric("Трудозатраты, ч", f"{safe_num(summary.get('total_hours')):,.1f}".replace(",", " "))
+            st.cache_data.clear()
+        elif status == "already_exists":
+            st.info("Паспорт месяца уже существует")
+            st.caption(f"passport_id: {display_dash(summary.get('passport_id'))}")
+        elif status in ("no_eligible_lines", "no_source_rows", "no_approved_lines"):
+            st.warning("Нет строк, готовых для формирования паспорта месяца")
+        else:
+            st.error(f"Не удалось сформировать паспорт (status={status}).")
+
+        errors = summary.get("errors") or []
+        if errors:
+            for err in errors:
+                st.error(err)
+            with st.expander("Подробности ошибок"):
+                st.json(errors)
+
+
 def render_kpis(df: pd.DataFrame) -> None:
     total = len(df)
     open_cnt = (
@@ -546,12 +602,17 @@ def main() -> None:
         overdue_only,
     )
 
+    st.markdown("### KPI")
     if df.empty:
         st.info("По выбранным фильтрам ограничений нет.")
-        return
+    else:
+        render_kpis(df)
 
-    st.markdown("### KPI")
-    render_kpis(df)
+    st.markdown("---")
+    render_passport_formation(project_sel, month_sel)
+
+    if df.empty:
+        return
 
     st.markdown("---")
     render_department_summary(df)

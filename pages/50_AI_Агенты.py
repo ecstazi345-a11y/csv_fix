@@ -1,5 +1,11 @@
 import streamlit as st
 import pandas as pd
+from services.ai_router import (
+    TASK_ROUTING_POLICY,
+    get_available_providers,
+    route_task,
+    run_ai_task,
+)
 from services.supabase_client import supabase
 
 st.set_page_config(layout="wide")
@@ -317,6 +323,101 @@ def render_ai_status() -> None:
     )
 
 
+ROUTER_TASK_TYPES = [
+    "war_room_summary",
+    "bulk_classification",
+    "constraint_category_detection",
+    "official_letter_draft",
+    "contract_claim_analysis",
+    "simple_summary",
+]
+
+DEFAULT_ROUTER_PROMPT = (
+    "Проанализируй ограничения месяца и найди главный bottleneck."
+)
+
+
+def render_ai_router() -> None:
+    st.markdown("## AI Router / Multi-Model Routing")
+    st.caption(
+        "Маршрутизация AI-задач между провайдерами по типу задачи, "
+        "сложности и чувствительности данных."
+    )
+
+    st.info(
+        "Сейчас AI Router работает в mock-режиме: "
+        "реальные API не вызываются, токены не списываются."
+    )
+
+    st.markdown("### Статус AI-провайдеров")
+    providers = get_available_providers()
+    providers_df = pd.DataFrame(
+        [
+            {
+                "Провайдер": p["provider"],
+                "Доступен": "Подключен" if p["available"] else "Не подключен",
+                "Роль": p["role"],
+            }
+            for p in providers
+        ]
+    )
+    st.dataframe(providers_df, use_container_width=True, hide_index=True)
+
+    st.markdown("### Политика маршрутизации")
+    policy_df = pd.DataFrame(
+        [
+            {"Тип задачи": task_type, "Провайдер": provider}
+            for task_type, provider in TASK_ROUTING_POLICY.items()
+        ]
+    )
+    st.dataframe(policy_df, use_container_width=True, hide_index=True)
+
+    st.markdown("### Тест маршрутизации")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        task_type = st.selectbox("Тип задачи", ROUTER_TASK_TYPES, key="router_task_type")
+    with c2:
+        complexity = st.selectbox(
+            "Сложность", ["low", "medium", "high"], index=1, key="router_complexity"
+        )
+    with c3:
+        data_sensitivity = st.selectbox(
+            "Чувствительность данных",
+            ["normal", "ru_internal"],
+            key="router_data_sensitivity",
+        )
+
+    prompt = st.text_area(
+        "Промпт",
+        value=DEFAULT_ROUTER_PROMPT,
+        height=100,
+        key="router_prompt",
+    )
+
+    if st.button("Проверить маршрутизацию", key="router_test_btn"):
+        selected_provider = route_task(
+            task_type=task_type,
+            complexity=complexity,
+            data_sensitivity=data_sensitivity,
+        )
+        task_result = run_ai_task(
+            task_type=task_type,
+            prompt=prompt,
+            complexity=complexity,
+            data_sensitivity=data_sensitivity,
+        )
+
+        st.markdown("#### Результат маршрутизации")
+        r1, r2, r3, r4 = st.columns(4)
+        r1.metric("Провайдер", selected_provider)
+        r2.metric("Статус", task_result["status"])
+        r3.metric("Токены", task_result["tokens_used"])
+        r4.metric("Стоимость", f"{task_result['cost']:.2f} ₽")
+
+        st.markdown("**Ответ (mock):**")
+        st.code(task_result["result"])
+
+
 def render_roadmap() -> None:
     st.markdown("## Roadmap AI / Agent Harness")
 
@@ -336,10 +437,11 @@ def render_roadmap() -> None:
             c3.markdown(phase)
 
 
-tab1, tab2, tab3, tab4 = st.tabs(
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
     [
         "Каталог AI-агентов",
         "Agent Harness",
+        "AI Router",
         "Статус AI системы",
         "Roadmap",
     ]
@@ -352,7 +454,10 @@ with tab2:
     render_agent_harness()
 
 with tab3:
-    render_ai_status()
+    render_ai_router()
 
 with tab4:
+    render_ai_status()
+
+with tab5:
     render_roadmap()

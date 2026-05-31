@@ -81,7 +81,7 @@ SAVED_PLAN_DETAIL_COLUMNS = [
     "Объём",
     "Плановая стоимость, ₽",
     "Требуется чел-ч",
-    "Ставка чел-час",
+    "Норма",
     "Стоимость трудозатрат, ₽",
     "Сценарий нормы",
     "Статус строки",
@@ -102,6 +102,9 @@ SAVED_PLAN_SUMMARY_COLUMNS = [
 ]
 
 DRAFT_STATUS_RU_TO_CODE = {label: code for code, label in DRAFT_STATUS_RU.items()}
+
+# Статусы черновиков, резервирующих объём в AVAILABLE REMAINING
+RESERVING_DRAFT_STATUSES = ("DRAFT", "SENT_TO_REVIEW", "NEED_REVISION", "APPROVED")
 
 NORM_STATUS_OPTIONS = ["Все", "ИСТОРИЯ ЕСТЬ", "НЕТ ИСТОРИИ"]
 
@@ -370,6 +373,20 @@ def get_supabase_write_client() -> Client | None:
     return create_client(url, secret_key)
 
 
+def normalize_scope_merge_keys(df: pd.DataFrame) -> pd.DataFrame:
+    """Trim/normalize join keys for scope ↔ adjustments merge."""
+    if df.empty:
+        return df
+    out = df.copy()
+    key_cols = ["project_code", "facility_building", "construction_discipline", "boq_code"]
+    for col in key_cols:
+        if col in out.columns:
+            out[col] = out[col].astype(str).str.strip()
+            if col == "boq_code":
+                out[col] = out[col].str.upper()
+    return out
+
+
 @st.cache_data(ttl=300)
 def load_scope(limit: int = 10000) -> pd.DataFrame:
     response = supabase.table(SCOPE_VIEW).select("*").limit(limit).execute()
@@ -378,8 +395,10 @@ def load_scope(limit: int = 10000) -> pd.DataFrame:
 
 @st.cache_data(ttl=120)
 def load_adjustments(limit: int = 10000) -> pd.DataFrame:
+    """Anon key may be blocked by RLS — fallback to write client (service role)."""
+    client = get_supabase_write_client() or supabase
     try:
-        response = supabase.table(ADJUSTMENTS_TABLE).select("*").limit(limit).execute()
+        response = client.table(ADJUSTMENTS_TABLE).select("*").limit(limit).execute()
         return pd.DataFrame(response.data or [])
     except Exception:
         return pd.DataFrame()
@@ -683,7 +702,11 @@ def section_title(title: str) -> None:
 
 def highlight_remaining_row(row: pd.Series, selected_row_idx: int | None = None) -> pd.Series:
     styles = pd.Series("", index=row.index)
-    col_rem = "Остаток" if "Остаток" in row.index else "Остаток объёма"
+    col_rem = (
+        "Доступный остаток"
+        if "Доступный остаток" in row.index
+        else ("Остаток" if "Остаток" in row.index else "Остаток объёма")
+    )
     col_pct = "Остаток, %"
     if selected_row_idx is not None and row.name == selected_row_idx:
         styles[:] = "background-color: rgba(16, 185, 129, 0.10); color: #0f172a;"
@@ -701,7 +724,11 @@ def highlight_remaining_row(row: pd.Series, selected_row_idx: int | None = None)
 
 
 def apply_scope_table_style(display_df: pd.DataFrame, selected_row_idx: int | None = None):
-    rem_col = "Остаток" if "Остаток" in display_df.columns else "Остаток объёма"
+    rem_col = (
+        "Доступный остаток"
+        if "Доступный остаток" in display_df.columns
+        else ("Остаток" if "Остаток" in display_df.columns else "Остаток объёма")
+    )
     if rem_col in display_df.columns and "Остаток, %" in display_df.columns:
         return display_df.style.apply(
             lambda row: highlight_remaining_row(row, selected_row_idx=selected_row_idx),
@@ -818,6 +845,251 @@ def draft_item_key_parts(item: dict) -> tuple[str, str, str, str]:
     )
 
 
+def boq_key_parts_from_row(row: pd.Series | dict) -> tuple[str, str, str, str]:
+    if isinstance(row, pd.Series):
+        getter = row.get
+    else:
+        getter = row.get
+    return (
+        str(getter("project_code", "")).strip().upper(),
+        str(getter("facility_building", "")).strip().upper(),
+        str(getter("construction_discipline", "")).strip().upper(),
+        str(getter("boq_code", "")).strip().upper(),
+    )
+
+
+@st.cache_data(ttl=120)
+def _load_reserved_planned_qty_from_db(exclude_draft_id: str = "") -> dict[tuple[str, str, str, str], float]:
+    """Сумма planned_qty по сохранённым черновикам (кроме exclude_draft_id)."""
+    try:
+        drafts_resp = (
+            supabase.table("monthly_plan_drafts")
+            .select("draft_id")
+            .in_("draft_status", list(RESERVING_DRAFT_STATUSES))
+            .limit(5000)
+            .execute()
+        )
+        draft_ids = [
+            str(r.get("draft_id") or "")
+            for r in (drafts_resp.data or [])
+            if str(r.get("draft_id") or "") and str(r.get("draft_id") or "") != exclude_draft_id
+        ]
+        if not draft_ids:
+            return {}
+        lines_resp = (
+            supabase.table("monthly_plan_draft_lines")
+            .select(
+                "draft_id,project_code,facility_building,construction_discipline,boq_code,planned_qty"
+            )
+            .in_("draft_id", draft_ids)
+            .limit(50000)
+            .execute()
+        )
+    except Exception:
+        return {}
+
+    totals: dict[tuple[str, str, str, str], float] = {}
+    for line in lines_resp.data or []:
+        key = (
+            str(line.get("project_code") or "").strip().upper(),
+            str(line.get("facility_building") or "").strip().upper(),
+            str(line.get("construction_discipline") or "").strip().upper(),
+            str(line.get("boq_code") or "").strip().upper(),
+        )
+        totals[key] = totals.get(key, 0.0) + (safe_float(line.get("planned_qty")) or 0.0)
+    return totals
+
+
+@st.cache_data(ttl=120)
+def _load_boq_planning_usage_cache() -> list[dict]:
+    """Все строки резервирующих черновиков для блока «Использование в планах»."""
+    try:
+        drafts_resp = (
+            supabase.table("monthly_plan_drafts")
+            .select("draft_id,draft_status")
+            .in_("draft_status", list(RESERVING_DRAFT_STATUSES))
+            .limit(5000)
+            .execute()
+        )
+        draft_status = {
+            str(r.get("draft_id") or ""): str(r.get("draft_status") or "")
+            for r in (drafts_resp.data or [])
+            if str(r.get("draft_id") or "")
+        }
+        if not draft_status:
+            return []
+        lines_resp = (
+            supabase.table("monthly_plan_draft_lines")
+            .select(
+                "draft_id,project_code,facility_building,construction_discipline,boq_code,"
+                "month_key,crew_id,planned_qty"
+            )
+            .in_("draft_id", list(draft_status.keys()))
+            .limit(50000)
+            .execute()
+        )
+    except Exception:
+        return []
+
+    rows: list[dict] = []
+    for line in lines_resp.data or []:
+        did = str(line.get("draft_id") or "")
+        rows.append(
+            {
+                "project_code": line.get("project_code"),
+                "facility_building": line.get("facility_building"),
+                "construction_discipline": line.get("construction_discipline"),
+                "boq_code": line.get("boq_code"),
+                "month_key": line.get("month_key"),
+                "crew_id": line.get("crew_id"),
+                "planned_qty": line.get("planned_qty"),
+                "draft_status": draft_status.get(did, ""),
+            }
+        )
+    return rows
+
+
+def build_planned_qty_map(draft_items: list[dict] | None = None) -> dict[tuple[str, str, str, str], float]:
+    """Активный черновик + сохранённые черновики (без двойного учёта loaded draft_id)."""
+    totals: dict[tuple[str, str, str, str], float] = {}
+    session_draft: list[dict] = (
+        draft_items if draft_items is not None else st.session_state.get(DRAFT_KEY, [])
+    )
+    current_draft_id = str(st.session_state.get(SAVED_DRAFT_ID_KEY) or "")
+
+    for item in session_draft:
+        key = draft_item_key_parts(item)
+        totals[key] = totals.get(key, 0.0) + (safe_float(item.get("planned_qty")) or 0.0)
+
+    exclude_id = current_draft_id if session_draft and current_draft_id else ""
+    for key, qty in _load_reserved_planned_qty_from_db(exclude_id).items():
+        totals[key] = totals.get(key, 0.0) + qty
+    return totals
+
+
+def apply_available_remaining(
+    df: pd.DataFrame, planned_map: dict[tuple[str, str, str, str], float]
+) -> pd.DataFrame:
+    if df.empty:
+        return df
+    out = df.copy()
+    unit_price = (
+        pd.to_numeric(out["unit_price"], errors="coerce").fillna(0)
+        if "unit_price" in out.columns
+        else 0
+    )
+    p50 = (
+        pd.to_numeric(out["p50_hours_per_unit"], errors="coerce").fillna(0)
+        if "p50_hours_per_unit" in out.columns
+        else 0
+    )
+    available_qty: list[float] = []
+    for _, row in out.iterrows():
+        key = boq_key_parts_from_row(row)
+        project_rem = safe_float(row.get("planning_remaining_qty")) or 0.0
+        reserved = planned_map.get(key, 0.0)
+        available_qty.append(project_rem - reserved)
+    out["available_remaining_qty"] = available_qty
+    out["available_remaining_value"] = out["available_remaining_qty"] * unit_price
+    out["available_direct_hours"] = out["available_remaining_qty"] * p50
+    out["available_labor_cost"] = out["available_direct_hours"] * DEFAULT_LABOR_RATE_PER_HOUR
+    return out
+
+
+def norm_productivity_fmt(planned_qty, required_hours, unit_of_measure: str = "") -> str:
+    """Производительность: ед./чел-ч (фактически применённая по строке)."""
+    qty = safe_float(planned_qty) or 0.0
+    hours = safe_float(required_hours) or 0.0
+    if qty <= 0 or hours <= 0:
+        return "—"
+    rate = qty / hours
+    uom = str(unit_of_measure or "ед.").strip() or "ед."
+    return f"{rate:.2f} {uom}/чел-ч"
+
+
+def render_draft_executive_summary(draft: list[dict]) -> None:
+    if not draft:
+        return
+    months = {safe_str(d.get("month_key")) for d in draft if safe_str(d.get("month_key"))}
+    facilities = {safe_str(d.get("facility_building")) for d in draft if safe_str(d.get("facility_building"))}
+    month_label = next(iter(months), "—").upper() if len(months) == 1 else "Несколько месяцев"
+    facility_label = next(iter(facilities), "—").upper() if len(facilities) == 1 else "Несколько титулов"
+    st.markdown(f"#### {month_label} · {facility_label}")
+
+    boq_codes = {safe_str(d.get("boq_code")) for d in draft if safe_str(d.get("boq_code"))}
+    total_ev = sum(safe_num(d.get("plan_value")) for d in draft)
+    total_hours = sum(safe_num(d.get("required_hours")) for d in draft)
+    total_labor = sum(safe_num(d.get("labor_cost")) for d in draft)
+
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Кол-во BOQ кодов", len(boq_codes))
+    k2.metric("Кол-во строк", len(draft))
+    k3.metric("Плановая стоимость", money_ru(total_ev))
+    k4.metric("Direct hours", hours_fmt(total_hours))
+    k5.metric("Стоимость труда", money_ru(total_labor))
+
+    st.markdown("**Срез по звеньям**")
+    crew_rows: list[dict] = []
+    by_crew: dict[str, list[dict]] = {}
+    for item in draft:
+        crew = safe_str(item.get("crew_code")) or "—"
+        by_crew.setdefault(crew, []).append(item)
+    for crew, items in sorted(by_crew.items(), key=lambda x: x[0].casefold()):
+        crew_rows.append(
+            {
+                "Звено": crew,
+                "Строк": len(items),
+                "Qty": qty_fmt(sum(safe_num(i.get("planned_qty")) for i in items)),
+                "План ₽": money_ru(sum(safe_num(i.get("plan_value")) for i in items)),
+                "Чел-ч": hours_fmt(sum(safe_num(i.get("required_hours")) for i in items)),
+                "Стоимость труда ₽": money_ru(sum(safe_num(i.get("labor_cost")) for i in items)),
+            }
+        )
+    st.dataframe(pd.DataFrame(crew_rows), use_container_width=True, hide_index=True)
+
+
+def render_boq_planning_usage(row: pd.Series) -> None:
+    key = boq_key_parts_from_row(row)
+    usage_rows: list[dict] = []
+    current_draft_id = str(st.session_state.get(SAVED_DRAFT_ID_KEY) or "")
+
+    for item in st.session_state.get(DRAFT_KEY, []):
+        if boq_key_parts_from_row(item) != key:
+            continue
+        status = str(st.session_state.get(LOADED_DRAFT_STATUS_KEY) or "DRAFT")
+        usage_rows.append(
+            {
+                "Месяц": safe_str(item.get("month_key")) or "—",
+                "Титул": safe_str(item.get("facility_building")) or "—",
+                "Звено": safe_str(item.get("crew_code")) or "—",
+                "Qty": qty_fmt(item.get("planned_qty")),
+                "Статус": DRAFT_STATUS_RU.get(status, status or "Черновик (на экране)"),
+            }
+        )
+
+    for line in _load_boq_planning_usage_cache():
+        if boq_key_parts_from_row(line) != key:
+            continue
+        if current_draft_id and str(line.get("draft_id") or "") == current_draft_id:
+            continue
+        status_code = str(line.get("draft_status") or "")
+        usage_rows.append(
+            {
+                "Месяц": safe_str(line.get("month_key")) or "—",
+                "Титул": safe_str(line.get("facility_building")) or "—",
+                "Звено": safe_str(line.get("crew_id")) or "—",
+                "Qty": qty_fmt(line.get("planned_qty")),
+                "Статус": DRAFT_STATUS_RU.get(status_code, status_code or "—"),
+            }
+        )
+
+    with st.expander("Использование в планах", expanded=False):
+        if not usage_rows:
+            st.caption("Этот код ещё не распределён по сохранённым или активным черновикам.")
+        else:
+            st.dataframe(pd.DataFrame(usage_rows), use_container_width=True, hide_index=True)
+
+
 def draft_line_uid(item: dict) -> str:
     """Внутренний ключ строки UI-черновика для проверки полного дубликата."""
     qty = safe_float(item.get("planned_qty"))
@@ -857,7 +1129,9 @@ def validate_draft_for_save(draft: list[dict], source_df: pd.DataFrame) -> list[
         errors.append("Черновик пуст.")
         return errors
 
-    sum_by_key: dict[tuple[str, str, str, str], float] = {}
+    planned_map = build_planned_qty_map(draft)
+    draft_keys = {draft_item_key_parts(item) for item in draft}
+
     for idx, item in enumerate(draft, start=1):
         month = str(item.get("month_key") or "").strip()
         crew = str(item.get("crew_code") or "").strip()
@@ -872,17 +1146,18 @@ def validate_draft_for_save(draft: list[dict], source_df: pd.DataFrame) -> list[
         if not scenario:
             errors.append(f"Строка {idx}: не указан сценарий нормы.")
 
-        k = draft_item_key_parts(item)
-        sum_by_key[k] = sum_by_key.get(k, 0.0) + qty
-
-    for key_parts, qty_sum in sum_by_key.items():
+    for key_parts, reserved_total in planned_map.items():
+        if key_parts not in draft_keys:
+            continue
         src_row = source_row_by_key_parts(source_df, key_parts)
-        planning_max = safe_float(src_row.get("planning_remaining_qty")) if src_row is not None else None
-        if planning_max is not None and qty_sum > planning_max + 1e-9:
+        project_remaining = safe_float(src_row.get("planning_remaining_qty")) if src_row is not None else None
+        if project_remaining is not None and reserved_total > project_remaining + 1e-9:
             errors.append(
                 "Превышен доступный остаток по коду "
                 f"{key_parts[3]} ({key_parts[1]} / {key_parts[2]}): "
-                f"остаток {qty_fmt(planning_max)}, в черновике {qty_fmt(qty_sum)}."
+                f"остаток проекта {qty_fmt(project_remaining)}, "
+                f"уже запланировано {qty_fmt(reserved_total)}, "
+                f"доступно {qty_fmt(project_remaining - reserved_total)}."
             )
     return errors
 
@@ -1350,8 +1625,12 @@ def build_draft_lines_detail_df(lines: list[dict]) -> pd.DataFrame:
             "Объём": [qty_fmt(line.get("planned_qty")) for line in lines],
             "Плановая стоимость, ₽": [money(line.get("plan_value")) for line in lines],
             "Требуется чел-ч": [hours_fmt(line.get("required_hours")) for line in lines],
-            "Ставка чел-час": [
-                money_ru(safe_float(line.get("labor_rate_per_hour")) or DEFAULT_LABOR_RATE_PER_HOUR)
+            "Норма": [
+                norm_productivity_fmt(
+                    line.get("planned_qty"),
+                    line.get("required_hours"),
+                    line.get("unit_of_measure") or "",
+                )
                 for line in lines
             ],
             "Стоимость трудозатрат, ₽": [money(line.get("labor_cost")) for line in lines],
@@ -1706,6 +1985,13 @@ def render_saved_plans_block() -> None:
                     height=detail_height,
                     column_order=SAVED_PLAN_DETAIL_COLUMNS,
                 )
+                st.caption(
+                    "Итого: "
+                    f"строк {len(lines)} · "
+                    f"план {money_ru(sum(safe_num(l.get('plan_value')) for l in lines))} · "
+                    f"чел-ч {hours_fmt(sum(safe_num(l.get('required_hours')) for l in lines))} · "
+                    f"труд {money_ru(sum(safe_num(l.get('labor_cost')) for l in lines))}"
+                )
 
             btn_cols = st.columns(4)
             if draft_status == "DRAFT":
@@ -1793,13 +2079,14 @@ def merge_adjustments(scope: pd.DataFrame, adjustments: pd.DataFrame) -> pd.Data
         "construction_discipline",
         "boq_code",
     ]
+    df = normalize_scope_merge_keys(df)
     adj = adjustments.copy() if not adjustments.empty else pd.DataFrame()
     adj_applied = False
 
     if not adj.empty:
-        for col in merge_keys:
-            if col in adj.columns:
-                adj[col] = adj[col].astype(str).str.strip()
+        if "reason" in adj.columns and "adjustment_reason" not in adj.columns:
+            adj = adj.rename(columns={"reason": "adjustment_reason"})
+        adj = normalize_scope_merge_keys(adj)
         for col in ("manual_executed_before_system", "manual_verified_remaining_qty"):
             if col in adj.columns:
                 adj[col] = pd.to_numeric(adj[col], errors="coerce")
@@ -1840,10 +2127,18 @@ def merge_adjustments(scope: pd.DataFrame, adjustments: pd.DataFrame) -> pd.Data
         if col not in df.columns:
             df[col] = None
 
+    has_manual_adjustment = False
+    if "manual_executed_before_system" in df.columns:
+        has_manual_adjustment = has_manual_adjustment or (
+            pd.to_numeric(df["manual_executed_before_system"], errors="coerce").fillna(0) > 0
+        ).any()
+    if "manual_verified_remaining_qty" in df.columns:
+        has_manual_adjustment = has_manual_adjustment or df["manual_verified_remaining_qty"].notna().any()
+
     has_view_planning = (
         "planning_remaining_qty" in df.columns and df["planning_remaining_qty"].notna().any()
     )
-    need_planning_recalc = not has_view_planning or adj_applied
+    need_planning_recalc = not has_view_planning or adj_applied or has_manual_adjustment
 
     if need_planning_recalc:
         planning_qty = []
@@ -1870,14 +2165,8 @@ def merge_adjustments(scope: pd.DataFrame, adjustments: pd.DataFrame) -> pd.Data
     elif "remaining_qty_source" not in df.columns:
         df["remaining_qty_source"] = "SYSTEM_CALCULATED"
 
-    if "planning_remaining_value" not in df.columns:
-        unit_price = df["unit_price"].fillna(0) if "unit_price" in df.columns else 0
-        df["planning_remaining_value"] = df["planning_remaining_qty"] * unit_price
-    else:
-        unit_price = df["unit_price"].fillna(0) if "unit_price" in df.columns else 0
-        df["planning_remaining_value"] = df["planning_remaining_value"].fillna(
-            df["planning_remaining_qty"] * unit_price
-        )
+    unit_price = df["unit_price"].fillna(0) if "unit_price" in df.columns else 0
+    df["planning_remaining_value"] = df["planning_remaining_qty"] * unit_price
 
     p50 = df["p50_hours_per_unit"] if "p50_hours_per_unit" in df.columns else None
     p80 = df["p80_hours_per_unit"] if "p80_hours_per_unit" in df.columns else None
@@ -1949,7 +2238,12 @@ def apply_filters(
         )
         out = out[mask]
     if "planning_remaining_qty" in out.columns:
-        qty_num = pd.to_numeric(out["planning_remaining_qty"], errors="coerce")
+        qty_col = (
+            "available_remaining_qty"
+            if "available_remaining_qty" in out.columns
+            else "planning_remaining_qty"
+        )
+        qty_num = pd.to_numeric(out[qty_col], errors="coerce")
         if display_mode == "Только коды с остатком > 0":
             out = out[qty_num > 0]
         elif display_mode == "Закрытые коды = 0":
@@ -1960,9 +2254,14 @@ def apply_filters(
 
 
 def view_has_nonpositive_remaining(df: pd.DataFrame) -> bool:
-    if df.empty or "planning_remaining_qty" not in df.columns:
+    qty_col = (
+        "available_remaining_qty"
+        if "available_remaining_qty" in df.columns
+        else "planning_remaining_qty"
+    )
+    if df.empty or qty_col not in df.columns:
         return False
-    qty = pd.to_numeric(df["planning_remaining_qty"], errors="coerce")
+    qty = pd.to_numeric(df[qty_col], errors="coerce")
     return bool((qty <= 0).any())
 
 
@@ -2011,10 +2310,23 @@ def build_scope_table(df: pd.DataFrame) -> pd.DataFrame:
             "total_project_qty": 0,
             "executed_qty_all_time": 0,
             "planning_remaining_qty": 0,
+            "available_remaining_qty": 0,
+            "available_remaining_value": 0,
             "planning_remaining_value": 0,
             "norm_status": "",
             "remaining_qty_source": "",
         },
+    )
+
+    rem_qty = (
+        out["available_remaining_qty"]
+        if "available_remaining_qty" in out.columns
+        else out["planning_remaining_qty"]
+    )
+    rem_val = (
+        out["available_remaining_value"]
+        if "available_remaining_value" in out.columns
+        else out["planning_remaining_value"]
     )
 
     boq_names = pick_series(out, BOQ_NAME_FALLBACKS)
@@ -2027,14 +2339,15 @@ def build_scope_table(df: pd.DataFrame) -> pd.DataFrame:
             "Ед. изм.": uom.replace("", "—"),
             "Титул / объект": out["facility_building"],
             "Дисциплина": out["construction_discipline"],
-            "Остаток": out["planning_remaining_qty"].apply(qty_fmt),
+            "Доступный остаток": rem_qty.apply(qty_fmt),
             "Остаток, %": out.apply(
                 lambda r: percent_fmt(
-                    r.get("planning_remaining_qty"), r.get("total_project_qty")
+                    r.get("available_remaining_qty", r.get("planning_remaining_qty")),
+                    r.get("total_project_qty"),
                 ),
                 axis=1,
             ),
-            "Стоимость остатка": out["planning_remaining_value"].apply(money_ru),
+            "Стоимость остатка": rem_val.apply(money_ru),
             "Источник нормы / сценарий нормы": out.apply(scope_norm_source_label, axis=1),
             "_rk": out["_rk"],
         }
@@ -2062,19 +2375,22 @@ def save_adjustment(row: pd.Series, manual_exec, manual_verified, reason: str, c
         )
     payload = {
         "project_code": str(row.get("project_code", "")).strip(),
-        "facility_building": row.get("facility_building"),
-        "construction_discipline": row.get("construction_discipline"),
-        "boq_code": str(row.get("boq_code", "")).strip(),
+        "facility_building": str(row.get("facility_building") or "").strip(),
+        "construction_discipline": str(row.get("construction_discipline") or "").strip(),
+        "boq_code": str(row.get("boq_code", "")).strip().upper(),
         "manual_executed_before_system": safe_float(manual_exec),
         "manual_verified_remaining_qty": safe_float(manual_verified),
         "reason": reason.strip() if reason else None,
         "comment": comment.strip() if comment else None,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    return write_client.table(ADJUSTMENTS_TABLE).upsert(
+    resp = write_client.table(ADJUSTMENTS_TABLE).upsert(
         payload,
         on_conflict="project_code,facility_building,construction_discipline,boq_code",
     ).execute()
+    if getattr(resp, "error", None):
+        raise RuntimeError(f"Supabase upsert error: {resp.error}")
+    return resp
 
 
 def render_productivity_block(row: pd.Series) -> None:
@@ -2181,12 +2497,23 @@ def render_detail_card(row: pd.Series, crews: list[str]) -> None:
                 unsafe_allow_html=True,
             )
         with right_col:
+            key = boq_key_parts_from_row(row)
+            planned_map = build_planned_qty_map()
+            project_remaining = safe_float(row.get("planning_remaining_qty")) or 0.0
+            already_planned = planned_map.get(key, 0.0)
+            available_remaining = project_remaining - already_planned
             m1, m2 = st.columns(2)
             m3, m4 = st.columns(2)
             m1.metric("Всего", qty_fmt(row.get("total_project_qty")))
-            m2.metric("Выполнено", qty_fmt(row.get("executed_qty_all_time")))
-            m3.metric("Остаток", qty_fmt(row.get("planning_remaining_qty")))
-            m4.metric("Остаток, ₽", money_ru(row.get("planning_remaining_value")))
+            m2.metric("Выполнено (факт)", qty_fmt(row.get("executed_qty_all_time")))
+            m3.metric("Остаток проекта", qty_fmt(project_remaining))
+            m4.metric("Доступно к плану", qty_fmt(available_remaining))
+            st.caption(
+                f"Уже запланировано: {qty_fmt(already_planned)} · "
+                f"Стоимость доступного остатка: {money_ru(available_remaining * (safe_float(row.get('unit_price')) or 0))}"
+            )
+
+    render_boq_planning_usage(row)
 
     with st.expander("Историческая производительность", expanded=False):
         with st.container(border=True):
@@ -2263,12 +2590,19 @@ def render_detail_card(row: pd.Series, crews: list[str]) -> None:
             if st.button("Сохранить корректировку", key=f"save_adj_{rk}"):
                 try:
                     verified_val = inp_verified if inp_verified > 0 else None
-                    save_adjustment(row, inp_exec, verified_val, inp_reason, inp_comment)
+                    resp = save_adjustment(row, inp_exec, verified_val, inp_reason, inp_comment)
+                    load_scope.clear()
                     load_adjustments.clear()
-                    st.success("Корректировка сохранена.")
+                    saved = (resp.data or [{}])[0] if resp.data else {}
+                    st.success(
+                        "Корректировка сохранена: "
+                        f"до учёта {qty_fmt(saved.get('manual_executed_before_system', inp_exec))} · "
+                        f"ключ {saved.get('facility_building') or row.get('facility_building')} / "
+                        f"{saved.get('boq_code') or row.get('boq_code')}"
+                    )
                     st.rerun()
                 except Exception as exc:
-                    st.error(f"Ошибка сохранения: {exc}")
+                    st.error(f"Ошибка сохранения корректировки: {exc}")
 
     with st.expander("Добавить в черновик планирования", expanded=True):
         existing_month_keys = [
@@ -2325,10 +2659,12 @@ def render_detail_card(row: pd.Series, crews: list[str]) -> None:
             key=f"line_scope_note_{rk}",
         )
 
-        planning_max = safe_float(row.get("planning_remaining_qty")) or 0.0
+        project_remaining = safe_float(row.get("planning_remaining_qty")) or 0.0
         unit_price = safe_float(row.get("unit_price")) or 0.0
-        already_selected_qty = draft_planned_qty_for_boq(row)
-        available_to_add_qty = max(planning_max - already_selected_qty, 0.0)
+        boq_key = boq_key_parts_from_row(row)
+        planned_map = build_planned_qty_map()
+        already_planned = planned_map.get(boq_key, 0.0)
+        available_to_add_qty = max(project_remaining - already_planned, 0.0)
 
         scenario_code = {
             "Реалистичная норма (P50)": NORM_SCENARIO_REALISTIC,
@@ -2345,32 +2681,24 @@ def render_detail_card(row: pd.Series, crews: list[str]) -> None:
         labor_rate_per_hour = DEFAULT_LABOR_RATE_PER_HOUR
         labor_cost = (req_hours or 0.0) * labor_rate_per_hour
 
-        if plan_qty > planning_max > 0:
+        if plan_qty > available_to_add_qty + 1e-9 and plan_qty > 0:
             st.warning(
-                f"Плановый объём ({qty_fmt(plan_qty)}) больше остатка для планирования "
-                f"({qty_fmt(planning_max)})."
-            )
-        elif plan_qty > 0 and planning_max <= 0:
-            st.warning("Остаток для планирования равен нулю.")
-        if plan_qty > available_to_add_qty:
-            st.warning(
-                f"Плановый объём ({qty_fmt(plan_qty)}) больше доступного к добавлению "
+                f"Плановый объём ({qty_fmt(plan_qty)}) больше доступного к планированию "
                 f"({qty_fmt(available_to_add_qty)})."
             )
+        elif plan_qty > 0 and available_to_add_qty <= 0:
+            st.warning("Доступный остаток для планирования исчерпан.")
 
         lim1, lim2, lim3 = st.columns(3)
-        lim1.metric("Остаток для планирования", qty_fmt(planning_max))
-        lim2.metric("Уже выбрано в черновике", qty_fmt(already_selected_qty))
+        lim1.metric("Остаток проекта", qty_fmt(project_remaining))
+        lim2.metric("Уже запланировано", qty_fmt(already_planned))
         lim3.metric("Доступно к добавлению", qty_fmt(available_to_add_qty))
         st.caption(
-            "Если объём был запланирован в прошлом месяце, но не выполнен, он должен переноситься "
-            "как неосвоенный остаток прошлого плана. План сам по себе не уменьшает остаток BoQ — "
-            "остаток уменьшается только фактом Daily Progress или ручной корректировкой. "
-            "Если объём прошлого месяца не выполнен, он должен переноситься как неосвоенный остаток, "
-            "а не создаваться повторно сверх BoQ."
+            "AVAILABLE REMAINING = остаток проекта (факт исполнения) − уже запланировано "
+            "в активном и сохранённых черновиках. Признание заказчиком (КС) в расчёте не участвует."
         )
         if available_to_add_qty <= 0:
-            st.info("Весь доступный остаток по этому коду уже выбран в черновике.")
+            st.info("Весь доступный остаток по этому коду уже распределён по планам.")
 
         if hours_per_unit is not None and plan_qty > 0:
             st.caption(
@@ -2397,14 +2725,12 @@ def render_detail_card(row: pd.Series, crews: list[str]) -> None:
                 st.warning("Укажите плановый объём больше нуля.")
             elif not str(plan_month).strip():
                 st.warning("Укажите месяц планирования.")
-            elif planning_max > 0 and plan_qty > planning_max:
-                st.warning("Сначала уменьшите объём до остатка для планирования.")
-            elif plan_qty > available_to_add_qty:
+            elif plan_qty > available_to_add_qty + 1e-9:
                 st.error(
                     "Нельзя добавить объём больше доступного остатка. "
-                    f"Остаток по коду: {qty_fmt(planning_max)}, "
-                    f"уже в черновике: {qty_fmt(already_selected_qty)}, "
-                    f"доступно к добавлению: {qty_fmt(available_to_add_qty)}."
+                    f"Остаток проекта: {qty_fmt(project_remaining)}, "
+                    f"уже запланировано: {qty_fmt(already_planned)}, "
+                    f"доступно: {qty_fmt(available_to_add_qty)}."
                 )
             else:
                 draft_item = {
@@ -2440,6 +2766,15 @@ def build_draft_display_df(draft: list[dict]) -> pd.DataFrame:
     rows: list[dict] = []
     for item in draft:
         scenario_code = item.get("norm_scenario")
+        norm_value = norm_productivity_fmt(
+            item.get("planned_qty"),
+            item.get("required_hours"),
+            pick_field(item, UOM_FALLBACKS),
+        )
+        scenario_label = norm_scenario_display(scenario_code)
+        norm_cell = (
+            f"{norm_value} · {scenario_label}" if norm_value != "—" else scenario_label
+        )
         rows.append(
             {
                 "Код BOQ": pick_field(item, ("boq_code",)),
@@ -2453,9 +2788,7 @@ def build_draft_display_df(draft: list[dict]) -> pd.DataFrame:
                 "Объём": qty_fmt(item.get("planned_qty")),
                 "Плановая стоимость, ₽": money_ru(item.get("plan_value")),
                 "Требуется чел-ч": hours_fmt(item.get("required_hours")),
-                "Ставка чел-час": money_ru(
-                    safe_float(item.get("labor_rate_per_hour")) or DEFAULT_LABOR_RATE_PER_HOUR
-                ),
+                "Норма": norm_cell,
                 "Стоимость трудозатрат, ₽": money_ru(item.get("labor_cost")),
                 "Сценарий нормы": norm_scenario_display(scenario_code),
                 "Статус строки": safe_str(item.get("line_status")) or "DRAFT",
@@ -2493,21 +2826,6 @@ def draft_table_height(row_count: int) -> int:
     if row_count <= 0:
         return 260
     return min(650, max(260, 90 + row_count * 35))
-
-
-def render_draft_totals_compact(draft: list[dict]) -> None:
-    total_ev = sum(safe_num(x.get("plan_value")) for x in draft)
-    total_hours = sum(safe_num(x.get("required_hours")) for x in draft)
-    total_labor_cost = sum(safe_num(x.get("labor_cost")) for x in draft)
-    crews = {safe_str(x.get("crew_code")) for x in draft if safe_str(x.get("crew_code"))}
-    st.caption(
-        "**Итого по черновику:** "
-        f"строк {len(draft)} · "
-        f"плановая стоимость {money_ru(total_ev)} · "
-        f"чел-ч {hours_fmt(total_hours)} · "
-        f"трудозатраты {money_ru(total_labor_cost)} · "
-        f"звеньев {len(crews)}"
-    )
 
 
 def render_draft_primary_actions(draft: list[dict], source_df: pd.DataFrame) -> None:
@@ -2548,6 +2866,8 @@ def render_draft_primary_actions(draft: list[dict], source_df: pd.DataFrame) -> 
                         if update_id
                         else "Черновик сохранён в Supabase."
                     )
+                    _load_reserved_planned_qty_from_db.clear()
+                    _load_boq_planning_usage_cache.clear()
                 except Exception as exc:
                     st.error(f"Ошибка сохранения черновика: {exc}")
     with b4:
@@ -2660,7 +2980,7 @@ def render_draft_panel(source_df: pd.DataFrame, crews: list[str]):
     if not draft:
         st.caption("Черновик пуст. Добавьте позиции из карточки кода.")
     else:
-        render_draft_kpis(draft)
+        render_draft_executive_summary(draft)
 
         months_options = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
         if edit_mode:
@@ -2753,8 +3073,6 @@ def render_draft_panel(source_df: pd.DataFrame, crews: list[str]):
                 height=table_height,
             )
 
-        render_draft_totals_compact(draft)
-
         if not edit_mode and not view_only:
             render_draft_primary_actions(draft, source_df)
             with st.expander("Дополнительные операции с черновиком", expanded=False):
@@ -2800,26 +3118,28 @@ def render_draft_panel(source_df: pd.DataFrame, crews: list[str]):
                 st.error("Для ручного сценария необходимо указать ручную норму.")
             else:
                 has_empty_crew = any(not str(x.get("crew_code") or "").strip() for x in updated_items)
-                # Validate sum by BoQ key against planning remaining and recalc EV/hours.
-                sum_by_key: dict[tuple[str, str, str, str], float] = {}
-                for item in updated_items:
-                    k = draft_item_key_parts(item)
-                    sum_by_key[k] = sum_by_key.get(k, 0.0) + (safe_float(item.get("planned_qty")) or 0.0)
-
+                planned_map = build_planned_qty_map(updated_items)
+                updated_keys = {draft_item_key_parts(x) for x in updated_items}
                 exceeded = None
-                for key_parts, qty_sum in sum_by_key.items():
+                for key_parts, reserved_total in planned_map.items():
+                    if key_parts not in updated_keys:
+                        continue
                     src_row = source_row_by_key_parts(source_df, key_parts)
-                    planning_max = safe_float(src_row.get("planning_remaining_qty")) if src_row is not None else None
-                    if planning_max is not None and qty_sum > planning_max + 1e-9:
-                        exceeded = (key_parts, planning_max, qty_sum)
+                    project_remaining = (
+                        safe_float(src_row.get("planning_remaining_qty")) if src_row is not None else None
+                    )
+                    if project_remaining is not None and reserved_total > project_remaining + 1e-9:
+                        exceeded = (key_parts, project_remaining, reserved_total)
                         break
 
                 if exceeded is not None:
-                    key_parts, planning_max, qty_sum = exceeded
+                    key_parts, project_remaining, reserved_total = exceeded
                     st.error(
-                        "После редактирования черновик превышает доступный остаток по коду "
+                        "После редактирования превышен доступный остаток по коду "
                         f"{key_parts[3]} ({key_parts[1]} / {key_parts[2]}): "
-                        f"остаток {qty_fmt(planning_max)}, в черновике {qty_fmt(qty_sum)}."
+                        f"остаток проекта {qty_fmt(project_remaining)}, "
+                        f"запланировано {qty_fmt(reserved_total)}, "
+                        f"доступно {qty_fmt(project_remaining - reserved_total)}."
                     )
                 else:
                     for item in updated_items:
@@ -2884,6 +3204,8 @@ if scope_raw.empty:
     st.stop()
 
 data = merge_adjustments(scope_raw, adjustments_raw)
+planned_qty_map = build_planned_qty_map()
+data = apply_available_remaining(data, planned_qty_map)
 
 f1, f2, f3, f4, f5, f6 = st.columns([1.1, 1.1, 1.1, 1.0, 1.3, 1.2])
 with f1:
@@ -2991,8 +3313,11 @@ else:
         page_slice = work_df.iloc[page_start : page_start + SCOPE_TABLE_PAGE_SIZE]
         for _, prow in page_slice.iterrows():
             prk = prow["_rk"]
-            pct = percent_fmt(prow.get("planning_remaining_qty"), prow.get("total_project_qty"))
-            rem = qty_fmt(prow.get("planning_remaining_qty"))
+            pct = percent_fmt(
+                prow.get("available_remaining_qty", prow.get("planning_remaining_qty")),
+                prow.get("total_project_qty"),
+            )
+            rem = qty_fmt(prow.get("available_remaining_qty", prow.get("planning_remaining_qty")))
             btn_cols = st.columns([2.2, 3.5, 1.2, 1.2, 1.0, 0.9])
             btn_cols[0].markdown(f"**{prow.get('boq_code')}**")
             btn_cols[1].caption(str(prow.get("boq_name") or "")[:70])

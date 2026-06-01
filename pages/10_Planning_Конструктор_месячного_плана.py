@@ -88,18 +88,18 @@ SAVED_PLAN_DETAIL_COLUMNS = [
 ]
 
 SAVED_PLAN_SUMMARY_COLUMNS = [
-    "Проект",
-    "Месяц",
-    "Титул",
-    "Дисциплина",
-    "Статус",
+    "draft_id",
+    "project_code",
+    "Месяц (сводка)",
+    "Титул (сводка)",
+    "Дисциплина (сводка)",
+    "draft_status",
     "Строк",
     "Плановая стоимость, ₽",
-    "Чел-часы",
-    "Трудозатраты, ₽",
     "Создан",
-    "draft_id",
 ]
+
+SAVED_DRAFT_DELETE_PREVIEW_COLUMNS = SAVED_PLAN_SUMMARY_COLUMNS
 
 DRAFT_STATUS_RU_TO_CODE = {label: code for code, label in DRAFT_STATUS_RU.items()}
 
@@ -124,6 +124,14 @@ DISPLAY_MODE_OPTIONS = [
     "Закрытые коды = 0",
     "Перевыполненные коды < 0",
 ]
+
+# Очередь строительства → титулы (facility_building). Пустой список = все титулы.
+CONSTRUCTION_STAGE_MAP: dict[str, list[str]] = {
+    "Все очереди": [],
+    "1-я очередь строительства": ["16160-13", "16160-17"],
+    "2-я очередь строительства": ["26160-13", "26160-17"],
+}
+CONSTRUCTION_STAGE_OPTIONS = list(CONSTRUCTION_STAGE_MAP.keys())
 
 CONFIDENCE_RU = {
     "HIGH": ("Данных достаточно", "badge-conf-high"),
@@ -302,36 +310,6 @@ st.markdown(
     }
     [data-testid="stDataFrame"] canvas {
         accent-color: rgb(16, 185, 129) !important;
-    }
-    /* Saved drafts delete — neutral checkbox and button (no emerald accent) */
-    div[data-testid="stExpander"]:has(.saved-drafts-delete-marker) div[data-testid="stCheckbox"] [data-baseweb="checkbox"] input:checked + div {
-        border-color: rgb(151, 166, 195) !important;
-        box-shadow: inset 0 0 0 6px rgb(38, 39, 48) !important;
-        background-color: rgb(255, 255, 255) !important;
-    }
-    div[data-testid="stExpander"]:has(.saved-drafts-delete-marker) div[data-testid="stCheckbox"] [data-baseweb="checkbox"] input:hover + div {
-        border-color: rgb(151, 166, 195) !important;
-    }
-    div[data-testid="stExpander"]:has(.saved-drafts-delete-marker) div[data-testid="stCheckbox"] input:focus-visible + div {
-        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.12) !important;
-        border-color: rgb(151, 166, 195) !important;
-    }
-    div[data-testid="stExpander"]:has(.saved-drafts-delete-marker) div[data-testid="stButton"] button {
-        background: #fafafa !important;
-        color: #27272a !important;
-        border: 1px solid #d4d4d8 !important;
-        font-weight: 500 !important;
-    }
-    div[data-testid="stExpander"]:has(.saved-drafts-delete-marker) div[data-testid="stButton"] button:hover:not(:disabled) {
-        background: #f4f4f5 !important;
-        border-color: #a1a1aa !important;
-        color: #18181b !important;
-    }
-    div[data-testid="stExpander"]:has(.saved-drafts-delete-marker) div[data-testid="stButton"] button:disabled {
-        background: #f4f4f5 !important;
-        color: #a1a1aa !important;
-        border-color: #e4e4e7 !important;
-        cursor: not-allowed !important;
     }
     </style>
     """,
@@ -1388,6 +1366,409 @@ def revoke_draft_from_review(draft_id: str) -> None:
     ).eq("draft_id", draft_id).execute()
 
 
+def _delete_count_rows(response: Any) -> int:
+    data = getattr(response, "data", None)
+    if isinstance(data, list):
+        return len(data)
+    return 0
+
+
+def _is_missing_column_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "does not exist" in msg or ("column" in msg and "unknown" in msg)
+
+
+# Поля monthly_plan_review_queue, используемые в этом файле (insert/select/update):
+# draft_id, line_id, project_code, month_key, facility_building, construction_discipline,
+# boq_code, boq_name, crew_id, planned_qty, plan_value, required_hours, labor_rate_per_hour,
+# labor_cost, review_status, check_*_status. Колонки id / source_line_id / plan_line_id
+# в коде не используются. review_id — в constraints_service и passport; в insert очереди нет.
+REVIEW_QUEUE_DELETE_FIELDS = ("line_id", "review_id")
+
+
+def _fetch_review_queue_link_ids(client: Client, draft_id: str) -> tuple[list[str], list[str]]:
+    """Читает line_id/review_id очереди по draft_id; пропускает отсутствующие колонки."""
+    line_ids: list[str] = []
+    review_ids: list[str] = []
+    select_variants = (
+        ",".join(REVIEW_QUEUE_DELETE_FIELDS),
+        "line_id",
+        "*",
+    )
+    for cols in select_variants:
+        try:
+            resp = (
+                client.table("monthly_plan_review_queue")
+                .select(cols)
+                .eq("draft_id", draft_id)
+                .limit(10000)
+                .execute()
+            )
+        except Exception as exc:  # noqa: BLE001
+            if _is_missing_column_error(exc):
+                continue
+            break
+        for row in resp.data or []:
+            lid = str(row.get("line_id") or "").strip()
+            if lid:
+                line_ids.append(lid)
+            rid = str(row.get("review_id") or "").strip()
+            if rid:
+                review_ids.append(rid)
+        break
+    return line_ids, review_ids
+
+
+def _delete_constraints_for_draft(
+    client: Client,
+    draft_id: str,
+    draft_line_ids: list[str],
+    review_line_ids: list[str],
+    review_ids: list[str],
+) -> int:
+    """
+    Удаляет constraints только для выбранного draft_id.
+    Каждый способ в try/except; отсутствие колонки — не fatal.
+    """
+    deleted = 0
+    chunk_size = 200
+    line_ids_union = list(
+        dict.fromkeys(
+            [lid for lid in draft_line_ids + review_line_ids if lid]
+        )
+    )
+
+    try:
+        resp = (
+            client.table("monthly_plan_constraints")
+            .delete()
+            .eq("draft_id", draft_id)
+            .execute()
+        )
+        deleted += _delete_count_rows(resp)
+    except Exception as exc:  # noqa: BLE001
+        if not _is_missing_column_error(exc):
+            pass
+
+    if line_ids_union:
+        for offset in range(0, len(line_ids_union), chunk_size):
+            chunk = line_ids_union[offset : offset + chunk_size]
+            try:
+                resp = (
+                    client.table("monthly_plan_constraints")
+                    .delete()
+                    .eq("draft_id", draft_id)
+                    .in_("line_id", chunk)
+                    .execute()
+                )
+                deleted += _delete_count_rows(resp)
+            except Exception as exc:  # noqa: BLE001
+                if _is_missing_column_error(exc):
+                    try:
+                        resp = (
+                            client.table("monthly_plan_constraints")
+                            .delete()
+                            .in_("line_id", chunk)
+                            .execute()
+                        )
+                        deleted += _delete_count_rows(resp)
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            for link_field in ("source_line_id", "plan_line_id"):
+                try:
+                    resp = (
+                        client.table("monthly_plan_constraints")
+                        .delete()
+                        .eq("draft_id", draft_id)
+                        .in_(link_field, chunk)
+                        .execute()
+                    )
+                    deleted += _delete_count_rows(resp)
+                except Exception:  # noqa: BLE001
+                    continue
+
+    unique_review_ids = list(dict.fromkeys(review_ids))
+    if unique_review_ids:
+        for offset in range(0, len(unique_review_ids), chunk_size):
+            chunk = unique_review_ids[offset : offset + chunk_size]
+            try:
+                resp = (
+                    client.table("monthly_plan_constraints")
+                    .delete()
+                    .eq("draft_id", draft_id)
+                    .in_("review_id", chunk)
+                    .execute()
+                )
+                deleted += _delete_count_rows(resp)
+            except Exception as exc:  # noqa: BLE001
+                if _is_missing_column_error(exc):
+                    try:
+                        resp = (
+                            client.table("monthly_plan_constraints")
+                            .delete()
+                            .in_("review_id", chunk)
+                            .execute()
+                        )
+                        deleted += _delete_count_rows(resp)
+                    except Exception:  # noqa: BLE001
+                        pass
+
+    for queue_link_field in ("review_queue_id",):
+        try:
+            resp = (
+                client.table("monthly_plan_constraints")
+                .delete()
+                .eq("draft_id", draft_id)
+                .in_(queue_link_field, unique_review_ids)
+                .execute()
+            )
+            deleted += _delete_count_rows(resp)
+        except Exception:  # noqa: BLE001
+            continue
+
+    return deleted
+
+
+def _draft_has_approved_passport(client: Client, draft_id: str, line_ids: list[str]) -> bool:
+    try:
+        by_draft = (
+            client.table("monthly_plan_passports")
+            .select("passport_id")
+            .eq("draft_id", draft_id)
+            .eq("passport_status", "APPROVED")
+            .limit(1)
+            .execute()
+        )
+        if by_draft.data:
+            return True
+    except Exception:  # noqa: BLE001
+        return True
+
+    if not line_ids:
+        return False
+
+    chunk_size = 200
+    for offset in range(0, len(line_ids), chunk_size):
+        chunk = line_ids[offset : offset + chunk_size]
+        try:
+            lines_resp = (
+                client.table("monthly_plan_passport_lines")
+                .select("passport_id")
+                .in_("line_id", chunk)
+                .limit(10000)
+                .execute()
+            )
+        except Exception:  # noqa: BLE001
+            return True
+
+        passport_ids = list(
+            {
+                str(row.get("passport_id") or "")
+                for row in (lines_resp.data or [])
+                if row.get("passport_id")
+            }
+        )
+        if not passport_ids:
+            continue
+
+        for pid_offset in range(0, len(passport_ids), chunk_size):
+            pid_chunk = passport_ids[pid_offset : pid_offset + chunk_size]
+            try:
+                approved_resp = (
+                    client.table("monthly_plan_passports")
+                    .select("passport_id")
+                    .in_("passport_id", pid_chunk)
+                    .eq("passport_status", "APPROVED")
+                    .limit(1)
+                    .execute()
+                )
+            except Exception:  # noqa: BLE001
+                return True
+            if approved_resp.data:
+                return True
+    return False
+
+
+def delete_monthly_plan_draft_cascade(draft_id: str) -> dict[str, Any]:
+    """
+    Удаляет черновик и связанные записи строго по draft_id.
+    Идемпотентен: повторный вызов для отсутствующего draft_id не падает.
+    """
+    draft_id = str(draft_id or "").strip()
+    summary: dict[str, Any] = {
+        "draft_id": draft_id,
+        "deleted_constraints_count": 0,
+        "deleted_review_queue_count": 0,
+        "deleted_draft_lines_count": 0,
+        "deleted_draft_count": 0,
+        "skipped_reason": None,
+    }
+    if not draft_id:
+        summary["skipped_reason"] = "Пустой draft_id"
+        return summary
+
+    write_client = get_supabase_write_client()
+    if write_client is None:
+        summary["skipped_reason"] = "SUPABASE_SECRET_KEY не задан в .env — удаление недоступно"
+        return summary
+
+    try:
+        draft_resp = (
+            write_client.table("monthly_plan_drafts")
+            .select("draft_id,draft_status")
+            .eq("draft_id", draft_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        summary["skipped_reason"] = f"Ошибка чтения черновика: {exc}"
+        return summary
+
+    draft_rows = draft_resp.data or []
+    if not draft_rows:
+        summary["skipped_reason"] = "Черновик не найден (возможно, уже удалён)"
+        return summary
+
+    draft_status = str(draft_rows[0].get("draft_status") or "")
+    if draft_status == "APPROVED":
+        summary["skipped_reason"] = "Статус APPROVED — удаление запрещено"
+        return summary
+
+    try:
+        lines_resp = (
+            write_client.table("monthly_plan_draft_lines")
+            .select("line_id")
+            .eq("draft_id", draft_id)
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        summary["skipped_reason"] = f"Ошибка чтения строк черновика: {exc}"
+        return summary
+
+    line_ids = [
+        str(row.get("line_id") or "")
+        for row in (lines_resp.data or [])
+        if str(row.get("line_id") or "").strip()
+    ]
+
+    if _draft_has_approved_passport(write_client, draft_id, line_ids):
+        summary["skipped_reason"] = (
+            "Есть утверждённый Monthly Plan Passport, связанный с этим draft_id"
+        )
+        return summary
+
+    review_line_ids, review_ids = _fetch_review_queue_link_ids(write_client, draft_id)
+    summary["deleted_constraints_count"] = _delete_constraints_for_draft(
+        write_client,
+        draft_id,
+        line_ids,
+        review_line_ids,
+        review_ids,
+    )
+
+    try:
+        rq_del = (
+            write_client.table("monthly_plan_review_queue")
+            .delete()
+            .eq("draft_id", draft_id)
+            .execute()
+        )
+        summary["deleted_review_queue_count"] = _delete_count_rows(rq_del)
+    except Exception as exc:  # noqa: BLE001
+        summary["skipped_reason"] = f"Ошибка удаления очереди допуска: {exc}"
+        return summary
+
+    try:
+        lines_del = (
+            write_client.table("monthly_plan_draft_lines")
+            .delete()
+            .eq("draft_id", draft_id)
+            .execute()
+        )
+        summary["deleted_draft_lines_count"] = _delete_count_rows(lines_del)
+    except Exception as exc:  # noqa: BLE001
+        summary["skipped_reason"] = f"Ошибка удаления строк черновика: {exc}"
+        return summary
+
+    try:
+        draft_del = (
+            write_client.table("monthly_plan_drafts")
+            .delete()
+            .eq("draft_id", draft_id)
+            .execute()
+        )
+        summary["deleted_draft_count"] = _delete_count_rows(draft_del)
+    except Exception as exc:  # noqa: BLE001
+        summary["skipped_reason"] = f"Ошибка удаления черновика: {exc}"
+        return summary
+
+    if summary["deleted_draft_count"] == 0:
+        summary["skipped_reason"] = "Запись monthly_plan_drafts не удалена"
+    return summary
+
+
+def clear_session_if_deleted_draft(deleted_draft_ids: list[str]) -> None:
+    deleted_set = {str(d) for d in deleted_draft_ids if d}
+    if not deleted_set:
+        return
+    current_id = str(st.session_state.get(SAVED_DRAFT_ID_KEY) or "")
+    source_id = str(st.session_state.get(SOURCE_DRAFT_ID_KEY) or "")
+    if current_id in deleted_set:
+        st.session_state[SAVED_DRAFT_ID_KEY] = None
+        st.session_state[LOADED_DRAFT_STATUS_KEY] = None
+        st.session_state[DRAFT_VIEW_ONLY_KEY] = False
+        st.session_state[DRAFT_EDIT_MODE_KEY] = False
+        st.session_state[DRAFT_KEY] = []
+    if source_id in deleted_set:
+        st.session_state[SOURCE_DRAFT_ID_KEY] = None
+
+
+def saved_draft_delete_label(row: dict) -> str:
+    created = _format_draft_created_at(row.get("created_at"))
+    status = str(row.get("status_label") or row.get("draft_status") or "—")
+    title = str(row.get("facility_label") or "—")
+    month = str(row.get("month_label") or "—")
+    discipline = str(row.get("discipline_label") or "—")
+    line_count = int(row.get("rows_count") or 0)
+    total_cost = money_ru(row.get("total_plan_value"))
+    did = str(row.get("draft_id") or "")
+    return (
+        f"{created} | {status} | {title} | {month} | {discipline} | "
+        f"строк: {line_count} | сумма: {total_cost} | draft_id: {did}"
+    )
+
+
+def saved_draft_preview_row(row: dict) -> dict:
+    month_label = str(row.get("month_label") or "—")
+    facility_label = str(row.get("facility_label") or "—")
+    discipline_label = str(row.get("discipline_label") or "—")
+    month_key = str(row.get("month_key") or "").strip()
+    month_display = month_label
+    if month_key and month_key.upper() != "MIXED" and month_label not in ("—", month_key):
+        month_display = f"{month_label} ({month_key})"
+    elif month_key and month_key.upper() == "MIXED":
+        month_display = f"{month_label} (month_key: MIXED)"
+    return {
+        "draft_id": str(row.get("draft_id") or ""),
+        "project_code": str(row.get("project_code") or "—"),
+        "Месяц (сводка)": month_display,
+        "Титул (сводка)": facility_label,
+        "Дисциплина (сводка)": discipline_label,
+        "draft_status": str(row.get("draft_status") or "—"),
+        "Строк": int(row.get("rows_count") or 0),
+        "Плановая стоимость, ₽": money_ru(row.get("total_plan_value")),
+        "Создан": _format_draft_created_at(row.get("created_at")),
+    }
+
+
+def build_saved_drafts_preview_df(rows: list[dict]) -> pd.DataFrame:
+    if not rows:
+        return pd.DataFrame(columns=SAVED_DRAFT_DELETE_PREVIEW_COLUMNS)
+    preview = pd.DataFrame([saved_draft_preview_row(row) for row in rows])
+    return preview.reindex(columns=SAVED_DRAFT_DELETE_PREVIEW_COLUMNS)
+
+
 def maybe_supersede_source_draft(source_draft_id: str) -> None:
     write_client = get_supabase_write_client()
     if write_client is None or not source_draft_id:
@@ -1882,21 +2263,13 @@ def render_saved_plans_block() -> None:
         st.caption("Нет сохранённых планов по выбранным фильтрам.")
         return
 
-    summary = pd.DataFrame(
-        {
-            "Проект": view_df["project_code"].tolist(),
-            "Месяц": view_df["month_label"].tolist(),
-            "Титул": view_df["facility_label"].tolist(),
-            "Дисциплина": view_df["discipline_label"].tolist(),
-            "Статус": view_df["status_label"].tolist(),
-            "Строк": view_df["rows_count"].tolist(),
-            "Плановая стоимость, ₽": [money_ru(v) for v in view_df["total_plan_value"].tolist()],
-            "Чел-часы": [hours_fmt(v) for v in view_df["total_required_hours"].tolist()],
-            "Трудозатраты, ₽": [money_ru(v) for v in view_df["total_labor_cost"].tolist()],
-            "Создан": [_format_draft_created_at(v) for v in view_df["created_at"].tolist()],
-            "draft_id": view_df["draft_id"].tolist(),
-        }
-    ).reindex(columns=SAVED_PLAN_SUMMARY_COLUMNS)
+    summary_rows = [saved_draft_preview_row(dict(row)) for _, row in view_df.iterrows()]
+    summary = build_saved_drafts_preview_df(summary_rows)
+    st.caption(
+        "Каждая строка — один черновик (один draft_id). "
+        "«Несколько месяцев» / «Несколько титулов» / «Несколько дисциплин» означает, "
+        "что внутри этого draft_id строки плана относятся к разным месяцам или объектам."
+    )
     st.dataframe(
         summary,
         use_container_width=True,
@@ -1905,48 +2278,92 @@ def render_saved_plans_block() -> None:
         column_order=SAVED_PLAN_SUMMARY_COLUMNS,
     )
 
-    delete_options: dict[str, str] = {}
+    delete_candidate_rows: list[dict] = []
+    delete_draft_ids: list[str] = []
+    delete_row_by_id: dict[str, dict] = {}
     for _, row in view_df.iterrows():
         draft_id = str(row.get("draft_id") or "")
         if not draft_id:
             continue
-        label = (
-            f"{row.get('project_code') or '—'} · {row.get('month_label') or '—'} · "
-            f"{row.get('facility_label') or '—'} · {row.get('discipline_label') or '—'} · "
-            f"{int(row.get('rows_count') or 0)} строк · {money_ru(row.get('total_plan_value'))} · "
-            f"{row.get('status_label') or '—'}"
-        )
-        delete_options[label] = draft_id
+        delete_draft_ids.append(draft_id)
+        row_dict = dict(row)
+        delete_candidate_rows.append(row_dict)
+        delete_row_by_id[draft_id] = row_dict
 
     with st.expander("Удаление сохранённых черновиков", expanded=False):
-        st.markdown('<span class="saved-drafts-delete-marker"></span>', unsafe_allow_html=True)
-        if delete_options:
-            selected_delete_labels = st.multiselect(
-                "Выберите черновики / планы для удаления",
-                options=list(delete_options.keys()),
+        st.caption(
+            "Удаляются только явно выбранные draft_id вместе со строками плана, "
+            "записями очереди допуска и ограничениями этого черновика. "
+            "Фильтры месяца / титула / дисциплины на удаление не влияют."
+        )
+        if delete_draft_ids:
+            selected_draft_ids = st.multiselect(
+                "Выберите draft_id для удаления",
+                options=delete_draft_ids,
+                format_func=lambda did: saved_draft_delete_label(
+                    delete_row_by_id.get(str(did), {"draft_id": did})
+                ),
                 key="saved_drafts_delete_select",
             )
-            if selected_delete_labels:
-                for label in selected_delete_labels:
-                    st.caption(f"• {label}")
-            confirm_saved_delete = st.checkbox(
-                "Я понимаю, что удаляю выбранные черновики / планы",
-                key="saved_drafts_delete_confirm",
+            st.warning("Для удаления введите: УДАЛИТЬ")
+            st.caption(
+                "Будут удалены только выбранные draft_id вместе со связанными "
+                "строками, очередью допуска и ограничениями."
             )
+            confirm_delete_text = st.text_input(
+                "Подтверждение удаления",
+                placeholder="Введите УДАЛИТЬ",
+                key="delete_saved_drafts_confirm_text",
+            )
+            if selected_draft_ids:
+                st.write("Будут удалены только следующие draft_id:")
+                preview_rows = [
+                    r for r in delete_candidate_rows if str(r.get("draft_id")) in selected_draft_ids
+                ]
+                st.dataframe(
+                    build_saved_drafts_preview_df(preview_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_order=SAVED_DRAFT_DELETE_PREVIEW_COLUMNS,
+                )
+                st.caption(
+                    "Будут удалены: monthly_plan_drafts, monthly_plan_draft_lines, "
+                    "monthly_plan_review_queue и monthly_plan_constraints, "
+                    "связанные только с выбранными draft_id."
+                )
+            delete_confirmed = confirm_delete_text.strip().upper() == "УДАЛИТЬ"
+            delete_btn_disabled = not selected_draft_ids or not delete_confirmed
             if st.button(
                 "Удалить выбранные черновики",
                 key="saved_drafts_delete_btn",
                 type="secondary",
-                disabled=not confirm_saved_delete,
+                disabled=delete_btn_disabled,
             ):
-                if not selected_delete_labels:
-                    st.warning("Выберите хотя бы один черновик.")
-                elif not confirm_saved_delete:
-                    st.warning("Подтвердите удаление.")
+                if not selected_draft_ids:
+                    st.warning("Выберите черновики для удаления.")
+                elif not delete_confirmed:
+                    st.warning("Введите УДАЛИТЬ для подтверждения удаления.")
                 else:
-                    st.info(
-                        "Удаление сохранённых черновиков будет подключено отдельным backend-методом."
-                    )
+                    deleted_ok: list[str] = []
+                    for draft_id in selected_draft_ids:
+                        result = delete_monthly_plan_draft_cascade(draft_id)
+                        if result.get("skipped_reason"):
+                            st.warning(
+                                f"draft_id {draft_id}: {result['skipped_reason']}"
+                            )
+                        else:
+                            deleted_ok.append(draft_id)
+                            st.success(
+                                "Удалено: "
+                                f"draft_id={result.get('draft_id')} · "
+                                f"ограничений={result.get('deleted_constraints_count', 0)} · "
+                                f"очередь={result.get('deleted_review_queue_count', 0)} · "
+                                f"строк плана={result.get('deleted_draft_lines_count', 0)} · "
+                                f"черновиков={result.get('deleted_draft_count', 0)}"
+                            )
+                    if deleted_ok:
+                        clear_session_if_deleted_draft(deleted_ok)
+                        st.rerun()
         else:
             st.caption("Нет черновиков для удаления по текущим фильтрам.")
 
@@ -1972,6 +2389,16 @@ def render_saved_plans_block() -> None:
                 f"Создан: {_format_draft_created_at(row.get('created_at'))} · "
                 f"{row.get('draft_name') or 'Без названия'} · draft_id: {draft_id}"
             )
+            if (
+                str(row.get("month_label") or "") == "Несколько месяцев"
+                or str(row.get("facility_label") or "") == "Несколько титулов"
+                or str(row.get("discipline_label") or "") == "Несколько дисциплин"
+            ):
+                st.caption(
+                    "Один черновик (один draft_id): внутри него строки могут относиться "
+                    "к разным месяцам, титулам или дисциплинам. Удаление затрагивает "
+                    "только этот draft_id."
+                )
 
             detail_df = build_draft_lines_detail_df(lines)
             if detail_df.empty:
@@ -2208,9 +2635,34 @@ def project_filter_options(df: pd.DataFrame) -> list[str]:
     return ["Все"] + shown
 
 
+def construction_stage_titles(stage: str) -> list[str] | None:
+    """Список титулов очереди или None, если выбраны все очереди."""
+    titles = CONSTRUCTION_STAGE_MAP.get(stage, [])
+    if not titles:
+        return None
+    return list(titles)
+
+
+def filter_df_by_construction_stage(df: pd.DataFrame, stage: str) -> pd.DataFrame:
+    if df.empty or "facility_building" not in df.columns:
+        return df
+    titles = construction_stage_titles(stage)
+    if titles is None:
+        return df
+    allowed = {str(t).strip() for t in titles}
+    mask = df["facility_building"].astype(str).str.strip().isin(allowed)
+    return df[mask].copy()
+
+
+def facility_filter_options(df: pd.DataFrame, construction_stage: str) -> list[str]:
+    scoped = filter_df_by_construction_stage(df, construction_stage)
+    return filter_options(scoped, "facility_building")
+
+
 def apply_filters(
     df: pd.DataFrame,
     project: str,
+    construction_stage: str,
     facility: str,
     discipline: str,
     norm_status: str,
@@ -2222,6 +2674,7 @@ def apply_filters(
     out = df.copy()
     if project != "Все":
         out = out[out["project_code"].astype(str) == project]
+    out = filter_df_by_construction_stage(out, construction_stage)
     if facility != "Все" and "facility_building" in out.columns:
         out = out[out["facility_building"].astype(str) == facility]
     if discipline != "Все" and "construction_discipline" in out.columns:
@@ -3207,18 +3660,29 @@ data = merge_adjustments(scope_raw, adjustments_raw)
 planned_qty_map = build_planned_qty_map()
 data = apply_available_remaining(data, planned_qty_map)
 
-f1, f2, f3, f4, f5, f6 = st.columns([1.1, 1.1, 1.1, 1.0, 1.3, 1.2])
+f1, f2, f3, f4, f5, f6, f7 = st.columns([1.0, 1.15, 1.1, 1.0, 1.0, 1.2, 1.2])
 with f1:
     sel_project = st.selectbox("Проект", project_filter_options(data))
+data_for_stage = data if sel_project == "Все" else data[data["project_code"].astype(str) == sel_project]
 with f2:
-    sel_facility = st.selectbox("Титул / объект", filter_options(data, "facility_building"))
+    sel_construction_stage = st.selectbox(
+        "Очередь строительства",
+        CONSTRUCTION_STAGE_OPTIONS,
+        key="scope_filter_construction_stage",
+    )
 with f3:
-    sel_discipline = st.selectbox("Дисциплина", filter_options(data, "construction_discipline"))
+    sel_facility = st.selectbox(
+        "Титул / объект",
+        facility_filter_options(data_for_stage, sel_construction_stage),
+        key="scope_filter_facility",
+    )
 with f4:
-    sel_norm = st.selectbox("Статус нормы", NORM_STATUS_OPTIONS)
+    sel_discipline = st.selectbox("Дисциплина", filter_options(data, "construction_discipline"))
 with f5:
-    search_text = st.text_input("Поиск по BOQ-коду / наименованию")
+    sel_norm = st.selectbox("Статус нормы", NORM_STATUS_OPTIONS)
 with f6:
+    search_text = st.text_input("Поиск по BOQ-коду / наименованию")
+with f7:
     display_mode = st.radio(
         "Режим отображения кодов",
         DISPLAY_MODE_OPTIONS,
@@ -3226,7 +3690,14 @@ with f6:
     )
 
 filtered = apply_filters(
-    data, sel_project, sel_facility, sel_discipline, sel_norm, search_text, display_mode
+    data,
+    sel_project,
+    sel_construction_stage,
+    sel_facility,
+    sel_discipline,
+    sel_norm,
+    search_text,
+    display_mode,
 )
 
 if display_mode != "Только коды с остатком > 0" and not view_has_nonpositive_remaining(scope_raw):

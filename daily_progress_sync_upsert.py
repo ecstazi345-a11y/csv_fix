@@ -6,6 +6,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+for key in [
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+]:
+    os.environ.pop(key, None)
+
 AIRTABLE_TOKEN = os.getenv("AIRTABLE_TOKEN")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 AIRTABLE_TABLE_ID = os.getenv("AIRTABLE_DAILY_PROGRESS_TABLE_ID")
@@ -26,6 +36,12 @@ SUPABASE_HEADERS = {
     "Content-Type": "application/json",
     "Prefer": "resolution=merge-duplicates,return=minimal",
 }
+
+
+def make_requests_session():
+    session = requests.Session()
+    session.trust_env = False
+    return session
 
 
 def clean_value(value):
@@ -122,9 +138,10 @@ def map_fields(record):
 def fetch_airtable_records():
     url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}"
     all_rows = []
+    session = make_requests_session()
 
     while True:
-        resp = requests.get(url, headers=AIRTABLE_HEADERS, timeout=60)
+        resp = session.get(url, headers=AIRTABLE_HEADERS, timeout=60)
         resp.raise_for_status()
         data = resp.json()
 
@@ -149,10 +166,11 @@ def upsert_to_supabase(rows):
     url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?on_conflict=airtable_record_id"
     batch_size = 20
     total = len(rows)
+    session = make_requests_session()
 
     for i in range(0, total, batch_size):
         batch = rows[i : i + batch_size]
-        resp = requests.post(url, headers=SUPABASE_HEADERS, json=batch, timeout=60)
+        resp = session.post(url, headers=SUPABASE_HEADERS, json=batch, timeout=60)
 
         if resp.status_code >= 300:
             print("Ошибка upsert батча:")
@@ -168,13 +186,14 @@ def fetch_existing_ids_from_supabase():
     ids = set()
     offset = 0
     limit = 1000
+    session = make_requests_session()
 
     while True:
         url = (
             f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}"
             f"?select=airtable_record_id&limit={limit}&offset={offset}"
         )
-        resp = requests.get(url, headers=SUPABASE_HEADERS, timeout=60)
+        resp = session.get(url, headers=SUPABASE_HEADERS, timeout=60)
         resp.raise_for_status()
         data = resp.json()
 
@@ -206,6 +225,7 @@ def mark_deleted_records(current_airtable_ids):
 
     batch_size = 50
     now_iso = datetime.now(timezone.utc).isoformat()
+    session = make_requests_session()
 
     for i in range(0, len(to_soft_delete), batch_size):
         chunk = to_soft_delete[i : i + batch_size]
@@ -214,7 +234,7 @@ def mark_deleted_records(current_airtable_ids):
             url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?airtable_record_id=eq.{rid}"
             payload = {"is_deleted": True, "last_synced_at": now_iso}
 
-            resp = requests.patch(
+            resp = session.patch(
                 url, headers=SUPABASE_HEADERS, json=payload, timeout=60
             )
 

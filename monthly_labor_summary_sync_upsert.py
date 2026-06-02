@@ -6,6 +6,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+for key in [
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+]:
+    os.environ.pop(key, None)
+
 AIRTABLE_TOKEN = os.getenv("AIRTABLE_TOKEN")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 AIRTABLE_TABLE = "Crew_Register"
@@ -27,6 +37,12 @@ SUPABASE_HEADERS = {
     "Content-Type": "application/json",
     "Prefer": "resolution=merge-duplicates,return=minimal",
 }
+
+
+def make_requests_session():
+    session = requests.Session()
+    session.trust_env = False
+    return session
 
 
 def clean_value(value):
@@ -121,9 +137,10 @@ def fetch_airtable_records():
         "view": AIRTABLE_VIEW,
     }
     all_rows = []
+    session = make_requests_session()
 
     while True:
-        resp = requests.get(url, headers=AIRTABLE_HEADERS, params=params, timeout=60)
+        resp = session.get(url, headers=AIRTABLE_HEADERS, params=params, timeout=60)
         resp.raise_for_status()
         data = resp.json()
 
@@ -185,10 +202,11 @@ def upsert_to_supabase(rows):
     batch_size = 100
     total = len(rows)
     synced = 0
+    session = make_requests_session()
 
     for i in range(0, total, batch_size):
         batch = rows[i : i + batch_size]
-        resp = requests.post(url, headers=SUPABASE_HEADERS, json=batch, timeout=60)
+        resp = session.post(url, headers=SUPABASE_HEADERS, json=batch, timeout=60)
 
         if resp.status_code >= 300:
             print("Ошибка upsert батча:")

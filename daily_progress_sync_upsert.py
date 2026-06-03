@@ -1,6 +1,7 @@
 import os
 import requests
 import time
+import pandas as pd
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
@@ -86,6 +87,17 @@ def to_num(value):
         return None
 
 
+def to_date(value):
+    if value is None:
+        return None
+    if isinstance(value, str) and not str(value).strip():
+        return None
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return parsed.date().isoformat()
+
+
 def map_fields(record):
     fields = record.get("fields", {})
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -96,6 +108,7 @@ def map_fields(record):
         "month_key": clean_value(fields.get("Month_Key")),
         "week_key": clean_value(fields.get("Week_Key")),
         "created_time": clean_value(fields.get("Created_Time")),
+        "work_date": to_date(fields.get("Work_Date")),
         "facility_building": clean_value(fields.get("Facility_Building")),
         "construction_discipline": clean_value(fields.get("Construction_Discipline")),
         "shift_type": clean_value(fields.get("Shift_Type")),

@@ -103,9 +103,27 @@ EXPORT_FIELD_MAP = {
 
 
 @st.cache_data(ttl=300)
-def load_daily_progress_active(limit: int = 5000) -> pd.DataFrame:
-    resp = supabase.table("daily_progress_active").select("*").limit(limit).execute()
-    return pd.DataFrame(resp.data or [])
+def load_daily_progress_active() -> pd.DataFrame:
+    all_rows: list[dict] = []
+    offset = 0
+    batch_size = 1000
+
+    while True:
+        resp = (
+            supabase.table("daily_progress_active")
+            .select("*")
+            .range(offset, offset + batch_size - 1)
+            .execute()
+        )
+        rows = resp.data or []
+        if not rows:
+            break
+        all_rows.extend(rows)
+        if len(rows) < batch_size:
+            break
+        offset += batch_size
+
+    return pd.DataFrame(all_rows)
 
 
 def option_values(df: pd.DataFrame, column: str) -> list[str]:

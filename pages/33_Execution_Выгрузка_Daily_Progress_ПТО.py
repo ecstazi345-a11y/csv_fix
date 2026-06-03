@@ -7,6 +7,13 @@ import pandas as pd
 
 from services.supabase_client import supabase
 
+try:
+    import openpyxl  # noqa: F401
+
+    OPENPYXL_AVAILABLE = True
+except Exception:
+    OPENPYXL_AVAILABLE = False
+
 st.set_page_config(layout="wide")
 
 st.title("Выгрузка Daily Progress для ПТО")
@@ -647,28 +654,29 @@ st.dataframe(
 filename_xlsx = build_pto_export_filename(project, month, facility, discipline)
 filename_csv = filename_xlsx.replace(".xlsx", ".csv")
 
-try:
-    xlsx_bytes = build_pto_xlsx_bytes(
-        df_export,
-        df_filtered,
-        found_export_map,
-        project=project,
-        month=month,
-        facility=facility,
-        discipline=discipline,
-    )
-    st.download_button(
-        "📥 Скачать Excel для ПТО (.xlsx)",
-        data=xlsx_bytes,
-        file_name=filename_xlsx,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=False,
-        type="primary",
-    )
-except ImportError:
+if OPENPYXL_AVAILABLE:
+    try:
+        xlsx_bytes = build_pto_xlsx_bytes(
+            df_export,
+            df_filtered,
+            found_export_map,
+            project=project,
+            month=month,
+            facility=facility,
+            discipline=discipline,
+        )
+        st.download_button(
+            "📥 Скачать Excel для ПТО (.xlsx)",
+            data=xlsx_bytes,
+            file_name=filename_xlsx,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=False,
+            type="primary",
+        )
+    except Exception as exc:
+        st.error(f"Не удалось сформировать Excel: {exc}")
+else:
     st.error("Для выгрузки Excel установите пакет: pip install openpyxl")
-except Exception as exc:
-    st.error(f"Не удалось сформировать Excel: {exc}")
 
 csv_text = df_export.to_csv(index=False, sep=";")
 csv_bytes = csv_text.encode("utf-8-sig")

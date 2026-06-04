@@ -171,18 +171,17 @@ scoped AS (
         CASE
             WHEN b.manual_verified_remaining_qty IS NOT NULL
                 THEN b.manual_verified_remaining_qty
-            WHEN b.manual_executed_before_system > 0
-                THEN (
-                    b.total_project_qty
+            ELSE greatest(
+                b.total_project_qty
                     - b.executed_qty_all_time
-                    - b.manual_executed_before_system
-                )
-            ELSE b.system_remaining_qty
+                    - coalesce(b.manual_executed_before_system, 0),
+                0
+            )
         END AS planning_remaining_qty,
         CASE
             WHEN b.manual_verified_remaining_qty IS NOT NULL
                 THEN 'MANUAL_VERIFIED'
-            WHEN b.manual_executed_before_system > 0
+            WHEN coalesce(b.manual_executed_before_system, 0) > 0
                 THEN 'MANUAL_EXECUTED_BEFORE_SYSTEM'
             ELSE 'SYSTEM_CALCULATED'
         END AS remaining_qty_source

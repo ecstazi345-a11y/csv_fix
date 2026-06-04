@@ -420,6 +420,23 @@ def safe_num(value, default: float = 0.0) -> float:
     return default if v is None else v
 
 
+def compute_planning_remaining_for_row(row) -> tuple[float, str]:
+    """Остаток: project_qty − (system_fact + manual_before); manual_verified — override."""
+    total = safe_float(row.get("total_project_qty")) or 0.0
+    executed = safe_float(row.get("executed_qty_all_time")) or 0.0
+    m_ver = row.get("manual_verified_remaining_qty")
+    if m_ver is not None and not (isinstance(m_ver, float) and pd.isna(m_ver)):
+        verified = safe_float(m_ver)
+        if verified is not None:
+            return max(verified, 0.0), "MANUAL_VERIFIED"
+    m_exec = safe_float(row.get("manual_executed_before_system")) or 0.0
+    effective_executed = executed + m_exec
+    remaining = max(total - effective_executed, 0.0)
+    if m_exec > 0:
+        return remaining, "MANUAL_EXECUTED_BEFORE_SYSTEM"
+    return remaining, "SYSTEM_CALCULATED"
+
+
 def ensure_columns(df: pd.DataFrame, columns: dict[str, Any]) -> pd.DataFrame:
     result = df.copy()
     for col, default in columns.items():
@@ -726,16 +743,13 @@ def render_filter_summary(df: pd.DataFrame) -> None:
         if "total_project_value" in df.columns
         else 0.0
     )
-    exec_val = (
-        pd.to_numeric(df["executed_value_all_time"], errors="coerce").fillna(0).sum()
-        if "executed_value_all_time" in df.columns
-        else 0.0
-    )
     rem_val = (
         pd.to_numeric(df["planning_remaining_value"], errors="coerce").fillna(0).sum()
         if "planning_remaining_value" in df.columns
         else 0.0
     )
+    # Освоено = всего − остаток (учитывает manual_executed_before_system через planning_remaining_*).
+    exec_val = max(total_val - rem_val, 0.0)
     total_qty = (
         pd.to_numeric(df["total_project_qty"], errors="coerce").fillna(0).sum()
         if "total_project_qty" in df.columns
@@ -2508,7 +2522,6 @@ def merge_adjustments(scope: pd.DataFrame, adjustments: pd.DataFrame) -> pd.Data
     ]
     df = normalize_scope_merge_keys(df)
     adj = adjustments.copy() if not adjustments.empty else pd.DataFrame()
-    adj_applied = False
 
     if not adj.empty:
         if "reason" in adj.columns and "adjustment_reason" not in adj.columns:
@@ -2542,8 +2555,6 @@ def merge_adjustments(scope: pd.DataFrame, adjustments: pd.DataFrame) -> pd.Data
                 else:
                     df[col] = df[adj_col]
                 df = df.drop(columns=[adj_col])
-                if col.startswith("manual_") and df[col].notna().any():
-                    adj_applied = True
 
     for col in (
         "manual_executed_before_system",
@@ -2554,43 +2565,15 @@ def merge_adjustments(scope: pd.DataFrame, adjustments: pd.DataFrame) -> pd.Data
         if col not in df.columns:
             df[col] = None
 
-    has_manual_adjustment = False
-    if "manual_executed_before_system" in df.columns:
-        has_manual_adjustment = has_manual_adjustment or (
-            pd.to_numeric(df["manual_executed_before_system"], errors="coerce").fillna(0) > 0
-        ).any()
-    if "manual_verified_remaining_qty" in df.columns:
-        has_manual_adjustment = has_manual_adjustment or df["manual_verified_remaining_qty"].notna().any()
+    planning_qty = []
+    sources = []
+    for _, r in df.iterrows():
+        rem, src = compute_planning_remaining_for_row(r)
+        planning_qty.append(rem)
+        sources.append(src)
 
-    has_view_planning = (
-        "planning_remaining_qty" in df.columns and df["planning_remaining_qty"].notna().any()
-    )
-    need_planning_recalc = not has_view_planning or adj_applied or has_manual_adjustment
-
-    if need_planning_recalc:
-        planning_qty = []
-        sources = []
-        for _, r in df.iterrows():
-            total = safe_float(r.get("total_project_qty")) or 0.0
-            executed = safe_float(r.get("executed_qty_all_time")) or 0.0
-            system_rem = safe_float(r.get("system_remaining_qty")) or 0.0
-            m_exec = safe_float(r.get("manual_executed_before_system")) or 0.0
-            m_ver = safe_float(r.get("manual_verified_remaining_qty"))
-
-            if m_ver is not None:
-                planning_qty.append(m_ver)
-                sources.append("MANUAL_VERIFIED")
-            elif m_exec > 0:
-                planning_qty.append(max(total - executed - m_exec, 0.0))
-                sources.append("MANUAL_EXECUTED_BEFORE_SYSTEM")
-            else:
-                planning_qty.append(max(system_rem, 0.0))
-                sources.append("SYSTEM_CALCULATED")
-
-        df["planning_remaining_qty"] = planning_qty
-        df["remaining_qty_source"] = sources
-    elif "remaining_qty_source" not in df.columns:
-        df["remaining_qty_source"] = "SYSTEM_CALCULATED"
+    df["planning_remaining_qty"] = planning_qty
+    df["remaining_qty_source"] = sources
 
     unit_price = df["unit_price"].fillna(0) if "unit_price" in df.columns else 0
     df["planning_remaining_value"] = df["planning_remaining_qty"] * unit_price

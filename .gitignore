@@ -2,6 +2,9 @@
 .env
 __pycache__/
 *.pyc
+*.pyo
+*.log
+_crew_diag.py
 csv_fix/
 pages/_order_backup/
 sync_test_run.log

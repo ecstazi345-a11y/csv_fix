@@ -5,13 +5,23 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
+from supabase import Client, create_client
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+from services.supabase_client import supabase
+
+from docs.v2_technical_architecture_handbook import render_v2_technical_architecture_handbook
 
 from services.monthly_scope_adjustments import (
     delete_adjustment,
@@ -145,7 +155,31 @@ DEMO_SCOPE_DISCIPLINES = ["Все", "СМР", "ЭМ", "КИПиА", "ТХ"]
 
 V2_SCOPE_VIEW = "monthly_scope_picker_view"
 
-V2_DRAFT_ITEMS_KEY = "v2_month_plan_draft_items"
+V2_PLAN_LINES_TABLE = "monthly_plan_lines_v2"
+V2_PLAN_ITEMS_KEY = "v2_month_plan_items"
+V2_PLAN_SCOPE_KEY = "v2_month_plan_scope"
+V2_PLAN_DIRTY_KEY = "v2_month_plan_dirty"
+V2_PLAN_SELECTED_KEYS = "v2_plan_selected_row_keys"
+V2_PLAN_EDIT_ROW_KEY = "v2_plan_edit_row_key"
+V2_DRAFT_ITEMS_KEY = V2_PLAN_ITEMS_KEY
+V2_PLAN_STATUS_NOT_SENT = "NOT_SENT"
+V2_PLAN_STATUS_SENT = "SENT_TO_ADMISSION"
+V2_PLAN_STATUS_UI: dict[str, str] = {
+    V2_PLAN_STATUS_NOT_SENT: "В допуск не отправлен",
+    V2_PLAN_STATUS_SENT: "Отправлен в допуск",
+}
+V2_PLAN_STATUS_STYLES: dict[str, str] = {
+    "В допуск не отправлен": (
+        "background-color: #FFF6E5; color: #8A5A00; border: 1px solid #F0E4C8;"
+    ),
+    "Отправлен в допуск": (
+        "background-color: #ECFDF5; color: #047857; border: 1px solid #C6EDE0;"
+    ),
+}
+V2_SAVED_DRAFT_ID_KEY = "v2_saved_draft_id"
+V2_DRAFT_LOAD_DEBUG_KEY = "v2_draft_load_debug"
+V2_DRAFT_STATUS_SAVED = "SAVED_DRAFT"
+V2_DRAFT_SOURCE_MARKER = "constructor_v2"
 DEFAULT_LABOR_RATE_PER_HOUR = 3000.0
 PRODUCTIVE_HOURS_PER_PERSON_SHIFT = 8.0
 NORM_SCENARIO_REALISTIC = "Реалистичная норма"
@@ -293,22 +327,35 @@ MONTH_PLAN_COLUMNS = [
 ]
 
 V2_MONTH_PLAN_DISPLAY_COLUMNS = [
-    "Дата добавления",
-    "Статус",
-    "Месяц",
+    "Проект",
+    "Дата/время",
+    "Очередь",
+    "Титул",
+    "Дисциплина",
+    "Система",
+    "IWP",
     "BOQ код",
-    "Наименование",
+    "Наименование работ",
     "Объём",
     "Ед.",
     "Звено",
     "Людей",
     "Норма",
+    "Норма ч/ед.",
     "Трудозатраты",
     "Длительность",
     "Стоимость объёма",
     "Стоимость труда",
-    "Комментарий",
+    "Статус",
 ]
+
+V2_MONTH_PLAN_NUMERIC_COLUMNS = {
+    "Объём",
+    "Людей",
+    "Норма ч/ед.",
+    "Стоимость объёма",
+    "Стоимость труда",
+}
 
 V2_SESSION_DRAFT_STATUS = "Новая строка"
 
@@ -529,13 +576,256 @@ def inject_page_styles() -> None:
             line-height: 1.3;
             white-space: nowrap;
         }
-        .v2-scope-boq-table [data-testid="stDataFrame"] {
+        .v2-scope-boq-table [data-testid="stDataFrame"],
+        .v2-month-plan-table [data-testid="stDataFrame"] {
             font-size: 0.84rem;
         }
         .v2-scope-boq-table [data-testid="stDataFrame"] td,
-        .v2-scope-boq-table [data-testid="stDataFrame"] th {
+        .v2-scope-boq-table [data-testid="stDataFrame"] th,
+        .v2-month-plan-table [data-testid="stDataFrame"] td,
+        .v2-month-plan-table [data-testid="stDataFrame"] th {
             padding: 0.28rem 0.45rem !important;
             white-space: nowrap;
+        }
+        .v2-month-plan-table [data-testid="stDataFrame"] {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .v2-month-plan-table [data-testid="stDataFrame"] thead th {
+            background: #f8fafc !important;
+            color: #475569 !important;
+            font-size: 0.76rem !important;
+            font-weight: 600 !important;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            border-bottom: 1px solid #e2e8f0 !important;
+        }
+        .v2-month-plan-table [data-testid="stDataFrame"] tbody td {
+            border-bottom: 1px solid #f1f5f9 !important;
+            color: #1e293b;
+            line-height: 1.25;
+            max-height: 2.6em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .v2-month-plan-table [data-testid="stDataFrame"] div[data-testid="stDataFrameResizable"] {
+            overflow-x: auto !important;
+        }
+        .v2-month-plan-kpi-bar {
+            margin: 0.35rem 0 0.75rem 0;
+            padding: 0.55rem 0.75rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #fafbfc;
+        }
+        .v2-month-plan-action-bar-anchor {
+            display: none !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .v2-month-plan-action-bar-anchor + div[data-testid="stHorizontalBlock"] {
+            background: #f7f9fc !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 14px !important;
+            padding: 8px 10px !important;
+            margin: 0.35rem 0 0.6rem 0 !important;
+            align-items: stretch !important;
+            gap: 0.4rem !important;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+        }
+        .v2-month-plan-action-bar-anchor + div[data-testid="stHorizontalBlock"] > div {
+            display: flex;
+            align-items: stretch;
+            min-height: 0;
+        }
+        .v2-month-plan-action-bar-anchor + div[data-testid="stHorizontalBlock"] > div:nth-child(1) {
+            border-right: 1px solid #e2e8f0;
+            padding-right: 0.4rem;
+            flex: 0 0 auto;
+        }
+        .v2-plan-metrics-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            width: 6.25rem;
+            height: 100%;
+            justify-content: center;
+        }
+        .v2-plan-metric-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.15rem;
+            width: 100%;
+            height: 3.1rem;
+            min-height: 3.1rem;
+            padding: 0.38rem 0.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            background: #ffffff;
+            box-sizing: border-box;
+        }
+        .v2-plan-metric-top {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.28rem;
+            width: 100%;
+        }
+        .v2-plan-metric-label {
+            font-size: 0.66rem;
+            font-weight: 500;
+            color: #64748b;
+            line-height: 1.1;
+        }
+        .v2-plan-metric-value {
+            font-size: 1.28rem;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1;
+            text-align: center;
+            width: 100%;
+        }
+        .v2-plan-btn-hook {
+            display: none !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+        }
+        div:has(> .v2-plan-btn-hook) {
+            margin: 0 !important;
+            padding: 0 !important;
+            min-height: 0 !important;
+            line-height: 0 !important;
+        }
+        div:has(.v2-plan-btn-hook) + div[data-testid="stButton"] {
+            margin-bottom: 0.22rem !important;
+        }
+        div:has(.v2-plan-btn-hook-clear) + div[data-testid="stButton"] {
+            margin-bottom: 0 !important;
+        }
+        .v2-month-plan-action-bar-anchor ~ div [data-testid="stHorizontalBlock"] [data-testid="stButton"] {
+            width: 100%;
+        }
+        .v2-month-plan-action-bar-anchor ~ div [data-testid="stHorizontalBlock"] [data-testid="stButton"] > button {
+            width: 100% !important;
+            min-height: 30px !important;
+            max-height: 32px !important;
+            border-radius: 10px !important;
+            font-size: 0.74rem !important;
+            font-weight: 600 !important;
+            padding: 0.28rem 0.6rem !important;
+            line-height: 1.1 !important;
+            box-shadow: none !important;
+            transition: transform 140ms ease, background 140ms ease, border-color 140ms ease, box-shadow 140ms ease !important;
+            justify-content: flex-start !important;
+            gap: 0.35rem !important;
+        }
+        .v2-month-plan-action-bar-anchor ~ div [data-testid="stHorizontalBlock"] [data-testid="stButton"] > button p {
+            white-space: nowrap !important;
+            text-align: left !important;
+            margin: 0 !important;
+            line-height: 1.1 !important;
+            font-size: 0.74rem !important;
+            font-weight: 600 !important;
+        }
+        .v2-month-plan-action-bar-anchor ~ div [data-testid="stHorizontalBlock"] [data-testid="stButton"] > button:disabled {
+            opacity: 0.45 !important;
+            cursor: not-allowed !important;
+        }
+        .v2-month-plan-action-bar-anchor ~ div [data-testid="stHorizontalBlock"] [data-testid="stButton"] > button:hover:not(:disabled) {
+            transform: translateY(-1px);
+        }
+        div:has(.v2-plan-btn-hook-send) + div[data-testid="stButton"] > button {
+            background: linear-gradient(135deg, #486a9a, #34465a) !important;
+            color: #ffffff !important;
+            border: none !important;
+            box-shadow: 0 1px 4px rgba(52, 70, 90, 0.16) !important;
+        }
+        div:has(.v2-plan-btn-hook-send) + div[data-testid="stButton"] > button:hover:not(:disabled) {
+            background: linear-gradient(135deg, #557aa8, #3d536c) !important;
+            box-shadow: 0 2px 8px rgba(52, 70, 90, 0.2) !important;
+        }
+        div:has(.v2-plan-btn-hook-send) + div[data-testid="stButton"] > button p {
+            color: #ffffff !important;
+            letter-spacing: 0.03em;
+        }
+        div:has(.v2-plan-btn-hook-save) + div[data-testid="stButton"] > button {
+            background: #ffffff !important;
+            color: #4a78b5 !important;
+            border: 1px solid #4a78b5 !important;
+        }
+        div:has(.v2-plan-btn-hook-save) + div[data-testid="stButton"] > button:hover:not(:disabled) {
+            background: #f4f8fc !important;
+            box-shadow: 0 1px 4px rgba(74, 120, 181, 0.12) !important;
+        }
+        div:has(.v2-plan-btn-hook-save) + div[data-testid="stButton"] > button p {
+            color: #4a78b5 !important;
+        }
+        div:has(.v2-plan-btn-hook-edit) + div[data-testid="stButton"] > button {
+            background: #ffffff !important;
+            color: #334155 !important;
+            border: 1px solid #cbd5e1 !important;
+        }
+        div:has(.v2-plan-btn-hook-edit) + div[data-testid="stButton"] > button:hover:not(:disabled) {
+            background: #f8fafc !important;
+        }
+        div:has(.v2-plan-btn-hook-edit) + div[data-testid="stButton"] > button p {
+            color: #334155 !important;
+        }
+        div:has(.v2-plan-btn-hook-delete) + div[data-testid="stButton"] > button {
+            background: #fff7f7 !important;
+            color: #a33a3a !important;
+            border: 1px solid #e6b8b8 !important;
+        }
+        div:has(.v2-plan-btn-hook-delete) + div[data-testid="stButton"] > button:hover:not(:disabled) {
+            background: #fef2f2 !important;
+        }
+        div:has(.v2-plan-btn-hook-delete) + div[data-testid="stButton"] > button p {
+            color: #a33a3a !important;
+        }
+        div:has(.v2-plan-btn-hook-clear) + div[data-testid="stButton"] > button {
+            background: #ffffff !important;
+            color: #64748b !important;
+            border: 1px solid #e2e8f0 !important;
+            font-weight: 500 !important;
+        }
+        div:has(.v2-plan-btn-hook-clear) + div[data-testid="stButton"] > button:hover:not(:disabled) {
+            background: #f8fafc !important;
+        }
+        div:has(.v2-plan-btn-hook-clear) + div[data-testid="stButton"] > button p {
+            color: #64748b !important;
+            font-weight: 500 !important;
+        }
+        .v2-month-plan-action-bar-anchor ~ div [data-testid="stHorizontalBlock"] [data-testid="stButton"] > button [data-testid="stIconMaterial"] {
+            font-size: 0.95rem !important;
+            flex-shrink: 0;
+        }
+        div:has(.v2-plan-btn-hook-send) + div[data-testid="stButton"] > button [data-testid="stIconMaterial"] {
+            color: #ffffff !important;
+        }
+        div:has(.v2-plan-btn-hook-save) + div[data-testid="stButton"] > button [data-testid="stIconMaterial"] {
+            color: #4a78b5 !important;
+        }
+        div:has(.v2-plan-btn-hook-edit) + div[data-testid="stButton"] > button [data-testid="stIconMaterial"] {
+            color: #334155 !important;
+        }
+        div:has(.v2-plan-btn-hook-delete) + div[data-testid="stButton"] > button [data-testid="stIconMaterial"] {
+            color: #a33a3a !important;
+        }
+        div:has(.v2-plan-btn-hook-clear) + div[data-testid="stButton"] > button [data-testid="stIconMaterial"] {
+            color: #64748b !important;
+        }
+        .v2-month-plan-edit-panel {
+            margin: 0.5rem 0 0.75rem 0;
+            padding: 0.65rem 0.85rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #fafbfc;
         }
         .v2-boq-detail-panel {
             padding: 0.15rem 0.1rem 0.35rem 0.1rem;
@@ -1458,8 +1748,19 @@ def _v2_parse_norm_hours_value(value: Any) -> float | None:
 
 
 def init_v2_session_state() -> None:
-    if V2_DRAFT_ITEMS_KEY not in st.session_state:
-        st.session_state[V2_DRAFT_ITEMS_KEY] = []
+    legacy_key = "v2_month_plan_draft_items"
+    if legacy_key in st.session_state and V2_PLAN_ITEMS_KEY not in st.session_state:
+        st.session_state[V2_PLAN_ITEMS_KEY] = st.session_state.pop(legacy_key)
+    if V2_PLAN_ITEMS_KEY not in st.session_state:
+        st.session_state[V2_PLAN_ITEMS_KEY] = []
+    if V2_PLAN_SCOPE_KEY not in st.session_state:
+        st.session_state[V2_PLAN_SCOPE_KEY] = ""
+    if V2_PLAN_DIRTY_KEY not in st.session_state:
+        st.session_state[V2_PLAN_DIRTY_KEY] = False
+    if V2_PLAN_SELECTED_KEYS not in st.session_state:
+        st.session_state[V2_PLAN_SELECTED_KEYS] = []
+    if V2_PLAN_EDIT_ROW_KEY not in st.session_state:
+        st.session_state[V2_PLAN_EDIT_ROW_KEY] = ""
 
 
 def _v2_boq_draft_key_parts(
@@ -1491,11 +1792,13 @@ def _v2_boq_draft_key_from_row(row: pd.Series, month_key: str) -> tuple[str, str
 def build_v2_session_planned_qty_map(
     month_key: str | None = None,
 ) -> dict[tuple[str, str, str, str, str], float]:
-    """Сумма planned_qty из session draft по BOQ-key + month (без DB-reserve)."""
+    """Сумма planned_qty только для несохранённых добавлений (is_pending), без DB-плана."""
     items: list[dict[str, Any]] = st.session_state.get(V2_DRAFT_ITEMS_KEY) or []
     month_filter = str(month_key or "").strip().lower()
     result: dict[tuple[str, str, str, str, str], float] = {}
     for draft in items:
+        if draft.get("is_pending") is not True:
+            continue
         key = _v2_boq_draft_key_parts(
             str(draft.get("project_code") or ""),
             str(draft.get("facility") or ""),
@@ -1512,11 +1815,13 @@ def build_v2_session_planned_qty_map(
 def build_v2_session_planned_meta_map(
     month_key: str | None = None,
 ) -> dict[tuple[str, str, str, str, str], dict[str, str]]:
-    """month_key и последняя added_at по BOQ-key из session draft."""
+    """month_key и added_at по BOQ-key только для несохранённых добавлений (is_pending)."""
     items: list[dict[str, Any]] = st.session_state.get(V2_DRAFT_ITEMS_KEY) or []
     month_filter = str(month_key or "").strip().lower()
     result: dict[tuple[str, str, str, str, str], dict[str, str]] = {}
     for draft in items:
+        if draft.get("is_pending") is not True:
+            continue
         key = _v2_boq_draft_key_parts(
             str(draft.get("project_code") or ""),
             str(draft.get("facility") or ""),
@@ -1556,7 +1861,7 @@ def _v2_resolve_available_status(
 
 
 def apply_v2_session_draft_reservation(df: pd.DataFrame, month_key: str) -> pd.DataFrame:
-    """Уменьшить available_to_add_qty с учётом session draft (без DB)."""
+    """Уменьшить available_to_add_qty только для несохранённых добавлений в session."""
     if df.empty or not str(month_key or "").strip():
         return df
     planned_map = build_v2_session_planned_qty_map(month_key)
@@ -1860,8 +2165,12 @@ def append_v2_month_plan_draft_item(
     preview: dict[str, Any],
 ) -> dict[str, Any]:
     draft_item: dict[str, Any] = {
+        "plan_line_id": None,
+        "status": V2_PLAN_STATUS_NOT_SENT,
+        "is_pending": True,
         "line_uid": str(uuid4()),
         "project_code": str(item.get("project_code") or "").strip(),
+        "construction_queue": _v2_plan_item_queue_from_scope_row(item),
         "facility": str(item.get("facility") or "").strip(),
         "discipline": str(item.get("discipline") or "").strip(),
         "system": str(item.get("system") or "").strip(),
@@ -1892,6 +2201,7 @@ def append_v2_month_plan_draft_item(
     items: list[dict[str, Any]] = list(st.session_state.get(V2_DRAFT_ITEMS_KEY) or [])
     items.append(draft_item)
     st.session_state[V2_DRAFT_ITEMS_KEY] = items
+    st.session_state[V2_PLAN_DIRTY_KEY] = True
     return draft_item
 
 
@@ -1901,12 +2211,736 @@ def load_v2_session_draft_items() -> list[dict[str, Any]]:
 
 def clear_v2_session_draft_items() -> None:
     st.session_state[V2_DRAFT_ITEMS_KEY] = []
+    st.session_state[V2_PLAN_DIRTY_KEY] = False
+
+
+def _v2_plan_scope_key(project_code: str, month_key: str) -> str:
+    return f"{project_code.strip().upper()}|{month_key.strip().lower()}"
+
+
+def _v2_plan_status_display(status: Any) -> str:
+    code = str(status or V2_PLAN_STATUS_NOT_SENT).strip()
+    return V2_PLAN_STATUS_UI.get(code, code or "—")
+
+
+def _v2_plan_item_queue_from_scope_row(row: Any) -> str:
+    """Очередь из scope row (monthly_scope_picker_view) или по титулу."""
+    if isinstance(row, dict):
+        queue = str(row.get("construction_queue") or "").strip()
+        facility = str(row.get("facility") or "").strip()
+    else:
+        queue = str(row.get("construction_queue") or "").strip()
+        facility = str(row.get("facility") or "").strip()
+    if queue:
+        return queue
+    return derive_construction_queue_from_facility(facility)
+
+
+def _v2_plan_item_queue(item: dict[str, Any]) -> str:
+    """Очередь для строки месячного плана (session / DB)."""
+    return _v2_plan_item_queue_from_scope_row(item)
+
+
+# --- Monthly plan v2 persistence (monthly_plan_lines_v2) ---
+
+
+def load_v2_month_plan_lines(project_code: str, month_key: str) -> list[dict[str, Any]]:
+    """Загрузить строки единого месячного плана из Supabase."""
+    project_code = str(project_code or "").strip()
+    month_key = str(month_key or "").strip()
+    if not project_code or not month_key:
+        return []
+
+    def _run(client: Client) -> list[dict[str, Any]]:
+        resp = (
+            client.table(V2_PLAN_LINES_TABLE)
+            .select("*")
+            .eq("project_code", project_code)
+            .eq("month_key", month_key)
+            .order("created_at", desc=False)
+            .limit(10000)
+            .execute()
+        )
+        return list(resp.data or [])
+
+    try:
+        rows = _run(supabase)
+    except Exception:  # noqa: BLE001
+        rows = []
+
+    if rows:
+        return [map_v2_plan_db_row_to_session_item(row) for row in rows]
+
+    write_client = get_v2_supabase_write_client()
+    if write_client is None:
+        return []
+    try:
+        return [map_v2_plan_db_row_to_session_item(row) for row in _run(write_client)]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def map_v2_plan_db_row_to_session_item(row: dict[str, Any]) -> dict[str, Any]:
+    """Строка monthly_plan_lines_v2 → session item."""
+    plan_line_id = str(row.get("plan_line_id") or "").strip()
+    planned_qty = _v2_safe_num(row.get("planned_qty"))
+    labor_hours = _v2_safe_num(row.get("labor_hours"))
+    crew_size_raw = row.get("crew_size")
+    crew_size = (
+        float(crew_size_raw)
+        if crew_size_raw is not None and str(crew_size_raw).strip()
+        else 1.0
+    )
+    status = str(row.get("status") or V2_PLAN_STATUS_NOT_SENT).strip()
+    crew_day_capacity = crew_size * PRODUCTIVE_HOURS_PER_PERSON_SHIFT
+    duration_shifts = labor_hours / crew_day_capacity if crew_day_capacity > 0 else 0.0
+    norm_hpu = labor_hours / planned_qty if planned_qty > 0 else 0.0
+    added_at = str(row.get("created_at") or row.get("updated_at") or "").strip()
+    if not added_at:
+        added_at = datetime.now(timezone.utc).isoformat()
+    return {
+        "plan_line_id": plan_line_id or None,
+        "status": status,
+        "is_pending": False,
+        "line_uid": plan_line_id or str(uuid4()),
+        "project_code": str(row.get("project_code") or "").strip(),
+        "facility": str(row.get("facility") or "").strip(),
+        "discipline": str(row.get("discipline") or "").strip(),
+        "construction_queue": derive_construction_queue_from_facility(
+            str(row.get("facility") or "")
+        ),
+        "system": "",
+        "iwp": "",
+        "boq_code": str(row.get("boq_code") or "").strip().upper(),
+        "boq_name": str(row.get("boq_name") or "").strip(),
+        "unit": str(row.get("unit") or "").strip(),
+        "month_key": str(row.get("month_key") or "").strip(),
+        "crew_code": str(row.get("crew") or "").strip(),
+        "crew_size": crew_size,
+        "planned_qty": planned_qty,
+        "unit_price": _v2_safe_num(row.get("unit_price")),
+        "plan_value": _v2_safe_num(row.get("plan_value")),
+        "norm_scenario": NORM_SCENARIO_REALISTIC,
+        "manual_norm_value": None,
+        "norm_hours_per_unit": norm_hpu,
+        "required_hours": labor_hours,
+        "productive_hours_per_person_shift": PRODUCTIVE_HOURS_PER_PERSON_SHIFT,
+        "crew_day_capacity_hours": crew_day_capacity,
+        "duration_shifts": duration_shifts,
+        "labor_rate_per_hour": DEFAULT_LABOR_RATE_PER_HOUR,
+        "labor_cost": _v2_safe_num(row.get("labor_cost")),
+        "comment": "",
+        "added_at": added_at,
+        "line_source_ui": "Месячный план",
+        "read_only": status == V2_PLAN_STATUS_SENT,
+        "sent_to_constraints_at": row.get("sent_to_constraints_at"),
+    }
+
+
+def map_v2_session_item_to_plan_db_row(item: dict[str, Any]) -> dict[str, Any]:
+    """Session item → payload для insert/update monthly_plan_lines_v2."""
+    planned_qty = _v2_safe_num(item.get("planned_qty"))
+    required_hours = _v2_safe_num(item.get("required_hours"))
+    unit_price = _v2_safe_num(item.get("unit_price"))
+    labor_cost = _v2_safe_num(item.get("labor_cost"))
+    plan_value = _v2_safe_num(item.get("plan_value"))
+    if plan_value <= 0 and planned_qty > 0 and unit_price > 0:
+        plan_value = planned_qty * unit_price
+    if labor_cost <= 0 and required_hours > 0:
+        labor_cost = required_hours * _v2_safe_num(
+            item.get("labor_rate_per_hour"), default=DEFAULT_LABOR_RATE_PER_HOUR
+        )
+    crew_size = int(_v2_safe_num(item.get("crew_size"), default=1.0))
+    return {
+        "project_code": item.get("project_code"),
+        "month_key": item.get("month_key"),
+        "facility": item.get("facility"),
+        "discipline": item.get("discipline"),
+        "boq_code": item.get("boq_code"),
+        "boq_name": item.get("boq_name"),
+        "unit": item.get("unit"),
+        "planned_qty": planned_qty,
+        "crew": item.get("crew_code"),
+        "crew_size": crew_size,
+        "labor_hours": required_hours,
+        "labor_cost": labor_cost,
+        "unit_price": unit_price if unit_price > 0 else None,
+        "plan_value": plan_value if plan_value > 0 else None,
+        "status": str(item.get("status") or V2_PLAN_STATUS_NOT_SENT),
+    }
+
+
+def save_v2_month_plan(
+    project_code: str,
+    month_key: str,
+    items: list[dict[str, Any]],
+) -> dict[str, int]:
+    """Upsert несохранённых строк session в monthly_plan_lines_v2."""
+    write_client = get_v2_supabase_write_client()
+    if write_client is None:
+        raise RuntimeError("SUPABASE_SECRET_KEY не задан в .env — сохранение плана недоступно.")
+
+    scope_items = _v2_filter_items_for_scope(items, project_code, month_key)
+    to_save = [
+        item
+        for item in scope_items
+        if item.get("is_pending")
+        or not str(item.get("plan_line_id") or "").strip()
+    ]
+    validation_errors = validate_v2_draft_for_save(to_save)
+    if validation_errors:
+        raise ValueError("\n".join(validation_errors))
+    if not to_save:
+        raise ValueError("Нет несохранённых строк для сохранения.")
+
+    inserted = 0
+    updated = 0
+    for item in to_save:
+        status = str(item.get("status") or V2_PLAN_STATUS_NOT_SENT)
+        if status == V2_PLAN_STATUS_SENT:
+            continue
+
+        payload = map_v2_session_item_to_plan_db_row(item)
+        plan_line_id = str(item.get("plan_line_id") or "").strip()
+
+        if plan_line_id:
+            write_client.table(V2_PLAN_LINES_TABLE).update(payload).eq(
+                "plan_line_id", plan_line_id
+            ).eq("status", V2_PLAN_STATUS_NOT_SENT).execute()
+            updated += 1
+        else:
+            resp = write_client.table(V2_PLAN_LINES_TABLE).insert(payload).execute()
+            if not resp.data:
+                raise RuntimeError("Не удалось вставить строку monthly_plan_lines_v2.")
+            inserted += 1
+
+    hydrate_v2_month_plan_if_needed(project_code, month_key, force=True)
+    return {"inserted": inserted, "updated": updated, "total": len(scope_items)}
+
+
+def hydrate_v2_month_plan_if_needed(
+    project_code: str,
+    month_key: str,
+    *,
+    force: bool = False,
+) -> None:
+    """Подгрузить план из Supabase при смене project+month (без кнопки load draft)."""
+    project_code = str(project_code or "").strip()
+    month_key = str(month_key or "").strip()
+    if not project_code or not month_key or project_code == "Все":
+        return
+
+    scope_key = _v2_plan_scope_key(project_code, month_key)
+    if not force and st.session_state.get(V2_PLAN_SCOPE_KEY) == scope_key:
+        return
+
+    if st.session_state.get(V2_PLAN_SCOPE_KEY) != scope_key:
+        st.session_state[V2_PLAN_SELECTED_KEYS] = []
+        st.session_state[V2_PLAN_EDIT_ROW_KEY] = ""
+
+    items: list[dict[str, Any]] = list(st.session_state.get(V2_PLAN_ITEMS_KEY) or [])
+    kept = [
+        item
+        for item in items
+        if not _v2_item_matches_scope(item, project_code, month_key)
+    ]
+    pending_new = [
+        item
+        for item in items
+        if _v2_item_matches_scope(item, project_code, month_key)
+        and item.get("is_pending") is True
+        and not str(item.get("plan_line_id") or "").strip()
+    ]
+
+    if force:
+        loaded = load_v2_month_plan_lines(project_code, month_key)
+        st.session_state[V2_PLAN_ITEMS_KEY] = kept + loaded
+        st.session_state[V2_PLAN_SCOPE_KEY] = scope_key
+        st.session_state[V2_PLAN_DIRTY_KEY] = False
+        return
+
+    loaded = load_v2_month_plan_lines(project_code, month_key)
+    st.session_state[V2_PLAN_ITEMS_KEY] = kept + loaded + pending_new
+    st.session_state[V2_PLAN_SCOPE_KEY] = scope_key
+    st.session_state[V2_PLAN_DIRTY_KEY] = bool(pending_new)
+
+
+# --- Save / load draft v2 (Supabase monthly_plan_drafts / monthly_plan_draft_lines) ---
+
+
+@st.cache_resource
+def get_v2_supabase_write_client() -> Client | None:
+    for key in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "SOCKS_PROXY",
+        "socks_proxy",
+    ):
+        os.environ.pop(key, None)
+    os.environ["NO_PROXY"] = "*"
+    os.environ["no_proxy"] = "*"
+    url = os.getenv("SUPABASE_URL")
+    secret_key = os.getenv("SUPABASE_SECRET_KEY")
+    if not url or not secret_key:
+        return None
+    return create_client(url, secret_key)
+
+
+def _v2_resolve_draft_scope() -> tuple[str, str] | None:
+    month_key = str(st.session_state.get("v2_scope_planning_month") or "").strip()
+    project_code = str(st.session_state.get("v2_scope_project") or "").strip()
+    if not month_key or not project_code or project_code == "Все":
+        return None
+    return project_code, month_key
+
+
+def _v2_item_matches_scope(item: dict[str, Any], project_code: str, month_key: str) -> bool:
+    return (
+        str(item.get("project_code") or "").strip().upper()
+        == project_code.strip().upper()
+        and str(item.get("month_key") or "").strip().lower() == month_key.strip().lower()
+    )
+
+
+def _v2_saved_draft_select_fields() -> str:
+    return (
+        "draft_id,project_code,month_key,updated_at,rows_count,"
+        "total_plan_value,total_required_hours,total_labor_cost,comment"
+    )
+
+
+def _v2_query_saved_draft_rows(
+    month_key: str,
+    project_code: str | None = None,
+) -> list[dict[str, Any]]:
+    """Read SAVED_DRAFT rows; fallback to service role if anon returns empty."""
+    month_key = str(month_key or "").strip()
+    if not month_key:
+        return []
+
+    def _run(client: Client) -> list[dict[str, Any]]:
+        query = (
+            client.table("monthly_plan_drafts")
+            .select(_v2_saved_draft_select_fields())
+            .eq("month_key", month_key)
+            .eq("draft_status", V2_DRAFT_STATUS_SAVED)
+            .order("updated_at", desc=True)
+            .limit(1)
+        )
+        if project_code:
+            query = query.eq("project_code", project_code)
+        resp = query.execute()
+        return list(resp.data or [])
+
+    try:
+        rows = _run(supabase)
+    except Exception:  # noqa: BLE001
+        rows = []
+
+    if rows:
+        return rows
+
+    write_client = get_v2_supabase_write_client()
+    if write_client is None:
+        return []
+    try:
+        return _run(write_client)
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _v2_row_to_saved_draft_meta(row: dict[str, Any]) -> dict[str, Any] | None:
+    draft_id = str(row.get("draft_id") or "").strip()
+    if not draft_id:
+        return None
+    return {
+        "draft_id": draft_id,
+        "project_code": str(row.get("project_code") or "").strip(),
+        "month_key": str(row.get("month_key") or "").strip(),
+        "updated_at": row.get("updated_at"),
+        "rows_count": int(row.get("rows_count") or 0),
+        "total_plan_value": _v2_safe_num(row.get("total_plan_value")),
+        "total_required_hours": _v2_safe_num(row.get("total_required_hours")),
+        "total_labor_cost": _v2_safe_num(row.get("total_labor_cost")),
+    }
+
+
+def resolve_v2_saved_draft_lookup() -> tuple[dict[str, Any], str, str] | None:
+    """Найти SAVED_DRAFT для текущего месяца; project_code из фильтра или из header."""
+    month_key = str(st.session_state.get("v2_scope_planning_month") or "").strip()
+    if not month_key:
+        return None
+
+    project_filter = str(st.session_state.get("v2_scope_project") or "").strip()
+    if project_filter and project_filter != "Все":
+        rows = _v2_query_saved_draft_rows(month_key, project_filter)
+        if rows:
+            meta = _v2_row_to_saved_draft_meta(rows[0])
+            if meta:
+                project_code = str(meta.get("project_code") or project_filter).strip()
+                return meta, project_code, month_key
+
+    rows = _v2_query_saved_draft_rows(month_key, project_code=None)
+    if not rows:
+        return None
+    meta = _v2_row_to_saved_draft_meta(rows[0])
+    if not meta:
+        return None
+    project_code = str(meta.get("project_code") or "").strip()
+    if not project_code:
+        return None
+    return meta, project_code, month_key
+
+
+def _v2_filter_items_for_scope(
+    items: list[dict[str, Any]],
+    project_code: str,
+    month_key: str,
+) -> list[dict[str, Any]]:
+    return [item for item in items if _v2_item_matches_scope(item, project_code, month_key)]
+
+
+def _v2_count_session_items_for_scope(project_code: str, month_key: str) -> int:
+    return len(_v2_filter_items_for_scope(load_v2_session_draft_items(), project_code, month_key))
+
+
+def find_v2_saved_draft_id(project_code: str, month_key: str) -> str | None:
+    rows = _v2_query_saved_draft_rows(month_key, project_code)
+    if not rows:
+        return None
+    draft_id = str(rows[0].get("draft_id") or "").strip()
+    return draft_id or None
+
+
+def fetch_v2_saved_draft_meta(project_code: str, month_key: str) -> dict[str, Any] | None:
+    rows = _v2_query_saved_draft_rows(month_key, project_code)
+    if not rows:
+        return None
+    return _v2_row_to_saved_draft_meta(rows[0])
+
+
+def validate_v2_draft_for_save(items: list[dict[str, Any]]) -> list[str]:
+    errors: list[str] = []
+    if not items:
+        errors.append("Нет строк для сохранения.")
+        return errors
+    for idx, item in enumerate(items, start=1):
+        qty = _v2_safe_num(item.get("planned_qty"))
+        crew = str(item.get("crew_code") or "").strip()
+        scenario = str(item.get("norm_scenario") or "").strip()
+        if qty <= 0:
+            errors.append(f"Строка {idx}: объём должен быть больше нуля.")
+        if not _v2_crew_is_valid(crew):
+            errors.append(f"Строка {idx}: не указано звено.")
+        if not scenario:
+            errors.append(f"Строка {idx}: не указан сценарий нормы.")
+    return errors
+
+
+def build_v2_draft_header_payload(
+    items: list[dict[str, Any]],
+    project_code: str,
+    month_key: str,
+    *,
+    for_create: bool,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "project_code": project_code,
+        "month_key": month_key,
+        "draft_status": V2_DRAFT_STATUS_SAVED,
+        "draft_name": f"Monthly plan v2 - {month_key}",
+        "total_plan_value": sum(_v2_safe_num(item.get("plan_value")) for item in items),
+        "total_required_hours": sum(_v2_safe_num(item.get("required_hours")) for item in items),
+        "total_labor_cost": sum(_v2_safe_num(item.get("labor_cost")) for item in items),
+        "rows_count": len(items),
+        "comment": V2_DRAFT_SOURCE_MARKER,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if for_create:
+        payload["created_by"] = "Streamlit v2"
+    return payload
+
+
+def _v2_map_session_item_to_db_line(draft_id: str, item: dict[str, Any]) -> dict[str, Any]:
+    planned_qty = _v2_safe_num(item.get("planned_qty"))
+    required_hours = _v2_safe_num(item.get("required_hours"))
+    unit_price = _v2_safe_num(item.get("unit_price"))
+    labor_rate = _v2_safe_num(item.get("labor_rate_per_hour"), default=DEFAULT_LABOR_RATE_PER_HOUR)
+    norm_hpu = _v2_safe_num(item.get("norm_hours_per_unit"))
+    if norm_hpu <= 0 and planned_qty > 0:
+        norm_hpu = required_hours / planned_qty
+    comment = str(item.get("comment") or "").strip()
+    return {
+        "draft_id": draft_id,
+        "project_code": item.get("project_code"),
+        "month_key": item.get("month_key"),
+        "facility_building": item.get("facility"),
+        "construction_discipline": item.get("discipline"),
+        "boq_code": item.get("boq_code"),
+        "boq_name": item.get("boq_name"),
+        "unit_of_measure": item.get("unit"),
+        "crew_id": item.get("crew_code"),
+        "planned_qty": planned_qty,
+        "unit_price": unit_price,
+        "plan_value": _v2_safe_num(item.get("plan_value")) or (planned_qty * unit_price),
+        "norm_scenario": item.get("norm_scenario"),
+        "selected_hours_per_unit": norm_hpu,
+        "required_hours": required_hours,
+        "labor_rate_per_hour": labor_rate,
+        "labor_cost": _v2_safe_num(item.get("labor_cost")) or (required_hours * labor_rate),
+        "line_status": "DRAFT",
+        "comment": comment or None,
+    }
+
+
+def build_v2_draft_line_payloads(draft_id: str, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_v2_map_session_item_to_db_line(draft_id, item) for item in items]
+
+
+def save_v2_draft_to_supabase(
+    project_code: str,
+    month_key: str,
+    items: list[dict[str, Any]],
+) -> str:
+    write_client = get_v2_supabase_write_client()
+    if write_client is None:
+        raise RuntimeError("SUPABASE_SECRET_KEY не задан в .env — запись черновика недоступна.")
+
+    scope_items = _v2_filter_items_for_scope(items, project_code, month_key)
+    validation_errors = validate_v2_draft_for_save(scope_items)
+    if validation_errors:
+        raise ValueError("\n".join(validation_errors))
+    if not scope_items:
+        raise ValueError(
+            "Нет строк для сохранения: проверьте, что project/month в фильтре "
+            "совпадают с добавленными строками."
+        )
+
+    existing_id = str(st.session_state.get(V2_SAVED_DRAFT_ID_KEY) or "").strip()
+    if not existing_id:
+        existing_id = find_v2_saved_draft_id(project_code, month_key) or ""
+
+    if existing_id:
+        header_payload = build_v2_draft_header_payload(
+            scope_items, project_code, month_key, for_create=False
+        )
+        write_client.table("monthly_plan_drafts").update(header_payload).eq(
+            "draft_id", existing_id
+        ).execute()
+        write_client.table("monthly_plan_draft_lines").delete().eq("draft_id", existing_id).execute()
+        line_payloads = build_v2_draft_line_payloads(existing_id, scope_items)
+        if line_payloads:
+            write_client.table("monthly_plan_draft_lines").insert(line_payloads).execute()
+        draft_id = existing_id
+    else:
+        header_payload = build_v2_draft_header_payload(
+            scope_items, project_code, month_key, for_create=True
+        )
+        header_resp = write_client.table("monthly_plan_drafts").insert(header_payload).execute()
+        if not header_resp.data:
+            raise RuntimeError("Не удалось создать запись monthly_plan_drafts.")
+        draft_id = str(header_resp.data[0].get("draft_id") or "")
+        if not draft_id:
+            raise RuntimeError("Не удалось получить draft_id после сохранения monthly_plan_drafts.")
+        line_payloads = build_v2_draft_line_payloads(draft_id, scope_items)
+        if line_payloads:
+            write_client.table("monthly_plan_draft_lines").insert(line_payloads).execute()
+
+    st.session_state[V2_SAVED_DRAFT_ID_KEY] = draft_id
+    return draft_id
+
+
+def map_v2_db_line_to_session_item(line: dict[str, Any], header_updated_at: str) -> dict[str, Any]:
+    norm_scenario = str(line.get("norm_scenario") or NORM_SCENARIO_REALISTIC)
+    planned_qty = _v2_safe_num(line.get("planned_qty"))
+    selected_hpu = _v2_safe_num(line.get("selected_hours_per_unit"))
+    required_hours = _v2_safe_num(line.get("required_hours"))
+    if required_hours <= 0 and planned_qty > 0 and selected_hpu > 0:
+        required_hours = planned_qty * selected_hpu
+    crew_size = 1.0
+    crew_day_capacity = crew_size * PRODUCTIVE_HOURS_PER_PERSON_SHIFT
+    duration_shifts = required_hours / crew_day_capacity if crew_day_capacity > 0 else 0.0
+    manual_norm = selected_hpu if norm_scenario == NORM_SCENARIO_MANUAL else None
+    added_at = str(header_updated_at or "").strip() or datetime.now(timezone.utc).isoformat()
+    return {
+        "line_uid": str(uuid4()),
+        "project_code": str(line.get("project_code") or "").strip(),
+        "facility": str(line.get("facility_building") or "").strip(),
+        "discipline": str(line.get("construction_discipline") or "").strip(),
+        "system": "",
+        "iwp": "",
+        "boq_code": str(line.get("boq_code") or "").strip().upper(),
+        "boq_name": str(line.get("boq_name") or "").strip(),
+        "unit": str(line.get("unit_of_measure") or "").strip(),
+        "month_key": str(line.get("month_key") or "").strip(),
+        "crew_code": str(line.get("crew_id") or "").strip(),
+        "crew_size": crew_size,
+        "planned_qty": planned_qty,
+        "unit_price": _v2_safe_num(line.get("unit_price")),
+        "plan_value": _v2_safe_num(line.get("plan_value")),
+        "norm_scenario": norm_scenario,
+        "manual_norm_value": manual_norm,
+        "norm_hours_per_unit": selected_hpu,
+        "required_hours": required_hours,
+        "productive_hours_per_person_shift": PRODUCTIVE_HOURS_PER_PERSON_SHIFT,
+        "crew_day_capacity_hours": crew_day_capacity,
+        "duration_shifts": duration_shifts,
+        "labor_rate_per_hour": _v2_safe_num(
+            line.get("labor_rate_per_hour"), default=DEFAULT_LABOR_RATE_PER_HOUR
+        ),
+        "labor_cost": _v2_safe_num(line.get("labor_cost")),
+        "comment": str(line.get("comment") or "").strip(),
+        "added_at": added_at,
+        "line_source_ui": "Загружено из Supabase",
+        "read_only": False,
+    }
+
+
+def _v2_query_draft_line_rows(draft_id: str) -> list[dict[str, Any]]:
+    """Строки monthly_plan_draft_lines; fallback на service role как у header lookup."""
+    draft_id = str(draft_id or "").strip()
+    if not draft_id:
+        return []
+
+    def _run(client: Client) -> list[dict[str, Any]]:
+        resp = (
+            client.table("monthly_plan_draft_lines")
+            .select("*")
+            .eq("draft_id", draft_id)
+            .limit(10000)
+            .execute()
+        )
+        return list(resp.data or [])
+
+    try:
+        rows = _run(supabase)
+    except Exception:  # noqa: BLE001
+        rows = []
+
+    if rows:
+        return rows
+
+    write_client = get_v2_supabase_write_client()
+    if write_client is None:
+        return []
+    try:
+        return _run(write_client)
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def load_v2_draft_lines_from_supabase(draft_id: str, header_updated_at: str) -> list[dict[str, Any]]:
+    return [
+        map_v2_db_line_to_session_item(row, header_updated_at)
+        for row in _v2_query_draft_line_rows(draft_id)
+    ]
+
+
+def apply_v2_loaded_draft_to_session(
+    loaded_items: list[dict[str, Any]],
+    project_code: str,
+    month_key: str,
+    draft_id: str,
+) -> None:
+    kept = [
+        item
+        for item in load_v2_session_draft_items()
+        if not _v2_item_matches_scope(item, project_code, month_key)
+    ]
+    st.session_state[V2_DRAFT_ITEMS_KEY] = kept + loaded_items
+    st.session_state[V2_SAVED_DRAFT_ID_KEY] = draft_id
+
+
+def load_v2_saved_draft_into_session(
+    meta: dict[str, Any],
+    project_code: str,
+    month_key: str,
+) -> int:
+    """Загрузить lines по draft_id из meta (без повторного lookup header)."""
+    draft_id = str(meta.get("draft_id") or "").strip()
+    if not draft_id:
+        raise RuntimeError("В meta черновика отсутствует draft_id.")
+
+    header_updated_at = str(meta.get("updated_at") or "")
+    raw_rows = _v2_query_draft_line_rows(draft_id)
+    loaded_items = load_v2_draft_lines_from_supabase(draft_id, header_updated_at)
+
+    apply_project = str(meta.get("project_code") or project_code).strip()
+    apply_month = str(meta.get("month_key") or month_key).strip()
+    apply_v2_loaded_draft_to_session(loaded_items, apply_project, apply_month, draft_id)
+
+    session_count = len(load_v2_session_draft_items())
+    st.session_state[V2_DRAFT_LOAD_DEBUG_KEY] = {
+        "draft_id": draft_id,
+        "project_code": project_code,
+        "month_key": month_key,
+        "header_rows_count": int(meta.get("rows_count") or 0),
+        "lines_db": len(raw_rows),
+        "mapped_items": len(loaded_items),
+        "session_items": session_count,
+    }
+
+    if not loaded_items and int(meta.get("rows_count") or 0) > 0:
+        raise RuntimeError(
+            f"В header указано {meta['rows_count']} строк, но monthly_plan_draft_lines "
+            f"пуст для draft_id={draft_id}."
+        )
+    if not loaded_items:
+        raise RuntimeError("Строки черновика не найдены в monthly_plan_draft_lines.")
+
+    return len(loaded_items)
+
+
+def render_v2_saved_draft_banner(
+    meta: dict[str, Any],
+    project_code: str,
+    month_key: str,
+) -> None:
+    updated_display = format_v2_added_at_moscow(meta.get("updated_at")) or "—"
+    project_filter = str(st.session_state.get("v2_scope_project") or "").strip()
+    filter_hint = ""
+    if not project_filter or project_filter == "Все":
+        filter_hint = (
+            f"  \nВ фильтре Scope выбран «Все» — для резервирования выберите проект "
+            f"`{project_code}`."
+        )
+
+    st.info(
+        f"**Найден сохранённый черновик**  \n"
+        f"Проект: `{project_code}` | Месяц: `{month_key}`  \n"
+        f"Строк: **{meta['rows_count']}** | "
+        f"Плановая стоимость: **{_format_rub(float(meta['total_plan_value']))}** | "
+        f"Обновлён: **{updated_display}** (МСК)"
+        f"{filter_hint}"
+    )
+
+    session_count = _v2_count_session_items_for_scope(project_code, month_key)
+    if session_count > 0:
+        st.warning(
+            f"В текущей сессии уже есть **{session_count}** строк для этого проекта и месяца. "
+            "Загрузка заменит их строками из Supabase."
+        )
+
+    if st.button("Загрузить сохранённый черновик", key="v2_load_saved_draft"):
+        try:
+            loaded_count = load_v2_saved_draft_into_session(meta, project_code, month_key)
+            if loaded_count > 0:
+                st.success(f"Загружено строк: {loaded_count}")
+                st.rerun()
+            else:
+                st.error("Строки черновика не загружены в session.")
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Не удалось загрузить черновик: {exc}")
 
 
 def compute_v2_month_plan_kpis(items: list[dict[str, Any]]) -> dict[str, float | int]:
     return {
         "total_lines": len(items),
-        "new_lines": len(items),
+        "new_lines": sum(1 for item in items if item.get("is_pending")),
         "plan_value_rub": sum(_v2_safe_num(item.get("plan_value")) for item in items),
         "required_hours": sum(_v2_safe_num(item.get("required_hours")) for item in items),
         "labor_cost_rub": sum(_v2_safe_num(item.get("labor_cost")) for item in items),
@@ -1920,8 +2954,20 @@ def _v2_format_duration_shifts_display(value: Any) -> str:
     return f"{_v2_format_qty_display_str(shifts)} смены"
 
 
+def _v2_plan_display_optional_text(value: Any) -> str:
+    text = str(value or "").strip()
+    return text or "—"
+
+
+def _v2_plan_display_norm_hours_per_unit(item: dict[str, Any]) -> str:
+    norm_hpu = _v2_safe_num(item.get("norm_hours_per_unit"))
+    if norm_hpu <= 0:
+        return "—"
+    return _v2_format_qty_display_str(norm_hpu)
+
+
 def map_v2_session_draft_to_display_df(items: list[dict[str, Any]]) -> pd.DataFrame:
-    """Session draft → таблица Модуля 3."""
+    """Session plan → таблица «Единый месячный план»."""
     if not items:
         return pd.DataFrame(columns=V2_MONTH_PLAN_DISPLAY_COLUMNS)
 
@@ -1932,18 +2978,25 @@ def map_v2_session_draft_to_display_df(items: list[dict[str, Any]]) -> pd.DataFr
     )
     rows: list[dict[str, str]] = []
     for item in sorted_items:
+        facility = str(item.get("facility") or "").strip() or "—"
+        discipline = str(item.get("discipline") or "").strip() or "—"
         rows.append(
             {
-                "Дата добавления": format_v2_added_at_moscow(item.get("added_at")) or "—",
-                "Статус": V2_SESSION_DRAFT_STATUS,
-                "Месяц": str(item.get("month_key") or "—"),
+                "Проект": str(item.get("project_code") or "—"),
+                "Дата/время": format_v2_added_at_moscow(item.get("added_at")) or "—",
+                "Очередь": _v2_plan_item_queue(item) or "—",
+                "Титул": facility,
+                "Дисциплина": discipline,
+                "Система": _v2_plan_display_optional_text(item.get("system")),
+                "IWP": _v2_plan_display_optional_text(item.get("iwp")),
                 "BOQ код": str(item.get("boq_code") or "—"),
-                "Наименование": str(item.get("boq_name") or "—"),
+                "Наименование работ": str(item.get("boq_name") or "—"),
                 "Объём": _v2_format_qty_display_str(item.get("planned_qty")),
                 "Ед.": str(item.get("unit") or "—"),
                 "Звено": str(item.get("crew_code") or "—"),
                 "Людей": str(int(_v2_safe_num(item.get("crew_size"), default=1.0))),
                 "Норма": str(item.get("norm_scenario") or "—"),
+                "Норма ч/ед.": _v2_plan_display_norm_hours_per_unit(item),
                 "Трудозатраты": (
                     f"{_v2_format_qty_display_str(item.get('required_hours'))} чел-ч"
                     if _v2_safe_num(item.get("required_hours")) > 0
@@ -1960,10 +3013,507 @@ def map_v2_session_draft_to_display_df(items: list[dict[str, Any]]) -> pd.DataFr
                     if _v2_safe_num(item.get("labor_cost")) > 0
                     else "—"
                 ),
-                "Комментарий": str(item.get("comment") or "").strip() or "—",
+                "Статус": _v2_plan_status_display(item.get("status")),
             }
         )
     return pd.DataFrame(rows, columns=V2_MONTH_PLAN_DISPLAY_COLUMNS)
+
+
+def style_v2_month_plan_table(display_df: pd.DataFrame) -> Any:
+    """Zebra rows, muted status badges, выравнивание чисел."""
+
+    def _status_style(value: Any) -> str:
+        return V2_PLAN_STATUS_STYLES.get(str(value), "")
+
+    def _zebra_row_style(row: pd.Series) -> list[str]:
+        bg = "#FAFBFC" if row.name % 2 == 1 else "#FFFFFF"
+        return [f"background-color: {bg};"] * len(row)
+
+    styler = display_df.style.apply(_zebra_row_style, axis=1).map(
+        _status_style, subset=["Статус"]
+    )
+    for col in V2_MONTH_PLAN_NUMERIC_COLUMNS:
+        if col in display_df.columns:
+            styler = styler.set_properties(subset=[col], **{"text-align": "right"})
+    return styler
+
+
+def _v2_plan_row_key(item: dict[str, Any]) -> str:
+    plan_line_id = str(item.get("plan_line_id") or "").strip()
+    if plan_line_id:
+        return plan_line_id
+    line_uid = str(item.get("line_uid") or "").strip()
+    if line_uid:
+        return line_uid
+    return str(uuid4())
+
+
+def _v2_plan_sort_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(items, key=lambda item: str(item.get("added_at") or ""), reverse=True)
+
+
+def _v2_find_plan_item_by_key(
+    items: list[dict[str, Any]],
+    row_key: str,
+) -> dict[str, Any] | None:
+    target = str(row_key or "").strip()
+    if not target:
+        return None
+    for item in items:
+        if _v2_plan_row_key(item) == target:
+            return item
+    return None
+
+
+def _v2_replace_plan_item_in_session(row_key: str, updated_item: dict[str, Any]) -> None:
+    target = str(row_key or "").strip()
+    items = load_v2_session_draft_items()
+    st.session_state[V2_PLAN_ITEMS_KEY] = [
+        updated_item if _v2_plan_row_key(item) == target else item for item in items
+    ]
+
+
+def _v2_plan_selection_stats(
+    scope_items: list[dict[str, Any]],
+    selected_keys: list[str],
+) -> dict[str, int]:
+    key_set = {str(key).strip() for key in selected_keys if str(key).strip()}
+    selected_count = 0
+    sendable_count = 0
+    editable_count = 0
+    deletable_count = 0
+    for item in scope_items:
+        row_key = _v2_plan_row_key(item)
+        if row_key not in key_set:
+            continue
+        selected_count += 1
+        status = str(item.get("status") or V2_PLAN_STATUS_NOT_SENT)
+        if status != V2_PLAN_STATUS_NOT_SENT:
+            continue
+        deletable_count += 1
+        editable_count += 1
+        if str(item.get("plan_line_id") or "").strip():
+            sendable_count += 1
+    sent_to_admission_count = sum(
+        1
+        for item in scope_items
+        if str(item.get("status") or V2_PLAN_STATUS_NOT_SENT) == V2_PLAN_STATUS_SENT
+    )
+    return {
+        "selected": selected_count,
+        "sendable": sendable_count,
+        "sent_to_admission": sent_to_admission_count,
+        "editable": editable_count,
+        "deletable": deletable_count,
+    }
+
+
+def apply_v2_plan_line_edit(
+    item: dict[str, Any],
+    *,
+    planned_qty: float,
+    crew_code: str,
+    crew_size: float,
+    norm_scenario: str,
+    norm_hours_per_unit: float,
+    comment: str,
+) -> dict[str, Any]:
+    """Пересчитать editable-поля строки плана и пометить как pending."""
+    series = pd.Series(dict(item))
+    manual_norm = norm_hours_per_unit if norm_scenario == NORM_SCENARIO_MANUAL else 0.0
+    if norm_scenario == NORM_SCENARIO_REALISTIC and norm_hours_per_unit > 0:
+        series["p50_hours_per_unit"] = norm_hours_per_unit
+    if norm_scenario == NORM_SCENARIO_CAUTIOUS and norm_hours_per_unit > 0:
+        series["p80_hours_per_unit"] = norm_hours_per_unit
+
+    preview = v2_compute_plan_add_preview(
+        series,
+        float(planned_qty),
+        norm_scenario,
+        float(manual_norm),
+        float(crew_size),
+    )
+    if preview.get("needs_manual_norm") and norm_hours_per_unit > 0:
+        preview = v2_compute_plan_add_preview(
+            series,
+            float(planned_qty),
+            NORM_SCENARIO_MANUAL,
+            float(norm_hours_per_unit),
+            float(crew_size),
+        )
+        norm_scenario = NORM_SCENARIO_MANUAL
+        manual_norm = norm_hours_per_unit
+
+    updated = dict(item)
+    norm_hpu = preview.get("norm_hours_per_unit")
+    if norm_hpu is None and norm_hours_per_unit > 0:
+        norm_hpu = norm_hours_per_unit
+    updated.update(
+        {
+            "planned_qty": float(planned_qty),
+            "crew_code": str(crew_code).strip(),
+            "crew_size": preview["crew_size"],
+            "norm_scenario": norm_scenario,
+            "manual_norm_value": manual_norm if norm_scenario == NORM_SCENARIO_MANUAL else None,
+            "norm_hours_per_unit": _v2_safe_num(norm_hpu),
+            "required_hours": preview["required_hours"],
+            "productive_hours_per_person_shift": preview["productive_hours_per_person_shift"],
+            "crew_day_capacity_hours": preview["crew_day_capacity_hours"],
+            "duration_shifts": preview["duration_shifts"],
+            "plan_value": preview["plan_value"],
+            "labor_cost": preview["labor_cost"],
+            "comment": str(comment or "").strip(),
+            "is_pending": True,
+            "read_only": False,
+        }
+    )
+    return updated
+
+
+def send_v2_plan_lines_to_admission(
+    project_code: str,
+    month_key: str,
+    row_keys: list[str],
+) -> dict[str, int]:
+    """Отправка в допуск (фаза 1.2): только monthly_plan_lines_v2.
+
+    Для выбранных NOT_SENT строк с plan_line_id:
+    status → SENT_TO_ADMISSION, sent_to_constraints_at → now().
+    Без записи в monthly_plan_review_queue. После — hydrate/reload.
+  """
+    write_client = get_v2_supabase_write_client()
+    if write_client is None:
+        raise RuntimeError("SUPABASE_SECRET_KEY не задан в .env — отправка недоступна.")
+
+    key_set = {str(key).strip() for key in row_keys if str(key).strip()}
+    if not key_set:
+        raise ValueError("Не выбраны строки для отправки в допуск.")
+
+    scope_items = _v2_filter_items_for_scope(
+        load_v2_session_draft_items(), project_code, month_key
+    )
+    now_iso = datetime.now(timezone.utc).isoformat()
+    sent = 0
+    skipped = 0
+    unsaved: list[str] = []
+
+    for item in scope_items:
+        row_key = _v2_plan_row_key(item)
+        if row_key not in key_set:
+            continue
+        status = str(item.get("status") or V2_PLAN_STATUS_NOT_SENT)
+        if status == V2_PLAN_STATUS_SENT:
+            skipped += 1
+            continue
+        plan_line_id = str(item.get("plan_line_id") or "").strip()
+        if not plan_line_id:
+            unsaved.append(str(item.get("boq_code") or row_key))
+            continue
+        write_client.table(V2_PLAN_LINES_TABLE).update(
+            {
+                "status": V2_PLAN_STATUS_SENT,
+                "sent_to_constraints_at": now_iso,
+            }
+        ).eq("plan_line_id", plan_line_id).eq("status", V2_PLAN_STATUS_NOT_SENT).execute()
+        sent += 1
+
+    if unsaved:
+        raise ValueError(
+            "Сначала сохраните несохранённые строки: "
+            + ", ".join(unsaved[:5])
+            + ("…" if len(unsaved) > 5 else "")
+        )
+    if sent == 0:
+        raise ValueError("Нет строк NOT_SENT для отправки в допуск.")
+
+    st.session_state[V2_PLAN_SELECTED_KEYS] = []
+    st.session_state[V2_PLAN_EDIT_ROW_KEY] = ""
+    hydrate_v2_month_plan_if_needed(project_code, month_key, force=True)
+    return {"sent": sent, "skipped": skipped}
+
+
+def delete_v2_plan_lines(
+    project_code: str,
+    month_key: str,
+    row_keys: list[str],
+) -> dict[str, int]:
+    """Удалить выбранные NOT_SENT строки из session и DB."""
+    write_client = get_v2_supabase_write_client()
+    key_set = {str(key).strip() for key in row_keys if str(key).strip()}
+    if not key_set:
+        raise ValueError("Не выбраны строки для удаления.")
+
+    deleted = 0
+    skipped = 0
+    kept_items: list[dict[str, Any]] = []
+
+    for item in load_v2_session_draft_items():
+        if not _v2_item_matches_scope(item, project_code, month_key):
+            kept_items.append(item)
+            continue
+        row_key = _v2_plan_row_key(item)
+        if row_key not in key_set:
+            kept_items.append(item)
+            continue
+        status = str(item.get("status") or V2_PLAN_STATUS_NOT_SENT)
+        if status == V2_PLAN_STATUS_SENT:
+            kept_items.append(item)
+            skipped += 1
+            continue
+        plan_line_id = str(item.get("plan_line_id") or "").strip()
+        if plan_line_id:
+            if write_client is None:
+                raise RuntimeError("SUPABASE_SECRET_KEY не задан в .env — удаление недоступно.")
+            write_client.table(V2_PLAN_LINES_TABLE).delete().eq(
+                "plan_line_id", plan_line_id
+            ).eq("status", V2_PLAN_STATUS_NOT_SENT).execute()
+        deleted += 1
+
+    st.session_state[V2_PLAN_ITEMS_KEY] = kept_items
+    st.session_state[V2_PLAN_SELECTED_KEYS] = []
+    st.session_state[V2_PLAN_EDIT_ROW_KEY] = ""
+    scope_items = _v2_filter_items_for_scope(kept_items, project_code, month_key)
+    st.session_state[V2_PLAN_DIRTY_KEY] = any(item.get("is_pending") for item in scope_items)
+    return {"deleted": deleted, "skipped": skipped}
+
+
+def clear_v2_pending_plan_lines_for_scope(project_code: str, month_key: str) -> int:
+    """Удалить только несохранённые pending строки текущего scope."""
+    kept = [
+        item
+        for item in load_v2_session_draft_items()
+        if not (
+            _v2_item_matches_scope(item, project_code, month_key)
+            and item.get("is_pending") is True
+        )
+    ]
+    removed = len(load_v2_session_draft_items()) - len(kept)
+    st.session_state[V2_PLAN_ITEMS_KEY] = kept
+    st.session_state[V2_PLAN_DIRTY_KEY] = False
+    st.session_state[V2_PLAN_SELECTED_KEYS] = []
+    st.session_state[V2_PLAN_EDIT_ROW_KEY] = ""
+    return removed
+
+
+def render_v2_plan_edit_panel(item: dict[str, Any]) -> None:
+    """Форма редактирования одной NOT_SENT строки."""
+    row_key = _v2_plan_row_key(item)
+    st.markdown('<div class="v2-month-plan-edit-panel">', unsafe_allow_html=True)
+    st.markdown("**Редактирование строки**")
+    meta_col1, meta_col2, meta_col3 = st.columns(3)
+    meta_col1.caption(f"Проект: {item.get('project_code') or '—'}")
+    meta_col2.caption(f"Месяц: {item.get('month_key') or '—'}")
+    meta_col3.caption(f"Статус: {_v2_plan_status_display(item.get('status'))}")
+    st.caption(
+        f"BOQ {item.get('boq_code') or '—'} · "
+        f"{item.get('boq_name') or '—'} · "
+        f"{item.get('facility') or '—'} / {item.get('discipline') or '—'}"
+    )
+
+    crew_options = load_v2_crew_options()
+    current_crew = str(item.get("crew_code") or "Звено не выбрано").strip()
+    crew_index = crew_options.index(current_crew) if current_crew in crew_options else 0
+    current_scenario = str(item.get("norm_scenario") or NORM_SCENARIO_REALISTIC)
+    scenario_index = (
+        NORM_SCENARIO_OPTIONS.index(current_scenario)
+        if current_scenario in NORM_SCENARIO_OPTIONS
+        else 0
+    )
+
+    left, right = st.columns(2)
+    with left:
+        planned_qty = st.number_input(
+            "Объём",
+            min_value=0.0,
+            value=float(_v2_safe_num(item.get("planned_qty"))),
+            step=0.01,
+            key=f"v2_plan_edit_qty_{row_key}",
+        )
+        crew_code = st.selectbox(
+            "Звено",
+            crew_options,
+            index=crew_index,
+            key=f"v2_plan_edit_crew_{row_key}",
+        )
+        crew_size = st.number_input(
+            "Людей",
+            min_value=1,
+            step=1,
+            value=int(_v2_safe_num(item.get("crew_size"), default=1.0)),
+            key=f"v2_plan_edit_crew_size_{row_key}",
+        )
+    with right:
+        norm_scenario = st.selectbox(
+            "Норма",
+            NORM_SCENARIO_OPTIONS,
+            index=scenario_index,
+            key=f"v2_plan_edit_norm_{row_key}",
+        )
+        norm_hours_per_unit = st.number_input(
+            "Норма ч/ед.",
+            min_value=0.0,
+            value=float(_v2_safe_num(item.get("norm_hours_per_unit"))),
+            step=0.01,
+            key=f"v2_plan_edit_norm_hpu_{row_key}",
+        )
+        comment = st.text_input(
+            "Комментарий",
+            value=str(item.get("comment") or ""),
+            key=f"v2_plan_edit_comment_{row_key}",
+        )
+
+    btn_apply, btn_cancel = st.columns(2)
+    with btn_apply:
+        if st.button("Применить изменения", key=f"v2_plan_edit_apply_{row_key}"):
+            try:
+                updated = apply_v2_plan_line_edit(
+                    item,
+                    planned_qty=float(planned_qty),
+                    crew_code=str(crew_code),
+                    crew_size=float(crew_size),
+                    norm_scenario=str(norm_scenario),
+                    norm_hours_per_unit=float(norm_hours_per_unit),
+                    comment=str(comment),
+                )
+                _v2_replace_plan_item_in_session(row_key, updated)
+                st.session_state[V2_PLAN_DIRTY_KEY] = True
+                st.session_state[V2_PLAN_EDIT_ROW_KEY] = ""
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Не удалось применить изменения: {exc}")
+    with btn_cancel:
+        if st.button("Отмена", key=f"v2_plan_edit_cancel_{row_key}"):
+            st.session_state[V2_PLAN_EDIT_ROW_KEY] = ""
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+_V2_PLAN_METRIC_ICON_USERS = (
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" '
+    'stroke="#4a78b5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>'
+    '<circle cx="9" cy="7" r="4"/>'
+    '<path d="M22 21v-2a4 4 0 0 0-3-3.87"/>'
+    '<path d="M16 3.13a4 4 0 0 1 0 7.75"/>'
+    "</svg>"
+)
+_V2_PLAN_METRIC_ICON_SEND = (
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" '
+    'stroke="#2f7a4a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    '<line x1="22" y1="2" x2="11" y2="13"/>'
+    '<polygon points="22 2 15 22 11 13 2 9 22 2"/>'
+    "</svg>"
+)
+
+
+def render_v2_plan_action_bar(
+    project_code: str,
+    month_key: str,
+    scope_items: list[dict[str, Any]],
+    selected_keys: list[str],
+    *,
+    bar_key_suffix: str = "main",
+) -> None:
+    """Компактная command panel — visual only."""
+    stats = _v2_plan_selection_stats(scope_items, selected_keys)
+    has_pending = any(item.get("is_pending") for item in scope_items)
+
+    st.markdown('<div class="v2-month-plan-action-bar-anchor"></div>', unsafe_allow_html=True)
+    metrics_col, actions_col = st.columns([0.5, 1.5], vertical_alignment="center")
+    with metrics_col:
+        st.markdown(
+            '<div class="v2-plan-metrics-stack">'
+            f'<div class="v2-plan-metric-card">'
+            f'<div class="v2-plan-metric-top">{_V2_PLAN_METRIC_ICON_USERS}'
+            f'<span class="v2-plan-metric-label">Выбрано</span></div>'
+            f'<div class="v2-plan-metric-value">{stats["selected"]}</div></div>'
+            f'<div class="v2-plan-metric-card">'
+            f'<div class="v2-plan-metric-top">{_V2_PLAN_METRIC_ICON_SEND}'
+            f'<span class="v2-plan-metric-label">К допуску</span></div>'
+            f'<div class="v2-plan-metric-value">{stats["sent_to_admission"]}</div></div>'
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    with actions_col:
+        st.markdown('<div class="v2-plan-btn-hook v2-plan-btn-hook-send"></div>', unsafe_allow_html=True)
+        if st.button(
+            "В ДОПУСК",
+            icon=":material/send:",
+            disabled=stats["sendable"] == 0,
+            key=f"v2_plan_send_{bar_key_suffix}",
+        ):
+            try:
+                result = send_v2_plan_lines_to_admission(
+                    project_code, month_key, selected_keys
+                )
+                st.success(
+                    f"Отправлено в допуск: {result['sent']} строк. "
+                    "Статус: «Отправлен в допуск»."
+                )
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Не удалось отправить в допуск: {exc}")
+
+        st.markdown('<div class="v2-plan-btn-hook v2-plan-btn-hook-save"></div>', unsafe_allow_html=True)
+        if st.button(
+            "Сохранить план",
+            icon=":material/save:",
+            disabled=not has_pending,
+            key=f"v2_plan_save_{bar_key_suffix}",
+        ):
+            try:
+                result = save_v2_month_plan(
+                    project_code, month_key, load_v2_session_draft_items()
+                )
+                st.success(
+                    f"Месячный план сохранён: добавлено {result['inserted']}, "
+                    f"обновлено {result['updated']}."
+                )
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Не удалось сохранить месячный план: {exc}")
+
+        st.markdown('<div class="v2-plan-btn-hook v2-plan-btn-hook-edit"></div>', unsafe_allow_html=True)
+        if st.button(
+            "Изменить строку",
+            icon=":material/edit:",
+            disabled=stats["editable"] != 1,
+            key=f"v2_plan_edit_{bar_key_suffix}",
+        ):
+            editable_keys = [
+                _v2_plan_row_key(item)
+                for item in scope_items
+                if _v2_plan_row_key(item) in set(selected_keys)
+                and str(item.get("status") or V2_PLAN_STATUS_NOT_SENT)
+                == V2_PLAN_STATUS_NOT_SENT
+            ]
+            if len(editable_keys) == 1:
+                st.session_state[V2_PLAN_EDIT_ROW_KEY] = editable_keys[0]
+                st.rerun()
+
+        st.markdown('<div class="v2-plan-btn-hook v2-plan-btn-hook-delete"></div>', unsafe_allow_html=True)
+        if st.button(
+            "Удалить строки",
+            icon=":material/delete:",
+            disabled=stats["deletable"] == 0,
+            key=f"v2_plan_delete_{bar_key_suffix}",
+        ):
+            try:
+                result = delete_v2_plan_lines(project_code, month_key, selected_keys)
+                st.success(f"Удалено строк: {result['deleted']}.")
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Не удалось удалить строки: {exc}")
+
+        st.markdown('<div class="v2-plan-btn-hook v2-plan-btn-hook-clear"></div>', unsafe_allow_html=True)
+        if st.button(
+            "Очистить несохранённые",
+            icon=":material/ink_eraser:",
+            disabled=not has_pending,
+            key=f"v2_plan_clear_{bar_key_suffix}",
+        ):
+            clear_v2_pending_plan_lines_for_scope(project_code, month_key)
+            st.rerun()
 
 
 def _v2_adjustment_save_row(item: pd.Series) -> pd.Series:
@@ -2299,7 +3849,8 @@ def _render_add_to_month_plan_expander(item: pd.Series) -> None:
 
         st.markdown(
             '<p class="v2-boq-action-footnote">'
-            "Строка сохраняется в session draft. Supabase и единый план — позже."
+            "Строка добавляется в месячный план. Для записи в Supabase нажмите "
+            "«Сохранить месячный план» в модуле действий."
             "</p>",
             unsafe_allow_html=True,
         )
@@ -4130,64 +5681,90 @@ def render_module_add_boq() -> None:
 
 
 def render_module_month_plan() -> None:
-    """Модуль 3: read-only таблица session draft."""
+    """Модуль 3: единый месячный план (session + monthly_plan_lines_v2)."""
     st.markdown(
         '<p class="constructor-v2-module-hint">'
-        "Накопление строк месячного плана в текущей сессии. "
-        "Сохранение в Supabase и отправка — позже."
+        "Строки загружаются автоматически при выборе проекта и месяца. "
+        "Выберите строки в таблице для действий."
         "</p>",
         unsafe_allow_html=True,
     )
 
-    items = load_v2_session_draft_items()
-    if not items:
-        st.info("В месячный план пока не добавлены строки.")
+    scope = _v2_resolve_draft_scope()
+    if not scope:
+        st.caption("Выберите конкретный проект (не «Все») и месяц в фильтрах Scope.")
         return
 
+    project_code, month_key = scope
+    hydrate_v2_month_plan_if_needed(project_code, month_key)
+    items = _v2_filter_items_for_scope(load_v2_session_draft_items(), project_code, month_key)
+
+    if not items:
+        st.info("Для выбранного месяца пока нет строк месячного плана.")
+        return
+
+    sorted_items = _v2_plan_sort_items(items)
+    selected_keys: list[str] = list(st.session_state.get(V2_PLAN_SELECTED_KEYS) or [])
+
     kpis = compute_v2_month_plan_kpis(items)
+    st.markdown('<div class="v2-month-plan-kpi-bar">', unsafe_allow_html=True)
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Строк в плане", f"{kpis['total_lines']:,}".replace(",", " "))
-    m2.metric("Новые строки", f"{kpis['new_lines']:,}".replace(",", " "))
+    m2.metric("Несохранённые", f"{kpis['new_lines']:,}".replace(",", " "))
     m3.metric("Плановая стоимость, ₽", _format_rub(float(kpis["plan_value_rub"])))
     m4.metric("Трудозатраты, чел-ч", _v2_format_qty_display_str(kpis["required_hours"]))
     m5.metric("Стоимость труда, ₽", _format_rub(float(kpis["labor_cost_rub"])))
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    display_df = map_v2_session_draft_to_display_df(items)
-    st.dataframe(
-        display_df,
+    edit_row_key = str(st.session_state.get(V2_PLAN_EDIT_ROW_KEY) or "").strip()
+    if edit_row_key:
+        edit_item = _v2_find_plan_item_by_key(items, edit_row_key)
+        if edit_item and str(edit_item.get("status") or V2_PLAN_STATUS_NOT_SENT) == V2_PLAN_STATUS_NOT_SENT:
+            render_v2_plan_edit_panel(edit_item)
+        else:
+            st.session_state[V2_PLAN_EDIT_ROW_KEY] = ""
+
+    display_df = map_v2_session_draft_to_display_df(sorted_items)
+    st.markdown('<div class="v2-month-plan-table">', unsafe_allow_html=True)
+    table_event = st.dataframe(
+        style_v2_month_plan_table(display_df),
         use_container_width=True,
         hide_index=True,
-        height=min(36 * len(display_df) + 38, 420),
+        on_select="rerun",
+        selection_mode="multi-row",
+        key="v2_month_plan_table_select",
     )
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    if st.button("Очистить новые строки", key="v2_clear_session_draft"):
-        clear_v2_session_draft_items()
-        st.rerun()
+    selection_rows = getattr(getattr(table_event, "selection", None), "rows", None) or []
+    selected_keys = [
+        _v2_plan_row_key(sorted_items[row_idx])
+        for row_idx in selection_rows
+        if 0 <= row_idx < len(sorted_items)
+    ]
+    st.session_state[V2_PLAN_SELECTED_KEYS] = selected_keys
+
+    render_v2_plan_action_bar(
+        project_code, month_key, items, selected_keys, bar_key_suffix="main"
+    )
 
 
 def render_module_plan_actions() -> None:
-    """Модуль 4: действия с месячным планом."""
-    st.markdown(
-        '<p class="constructor-v2-module-hint">'
-        "Редактирование и удаление доступны только для новых или неотправленных строк."
-        "</p>",
-        unsafe_allow_html=True,
-    )
+    """Legacy: действия перенесены в «Единый месячный план»."""
+    st.caption("Действия с планом — в блоке «Единый месячный план» выше.")
 
-    st.info("Строка не выбрана. Выбор строки будет доступен в модуле «Единый месячный план».")
 
-    primary_col, secondary_col = st.columns(2)
-    with primary_col:
-        st.button("Сохранить", type="primary", disabled=True, key="v2_save_plan")
-        st.button("Отправить в контур допуска", disabled=True, key="v2_send_plan")
-    with secondary_col:
-        st.button("Редактировать выбранную строку", disabled=True, key="v2_edit_row")
-        st.button("Удалить выбранную строку", disabled=True, key="v2_delete_row")
+def render_module_technical_architecture_v2() -> None:
+    """Модуль 4: полный enterprise technical handbook (read-only)."""
+    render_v2_technical_architecture_handbook(embedded=True)
 
 
 def main() -> None:
     inject_page_styles()
     init_v2_session_state()
+    scope = _v2_resolve_draft_scope()
+    if scope:
+        hydrate_v2_month_plan_if_needed(*scope)
     render_page_header()
 
     with st.expander("📥 Загрузка исходных данных", expanded=False):
@@ -4199,8 +5776,8 @@ def main() -> None:
     with st.expander("📋 Единый месячный план", expanded=False):
         render_module_month_plan()
 
-    with st.expander("⚙️ Действия с месячным планом", expanded=False):
-        render_module_plan_actions()
+    with st.expander("🔧 Техническая архитектура v2", expanded=False):
+        render_module_technical_architecture_v2()
 
 
 # --- Точка входа Streamlit ---

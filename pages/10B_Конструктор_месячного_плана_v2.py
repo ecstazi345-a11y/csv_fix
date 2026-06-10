@@ -5265,8 +5265,15 @@ def render_scope_table(ui_df: pd.DataFrame) -> pd.DataFrame:
     st.markdown("</div>", unsafe_allow_html=True)
 
     selection_rows = getattr(getattr(table_event, "selection", None), "rows", None) or []
-    if selection_rows:
-        st.session_state.v2_scope_selected_boq_code = str(display_df.iloc[selection_rows[0]]["Код"])
+    if selection_rows and not display_df.empty:
+        selected_idx = int(selection_rows[0])
+        if 0 <= selected_idx < len(display_df):
+            st.session_state.v2_scope_selected_boq_code = str(
+                display_df.iloc[selected_idx]["Код"]
+            )
+        else:
+            st.session_state.v2_scope_selected_boq_code = ""
+            st.caption("Выбор строки сброшен: список BOQ был обновлён.")
 
     return ui_df
 

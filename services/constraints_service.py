@@ -147,6 +147,34 @@ def _fetch_existing_keys(
     return keys, errors
 
 
+def _plan_line_as_constraint_source(plan_line: Dict[str, Any]) -> Dict[str, Any]:
+    """v2 plan line / session item → source dict for _build_constraint_row."""
+    crew_id = (
+        plan_line.get("crew_code")
+        or plan_line.get("crew_id")
+        or plan_line.get("crew")
+    )
+    required_hours = plan_line.get("required_hours")
+    if required_hours is None:
+        required_hours = plan_line.get("labor_hours")
+
+    return {
+        "draft_id": None,
+        "line_id": str(plan_line.get("plan_line_id") or "").strip() or None,
+        "review_id": None,
+        "project_code": plan_line.get("project_code"),
+        "month_key": plan_line.get("month_key"),
+        "facility_building": plan_line.get("facility") or plan_line.get("facility_building"),
+        "construction_discipline": plan_line.get("discipline")
+        or plan_line.get("construction_discipline"),
+        "boq_code": plan_line.get("boq_code"),
+        "boq_name": plan_line.get("boq_name"),
+        "crew_id": crew_id,
+        "plan_value": plan_line.get("plan_value"),
+        "required_hours": required_hours,
+    }
+
+
 def _build_constraint_row(
     queue_row: Dict[str, Any],
     template: Dict[str, str],
@@ -266,5 +294,70 @@ def create_constraints_for_review_queue(
             summary["errors"].append(f"Ошибка insert (batch {offset // CHUNK_SIZE + 1}): {err}")
         else:
             summary["created_count"] += len(batch)
+
+    return summary
+
+
+def create_constraints_for_plan_lines(plan_lines: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Создаёт по 7 constraints на каждую v2 строку плана (monthly_plan_lines_v2).
+    line_id = plan_line_id; draft_id и review_id = NULL.
+    Уникальность: line_id + responsible_department + check_name.
+    """
+    summary: Dict[str, Any] = {
+        "created": 0,
+        "skipped": 0,
+        "errors": [],
+    }
+
+    write_client = get_write_client()
+    if write_client is None:
+        summary["errors"].append(
+            "SUPABASE_SECRET_KEY не задан в .env — запись в monthly_plan_constraints недоступна."
+        )
+        return summary
+
+    valid_lines: List[Dict[str, Any]] = []
+    for line in plan_lines:
+        plan_line_id = str(line.get("plan_line_id") or "").strip()
+        if not plan_line_id:
+            summary["errors"].append("Строка без plan_line_id пропущена.")
+            continue
+        valid_lines.append(line)
+
+    if not valid_lines:
+        return summary
+
+    line_ids = [str(line.get("plan_line_id")) for line in valid_lines]
+    existing_keys, existing_errors = _fetch_existing_keys(write_client, line_ids)
+    summary["errors"].extend(existing_errors)
+
+    templates = get_constraint_templates()
+    to_insert: List[Dict[str, Any]] = []
+
+    for plan_line in valid_lines:
+        line_id = plan_line.get("plan_line_id")
+        source = _plan_line_as_constraint_source(plan_line)
+        for template in templates:
+            key = _dedup_key(
+                line_id,
+                template["responsible_department"],
+                template["check_name"],
+            )
+            if key in existing_keys:
+                summary["skipped"] += 1
+                continue
+            to_insert.append(_build_constraint_row(source, template))
+            existing_keys.add(key)
+
+    for offset in range(0, len(to_insert), CHUNK_SIZE):
+        batch = to_insert[offset : offset + CHUNK_SIZE]
+        err = _insert_batch(write_client, batch)
+        if err:
+            summary["errors"].append(
+                f"Ошибка insert (batch {offset // CHUNK_SIZE + 1}): {err}"
+            )
+        else:
+            summary["created"] += len(batch)
 
     return summary

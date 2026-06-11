@@ -23,6 +23,7 @@ from services.supabase_client import supabase
 
 from docs.v2_technical_architecture_handbook import render_v2_technical_architecture_handbook
 
+from services.constraints_service import create_constraints_for_plan_lines
 from services.monthly_scope_adjustments import (
     delete_adjustment,
     fetch_adjustments_history_for_boq,
@@ -156,7 +157,6 @@ DEMO_SCOPE_DISCIPLINES = ["Все", "СМР", "ЭМ", "КИПиА", "ТХ"]
 V2_SCOPE_VIEW = "monthly_scope_picker_view"
 
 V2_PLAN_LINES_TABLE = "monthly_plan_lines_v2"
-V2_REVIEW_QUEUE_TABLE = "monthly_plan_review_queue"
 V2_PLAN_ITEMS_KEY = "v2_month_plan_items"
 V2_PLAN_SCOPE_KEY = "v2_month_plan_scope"
 V2_PLAN_DIRTY_KEY = "v2_month_plan_dirty"
@@ -3171,52 +3171,16 @@ def apply_v2_plan_line_edit(
     return updated
 
 
-def _v2_build_review_queue_bridge_payload(
-    item: dict[str, Any],
-    plan_line_id: str,
-) -> dict[str, Any]:
-    """Session plan line → monthly_plan_review_queue row (line_id = plan_line_id)."""
-    required_hours = _v2_safe_num(item.get("required_hours"))
-    norm_scenario = str(item.get("norm_scenario") or "").strip()
-    manual_norm = item.get("manual_norm_value")
-    if manual_norm is not None and str(manual_norm).strip():
-        norm_value = _v2_safe_num(manual_norm)
-    else:
-        norm_value = _v2_safe_num(item.get("norm_hours_per_unit"))
-    unit_price = _v2_safe_num(item.get("unit_price"))
-    plan_value = _v2_safe_num(item.get("plan_value"))
-    return {
-        "line_id": plan_line_id,
-        "project_code": str(item.get("project_code") or "").strip(),
-        "month_key": str(item.get("month_key") or "").strip(),
-        "queue": _v2_plan_item_queue(item),
-        "facility_building": str(item.get("facility") or "").strip(),
-        "construction_discipline": str(item.get("discipline") or "").strip(),
-        "system": str(item.get("system") or "").strip(),
-        "iwp": str(item.get("iwp") or "").strip(),
-        "boq_code": str(item.get("boq_code") or "").strip().upper(),
-        "boq_name": str(item.get("boq_name") or "").strip(),
-        "planned_qty": _v2_safe_num(item.get("planned_qty")),
-        "required_hours": required_hours,
-        "labor_cost": _v2_safe_num(item.get("labor_cost")),
-        "unit_price": unit_price if unit_price > 0 else None,
-        "plan_value": plan_value if plan_value > 0 else None,
-        "norm_scenario": norm_scenario or None,
-        "norm_value": norm_value if norm_value > 0 else None,
-        "review_status": "ОЖИДАЕТ ПРОВЕРКИ",
-    }
-
-
 def send_v2_plan_lines_to_admission(
     project_code: str,
     month_key: str,
     row_keys: list[str],
 ) -> dict[str, int]:
-    """Отправка в допуск: monthly_plan_lines_v2 + bridge в monthly_plan_review_queue.
+    """Отправка в допуск: constraints → monthly_plan_lines_v2 status.
 
     Для выбранных NOT_SENT строк с plan_line_id:
-    status → SENT_TO_ADMISSION, sent_to_constraints_at → now(),
-    upsert в review_queue (line_id = plan_line_id). После — hydrate/reload.
+    1) create_constraints_for_plan_lines (line_id = plan_line_id),
+    2) при успехе — status → SENT_TO_ADMISSION, sent_to_constraints_at → now().
     """
     write_client = get_v2_supabase_write_client()
     if write_client is None:
@@ -3229,10 +3193,9 @@ def send_v2_plan_lines_to_admission(
     scope_items = _v2_filter_items_for_scope(
         load_v2_session_draft_items(), project_code, month_key
     )
-    now_iso = datetime.now(timezone.utc).isoformat()
-    sent = 0
     skipped = 0
     unsaved: list[str] = []
+    to_send: list[dict[str, Any]] = []
 
     for item in scope_items:
         row_key = _v2_plan_row_key(item)
@@ -3246,18 +3209,7 @@ def send_v2_plan_lines_to_admission(
         if not plan_line_id:
             unsaved.append(str(item.get("boq_code") or row_key))
             continue
-        write_client.table(V2_PLAN_LINES_TABLE).update(
-            {
-                "status": V2_PLAN_STATUS_SENT,
-                "sent_to_constraints_at": now_iso,
-            }
-        ).eq("plan_line_id", plan_line_id).eq("status", V2_PLAN_STATUS_NOT_SENT).execute()
-        # v2 bridge: feed existing admission pipeline without changing downstream pages
-        write_client.table(V2_REVIEW_QUEUE_TABLE).upsert(
-            _v2_build_review_queue_bridge_payload(item, plan_line_id),
-            on_conflict="line_id",
-        ).execute()
-        sent += 1
+        to_send.append(item)
 
     if unsaved:
         raise ValueError(
@@ -3265,13 +3217,37 @@ def send_v2_plan_lines_to_admission(
             + ", ".join(unsaved[:5])
             + ("…" if len(unsaved) > 5 else "")
         )
-    if sent == 0:
+    if not to_send:
         raise ValueError("Нет строк NOT_SENT для отправки в допуск.")
+
+    constraint_result = create_constraints_for_plan_lines(to_send)
+    if constraint_result["errors"]:
+        raise RuntimeError(
+            "Не удалось создать ограничения: "
+            + "; ".join(constraint_result["errors"][:5])
+        )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    sent = 0
+    for item in to_send:
+        plan_line_id = str(item.get("plan_line_id") or "").strip()
+        write_client.table(V2_PLAN_LINES_TABLE).update(
+            {
+                "status": V2_PLAN_STATUS_SENT,
+                "sent_to_constraints_at": now_iso,
+            }
+        ).eq("plan_line_id", plan_line_id).eq("status", V2_PLAN_STATUS_NOT_SENT).execute()
+        sent += 1
 
     st.session_state[V2_PLAN_SELECTED_KEYS] = []
     st.session_state[V2_PLAN_EDIT_ROW_KEY] = ""
     hydrate_v2_month_plan_if_needed(project_code, month_key, force=True)
-    return {"sent": sent, "skipped": skipped}
+    return {
+        "sent": sent,
+        "skipped": skipped,
+        "constraints_created": constraint_result["created"],
+        "constraints_skipped": constraint_result["skipped"],
+    }
 
 
 def delete_v2_plan_lines(
@@ -3490,6 +3466,8 @@ def render_v2_plan_action_bar(
                 )
                 st.success(
                     f"Отправлено в допуск: {result['sent']} строк. "
+                    f"Создано проверок: {result['constraints_created']}. "
+                    f"Пропущено дубликатов: {result['constraints_skipped']}. "
                     "Статус: «Отправлен в допуск»."
                 )
                 st.rerun()

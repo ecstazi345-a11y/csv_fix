@@ -18,6 +18,8 @@ create table if not exists public.monthly_plan_lines_v2 (
 
     facility text,
     discipline text,
+    system text,
+    iwp text,
 
     boq_code text not null,
     boq_name text,
@@ -69,6 +71,11 @@ comment on column public.monthly_plan_lines_v2.plan_line_id is
 
 comment on column public.monthly_plan_lines_v2.status is
     'NOT_SENT = Не отправлен; SENT_TO_ADMISSION = Отправлен в допуск. Статусы допуска — в review_queue/constraints.';
+
+-- Миграция для уже развёрнутых БД (выполнить в Supabase SQL Editor)
+alter table public.monthly_plan_lines_v2
+    add column if not exists system text,
+    add column if not exists iwp text;
 
 -- Trigger updated_at
 create or replace function public.monthly_plan_lines_v2_set_updated_at()

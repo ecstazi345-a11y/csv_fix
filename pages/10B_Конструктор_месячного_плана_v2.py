@@ -1400,16 +1400,28 @@ def _v2_safe_num(value: Any, default: float = 0.0) -> float:
         return default
 
 
+_V2_EMPTY_TEXT_VALUES = frozenset({"", "nan", "None", "<NA>"})
+
+
 def _v2_pick_series(df: pd.DataFrame, field: str, default: Any = "") -> pd.Series:
-    for col in V2_SCOPE_FIELD_ALIASES.get(field, [field]):
-        if col in df.columns:
-            series = df[col]
-            if field in V2_SCOPE_NUMERIC_FIELDS:
-                return pd.to_numeric(series, errors="coerce").fillna(0.0)
-            return series.fillna(default).astype(str).str.strip()
+    aliases = V2_SCOPE_FIELD_ALIASES.get(field, [field])
+    present = [col for col in aliases if col in df.columns]
+
     if field in V2_SCOPE_NUMERIC_FIELDS:
+        for col in present:
+            return pd.to_numeric(df[col], errors="coerce").fillna(0.0)
         return pd.Series([0.0] * len(df), index=df.index)
-    return pd.Series([default] * len(df), index=df.index)
+
+    if not present:
+        return pd.Series([default] * len(df), index=df.index)
+
+    result = pd.Series(pd.NA, index=df.index, dtype=object)
+    for col in present:
+        candidate = df[col].fillna("").astype(str).str.strip()
+        candidate = candidate.mask(candidate.isin(_V2_EMPTY_TEXT_VALUES), pd.NA)
+        result = result.fillna(candidate)
+
+    return result.fillna(default).astype(str).str.strip()
 
 
 def _v2_round_display_qty(value: Any) -> float:
@@ -2310,8 +2322,8 @@ def map_v2_plan_db_row_to_session_item(row: dict[str, Any]) -> dict[str, Any]:
         "construction_queue": derive_construction_queue_from_facility(
             str(row.get("facility") or "")
         ),
-        "system": "",
-        "iwp": "",
+        "system": str(row.get("system") or "").strip(),
+        "iwp": str(row.get("iwp") or "").strip(),
         "boq_code": str(row.get("boq_code") or "").strip().upper(),
         "boq_name": str(row.get("boq_name") or "").strip(),
         "unit": str(row.get("unit") or "").strip(),
@@ -2352,11 +2364,15 @@ def map_v2_session_item_to_plan_db_row(item: dict[str, Any]) -> dict[str, Any]:
             item.get("labor_rate_per_hour"), default=DEFAULT_LABOR_RATE_PER_HOUR
         )
     crew_size = int(_v2_safe_num(item.get("crew_size"), default=1.0))
+    system = str(item.get("system") or "").strip()
+    iwp = str(item.get("iwp") or "").strip()
     return {
         "project_code": item.get("project_code"),
         "month_key": item.get("month_key"),
         "facility": item.get("facility"),
         "discipline": item.get("discipline"),
+        "system": system or None,
+        "iwp": iwp or None,
         "boq_code": item.get("boq_code"),
         "boq_name": item.get("boq_name"),
         "unit": item.get("unit"),
@@ -2772,8 +2788,8 @@ def map_v2_db_line_to_session_item(line: dict[str, Any], header_updated_at: str)
         "project_code": str(line.get("project_code") or "").strip(),
         "facility": str(line.get("facility_building") or "").strip(),
         "discipline": str(line.get("construction_discipline") or "").strip(),
-        "system": "",
-        "iwp": "",
+        "system": str(line.get("system") or "").strip(),
+        "iwp": str(line.get("iwp") or "").strip(),
         "boq_code": str(line.get("boq_code") or "").strip().upper(),
         "boq_name": str(line.get("boq_name") or "").strip(),
         "unit": str(line.get("unit_of_measure") or "").strip(),

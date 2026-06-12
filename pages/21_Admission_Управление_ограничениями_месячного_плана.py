@@ -1,6 +1,7 @@
 import os
 from datetime import date, datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
@@ -16,25 +17,210 @@ st.set_page_config(layout="wide")
 TABLE_CONSTRAINTS = "monthly_plan_constraints"
 TABLE_EVIDENCE = "monthly_plan_constraint_evidence"
 VIEW_DASHBOARD_V2 = "monthly_plan_constraints_dashboard_v2"
+V2_PLAN_LINES_TABLE = "monthly_plan_lines_v2"
+
+PLANNING_MONTH_OPTIONS = [
+    "январь-2026",
+    "февраль-2026",
+    "март-2026",
+    "апрель-2026",
+    "май-2026",
+    "июнь-2026",
+    "июль-2026",
+    "август-2026",
+    "сентябрь-2026",
+    "октябрь-2026",
+    "ноябрь-2026",
+    "декабрь-2026",
+]
+
+V2_PLAN_LINE_SELECT_COLUMNS = [
+    "plan_line_id",
+    "project_code",
+    "month_key",
+    "queue",
+    "facility",
+    "title",
+    "discipline",
+    "system",
+    "iwp",
+    "boq_code",
+    "boq_name",
+    "planned_qty",
+    "unit",
+    "labor_hours",
+    "labor_cost",
+    "unit_price",
+    "plan_value",
+    "crew",
+    "status",
+    "sent_to_constraints_at",
+]
 
 NO_CONSTRAINT_CATEGORY = "Ограничений нет"
 
 FILTER_SESSION_KEYS = {
-    "project": "constraints_filter_project",
-    "month": "constraints_filter_month",
-    "facility": "constraints_filter_facility",
-    "discipline": "constraints_filter_discipline",
-    "department": "constraints_filter_department",
-    "check_status": "constraints_filter_check_status",
-    "resolution_status": "constraints_filter_resolution_status",
-    "overdue_only": "constraints_filter_overdue_only",
-    "search": "constraints_filter_search",
+    "month": "admission_filter_month",
+    "project": "admission_filter_project",
+    "queue": "admission_filter_queue",
+    "title": "admission_filter_title",
+    "discipline": "admission_filter_discipline",
+    "check_status": "admission_filter_check_status",
+    "search_boq": "admission_filter_search_boq",
+    "search_iwp": "admission_filter_search_iwp",
+    "search_system": "admission_filter_search_system",
+    "department": "admission_filter_department",
+    "overdue_only": "admission_filter_overdue_only",
 }
 
 CONSTRAINT_EDIT_SELECT_KEY = "constraints_edit_select"
 TABLE_SELECTED_ID_KEY = "constraints_table_selected_id"
 TABLE_SELECTION_KEY = "constraints_table_select"
 TABLE_HEIGHT_PX = 560
+
+PACKAGE_TABLE_SELECTION_KEY = "admission_package_table_select"
+PACKAGE_SELECTED_KEY = "admission_package_selected_key"
+PACKAGE_CHECK_TABLE_KEY = "admission_package_check_table_select"
+PACKAGE_TABLE_HEIGHT_PX = 420
+PACKAGE_CHECK_TABLE_HEIGHT_PX = 280
+
+WORKBENCH_DETAIL_CID_KEY = "admission_workbench_detail_cid"
+WORKBENCH_MAX_ROWS = 80
+
+PACKAGE_STATUS_OPEN = "OPEN"
+PACKAGE_STATUS_READY = "READY"
+PACKAGE_STATUS_BLOCKED = "BLOCKED"
+
+PACKAGE_STATUS_FILTER_OPTIONS = [
+    "Все",
+    PACKAGE_STATUS_OPEN,
+    PACKAGE_STATUS_READY,
+    PACKAGE_STATUS_BLOCKED,
+]
+
+PACKAGE_STATUS_RU = {
+    PACKAGE_STATUS_OPEN: "🟡 Проверяется",
+    PACKAGE_STATUS_READY: "🟢 Допущен к исполнению",
+    PACKAGE_STATUS_BLOCKED: "🔴 Заблокирован",
+}
+
+PACKAGE_STATUS_TABLE_LABEL = {
+    PACKAGE_STATUS_OPEN: "Проверяется",
+    PACKAGE_STATUS_READY: "Допущено",
+    PACKAGE_STATUS_BLOCKED: "Заблокировано",
+}
+
+ADMISSION_STATUS_TEXT_STYLE = {
+    "Проверяется": "color: #2E5B9A;",
+    "Допущено": "color: #2F6B4F;",
+    "Заблокировано": "color: #9B3D3D;",
+    "Требует уточнения": "color: #92610E;",
+}
+
+PACKAGE_STATUS_STYLE = {
+    PACKAGE_STATUS_OPEN: "background-color: #E6EEF8; color: #2E5B9A;",
+    PACKAGE_STATUS_READY: "background-color: #E7F5EE; color: #2F6B4F;",
+    PACKAGE_STATUS_BLOCKED: "background-color: #FEE2E2; color: #B91C1C;",
+}
+
+ADMISSION_MAIN_TABLE_NUMERIC_COLUMNS = {
+    "Объём",
+    "Трудозатраты",
+    "Стоимость объёма",
+    "Стоимость труда",
+}
+
+# TODO v2 persistence: system/iwp must be saved from 10B to monthly_plan_lines_v2.
+V2_PLAN_LINE_BASE_COLUMNS = [
+    "plan_line_id",
+    "project_code",
+    "month_key",
+    "facility",
+    "discipline",
+    "boq_code",
+    "boq_name",
+    "unit",
+    "planned_qty",
+    "labor_hours",
+    "labor_cost",
+    "unit_price",
+    "plan_value",
+    "crew",
+    "status",
+    "sent_to_constraints_at",
+]
+
+V2_PLAN_LINE_OPTIONAL_COLUMNS = ["queue", "title", "system", "iwp"]
+
+CHECK_STATUS_PRIORITY = {
+    "FAIL": 0,
+    "HOLD": 1,
+    "WARNING": 2,
+    "ОЖИДАЕТ": 3,
+    "PASS": 99,
+}
+
+PACKAGE_TABLE_COLUMNS_RU = {
+    "package_status_ui": "Статус допуска",
+    "bottleneck_summary": "Почему / узкое место",
+    "who_holds_display": "Удерживает",
+    "month_key": "Месяц",
+    "project_code": "Проект",
+    "queue_display": "Очередь",
+    "title_display": "Титул",
+    "discipline_display": "Дисциплина",
+    "boq_code": "BOQ-код",
+    "boq_name": "Наименование",
+    "crew_display": "Звено",
+    "planned_qty_display": "Объём",
+    "unit_display": "Ед.",
+    "required_hours_display": "Часы",
+    "plan_value_display": "Стоимость",
+    "waiting_checks_count": "Ожидают",
+    "blocked_checks_count": "Блок",
+    "sent_to_constraints_display": "Передано в допуск, МСК",
+    "short_line_id": "ID строки",
+}
+
+ADMISSION_MAIN_TABLE_COLUMNS = [
+    "project_code",
+    "queue_display",
+    "title_display",
+    "discipline_display",
+    "system_display",
+    "iwp_display",
+    "boq_code",
+    "boq_name",
+    "unit_display",
+    "planned_qty_display",
+    "required_hours_display",
+    "plan_value_display",
+    "labor_cost_display",
+    "crew_display",
+    "package_status_ui",
+    "who_holds_display",
+    "sent_to_constraints_display",
+]
+
+ADMISSION_MAIN_TABLE_COLUMNS_RU = {
+    "project_code": "Проект",
+    "queue_display": "Очередь",
+    "title_display": "Титул",
+    "discipline_display": "Дисциплина",
+    "system_display": "Система",
+    "iwp_display": "IWP",
+    "boq_code": "BOQ код",
+    "boq_name": "Наименование работ",
+    "unit_display": "Ед.",
+    "planned_qty_display": "Объём",
+    "required_hours_display": "Трудозатраты",
+    "plan_value_display": "Стоимость объёма",
+    "labor_cost_display": "Стоимость труда",
+    "crew_display": "Звено",
+    "package_status_ui": "Статус допуска",
+    "who_holds_display": "Удерживает",
+    "sent_to_constraints_display": "Передано в допуск, МСК",
+}
 
 AUTO_SCHEDULE_PREFIX = "[AUTO] Срок перенесён"
 
@@ -318,9 +504,55 @@ def money_ru(value: Any) -> str:
         return "0,00 ₽"
 
 
+def money_ru_compact(value: Any) -> str:
+    """Компактный формат для строк очереди: 242k ₽, 1,2M ₽."""
+    amount = safe_num(value)
+    if amount == 0:
+        return "—"
+    sign = "-" if amount < 0 else ""
+    amount = abs(amount)
+    if amount >= 1_000_000:
+        val = amount / 1_000_000
+        text = f"{val:.1f}".replace(".", ",")
+        return f"{sign}{text}M ₽"
+    if amount >= 1_000:
+        return f"{sign}{int(round(amount / 1_000))}k ₽"
+    return money_ru(amount)
+
+
 def display_dash(value: Any) -> str:
     text = safe_str(value)
     return text if text else "—"
+
+
+def normalize_line_id(value: Any) -> str:
+    return safe_str(value).lower()
+
+
+def has_meaningful_value(value: Any) -> bool:
+    if value is None or pd.isna(value):
+        return False
+    return safe_str(value) != ""
+
+
+def format_qty_display(value: Any) -> str:
+    if not has_meaningful_value(value):
+        return "—"
+    return f"{safe_num(value):,.2f}".replace(",", " ").replace(".", ",")
+
+
+def format_labor_hours_display(value: Any) -> str:
+    hours = safe_num(value)
+    if hours <= 0:
+        return "—"
+    return f"{hours:,.1f}".replace(",", " ")
+
+
+def format_money_display(value: Any) -> str:
+    amount = safe_num(value)
+    if amount <= 0:
+        return "—"
+    return money_ru(amount)
 
 
 def format_datetime_ru(value: Any) -> str:
@@ -365,6 +597,717 @@ def plan_line_key(row: pd.Series) -> str:
         safe_str(row.get("crew_id")),
     ]
     return "composite:" + "|".join(parts)
+
+
+def package_key_from_row(row: pd.Series) -> str:
+    line_id = safe_str(row.get("line_id"))
+    if line_id:
+        return f"line:{line_id}"
+    return plan_line_key(row)
+
+
+def short_line_id(line_id: Any, package_key: str) -> str:
+    raw = safe_str(line_id)
+    if raw:
+        return raw[:8] if len(raw) > 8 else raw
+    suffix = package_key.split(":", 1)[-1]
+    return suffix[:12] if suffix else "—"
+
+
+def compute_package_status(group: pd.DataFrame) -> str:
+    statuses: List[str] = []
+    for _, row in group.iterrows():
+        statuses.append(norm_check_status_key(row.get("check_status")))
+    if any(status in ("HOLD", "FAIL") for status in statuses):
+        return PACKAGE_STATUS_BLOCKED
+    if statuses and all(status == "PASS" for status in statuses):
+        return PACKAGE_STATUS_READY
+    return PACKAGE_STATUS_OPEN
+
+
+def compute_bottleneck_department(group: pd.DataFrame) -> str:
+    best_dept = ""
+    best_prio = 999
+    for _, row in group.iterrows():
+        status = norm_check_status_key(row.get("check_status"))
+        prio = CHECK_STATUS_PRIORITY.get(status, 50)
+        if prio < best_prio:
+            best_prio = prio
+            best_dept = safe_str(row.get("responsible_department"))
+    return best_dept
+
+
+def find_blocking_check(group: pd.DataFrame) -> Optional[pd.Series]:
+    best_row: Optional[pd.Series] = None
+    best_prio = 999
+    for _, row in group.iterrows():
+        status = norm_check_status_key(row.get("check_status"))
+        if status not in ("HOLD", "FAIL"):
+            continue
+        prio = CHECK_STATUS_PRIORITY.get(status, 50)
+        if prio < best_prio:
+            best_prio = prio
+            best_row = row
+    return best_row
+
+
+def compute_waiting_departments(group: pd.DataFrame) -> List[str]:
+    departments: List[str] = []
+    for _, row in group.iterrows():
+        status = norm_check_status_key(row.get("check_status"))
+        if status not in ("ОЖИДАЕТ", "WARNING"):
+            continue
+        dept = safe_str(row.get("responsible_department"))
+        if dept and dept not in departments:
+            departments.append(dept)
+    return departments
+
+
+def format_waiting_checks_label(count: int) -> str:
+    n = max(int(count), 0)
+    if n % 10 == 1 and n % 100 != 11:
+        return f"{n} проверка ожидает"
+    if 2 <= n % 10 <= 4 and not (12 <= n % 100 <= 14):
+        return f"{n} проверки ожидают"
+    return f"{n} проверок ожидает"
+
+
+def compute_package_clarity(
+    group: pd.DataFrame,
+    package_status: str,
+    waiting_checks_count: int,
+    blocked_checks_count: int,
+    fallback_department: str,
+) -> Dict[str, str]:
+    blocking_row = find_blocking_check(group)
+    blocking_department = (
+        safe_str(blocking_row.get("responsible_department"))
+        if blocking_row is not None
+        else fallback_department
+    )
+    blocking_check_name = (
+        safe_str(blocking_row.get("check_name")) if blocking_row is not None else ""
+    )
+    blocking_department_ui = dept_ui(blocking_department) if blocking_department else "—"
+    waiting_departments = compute_waiting_departments(group)
+    waiting_departments_label = ", ".join(dept_ui(d) for d in waiting_departments[:4])
+
+    if package_status == PACKAGE_STATUS_BLOCKED:
+        blocking_reason = f"🔴 Заблокирован: {blocking_department_ui}"
+        bottleneck_summary = blocking_department_ui
+        who_holds = blocking_department_ui
+    elif package_status == PACKAGE_STATUS_READY:
+        blocking_reason = "🟢 Все проверки пройдены"
+        bottleneck_summary = "Все проверки пройдены"
+        who_holds = "—"
+    else:
+        waiting_label = format_waiting_checks_label(waiting_checks_count)
+        blocking_reason = f"🟡 Проверяется: {waiting_label}"
+        if waiting_departments_label:
+            bottleneck_summary = waiting_departments_label
+        elif waiting_checks_count > 0:
+            bottleneck_summary = waiting_label
+        else:
+            bottleneck_summary = "Проверяется"
+        who_holds = "Проверяется"
+
+    return {
+        "blocking_reason": blocking_reason,
+        "blocking_department": blocking_department,
+        "blocking_check_name": blocking_check_name,
+        "bottleneck_summary": bottleneck_summary,
+        "who_holds_display": who_holds,
+        "waiting_departments_label": waiting_departments_label,
+    }
+
+
+def build_package_dataframe(constraints_df: pd.DataFrame) -> pd.DataFrame:
+    """Одна строка плана / пакет = одна строка (группировка по line_id или legacy key)."""
+    if constraints_df.empty:
+        return pd.DataFrame()
+
+    working = constraints_df.copy()
+    working["_package_key"] = working.apply(package_key_from_row, axis=1)
+
+    packages: List[Dict[str, Any]] = []
+    for package_key, group in working.groupby("_package_key", sort=False):
+        first = group.iloc[0]
+        line_id = safe_str(first.get("line_id")) or None
+        statuses = [norm_check_status_key(row.get("check_status")) for _, row in group.iterrows()]
+
+        total_checks = len(group)
+        blocked_checks = sum(1 for status in statuses if status in ("HOLD", "FAIL"))
+        passed_checks = sum(1 for status in statuses if status == "PASS")
+        open_checks = sum(
+            1 for status in statuses if status in ("ОЖИДАЕТ", "WARNING")
+        )
+        plan_value = row_risk_value(first)
+        required_hours = safe_num(first.get("required_hours"))
+
+        package_status = compute_package_status(group)
+        bottleneck = compute_bottleneck_department(group)
+        clarity = compute_package_clarity(
+            group,
+            package_status,
+            open_checks,
+            blocked_checks,
+            bottleneck,
+        )
+
+        packages.append(
+            {
+                "package_key": package_key,
+                "line_id": line_id,
+                "project_code": safe_str(first.get("project_code")),
+                "month_key": safe_str(first.get("month_key")),
+                "facility_building": safe_str(first.get("facility_building")),
+                "construction_discipline": safe_str(first.get("construction_discipline")),
+                "boq_code": safe_str(first.get("boq_code")),
+                "boq_name": safe_str(first.get("boq_name")),
+                "crew_id": safe_str(first.get("crew_id")),
+                "required_hours": required_hours,
+                "plan_value": plan_value,
+                "total_checks": total_checks,
+                "open_checks": open_checks,
+                "blocked_checks": blocked_checks,
+                "passed_checks": passed_checks,
+                "waiting_checks_count": open_checks,
+                "blocked_checks_count": blocked_checks,
+                "package_status": package_status,
+                "bottleneck_department": bottleneck,
+                "short_line_id": short_line_id(line_id, package_key),
+                **clarity,
+            }
+        )
+
+    result = pd.DataFrame(packages)
+    if result.empty:
+        return result
+
+    result["package_status_ui"] = result["package_status"].map(
+        lambda v: PACKAGE_STATUS_RU.get(str(v), str(v))
+    )
+    return result
+
+
+def field_display(value: Any) -> str:
+    text = safe_str(value)
+    return text if text else "—"
+
+
+def derive_construction_queue_from_facility(facility: str) -> str:
+    text = str(facility or "")
+    if "16160-13" in text or "16160-17" in text:
+        return "1 очередь"
+    if "26160-13" in text or "26160-17" in text:
+        return "2 очередь"
+    return "Не определено"
+
+
+def format_datetime_moscow(value: Any) -> str:
+    if value is None or pd.isna(value) or safe_str(value) == "":
+        return "—"
+    try:
+        parsed = pd.to_datetime(value, utc=True)
+        if parsed.tzinfo is None:
+            parsed = parsed.tz_localize(timezone.utc)
+        moscow = parsed.tz_convert(ZoneInfo("Europe/Moscow"))
+        return moscow.strftime("%d.%m.%Y %H:%M")
+    except Exception:  # noqa: BLE001
+        return "—"
+
+
+def now_moscow_text() -> str:
+    return datetime.now(ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M MSK")
+
+
+def append_action_comment(existing: str, line: str) -> str:
+    base = (existing or "").strip()
+    return f"{base}\n{line}".strip() if base else line
+
+
+def last_decision_display(row: pd.Series) -> str:
+    updated_by = audit_last_updated_by(row)
+    last_at = audit_last_updated_at(row)
+    if updated_by and last_at is not None and not pd.isna(last_at):
+        return f"{updated_by}, {format_datetime_moscow(last_at)}"
+    if updated_by:
+        return updated_by
+    if last_at is not None and not pd.isna(last_at):
+        return format_datetime_moscow(last_at)
+    return "—"
+
+
+def _merge_v2_plan_line_rows(
+    merged: Dict[str, Dict[str, Any]],
+    rows: List[Dict[str, Any]],
+) -> None:
+    for row in rows:
+        key = normalize_line_id(row.get("plan_line_id"))
+        if not key:
+            continue
+        if key not in merged:
+            merged[key] = dict(row)
+            continue
+        for field, value in row.items():
+            if has_meaningful_value(value):
+                merged[key][field] = value
+
+
+@st.cache_data(ttl=300)
+def load_v2_plan_lines_for_constraints(line_ids: Tuple[str, ...]) -> pd.DataFrame:
+    """Join key: monthly_plan_constraints.line_id = monthly_plan_lines_v2.plan_line_id."""
+    unique_ids = [line_id for line_id in dict.fromkeys(line_ids) if safe_str(line_id)]
+    if not unique_ids:
+        return pd.DataFrame()
+
+    merged: Dict[str, Dict[str, Any]] = {}
+    chunk_size = 200
+
+    for offset in range(0, len(unique_ids), chunk_size):
+        chunk = unique_ids[offset : offset + chunk_size]
+        try:
+            response = (
+                supabase.table(V2_PLAN_LINES_TABLE)
+                .select(",".join(V2_PLAN_LINE_BASE_COLUMNS))
+                .in_("plan_line_id", chunk)
+                .execute()
+            )
+            _merge_v2_plan_line_rows(merged, response.data or [])
+        except Exception:  # noqa: BLE001
+            continue
+
+        for optional_col in V2_PLAN_LINE_OPTIONAL_COLUMNS:
+            try:
+                response = (
+                    supabase.table(V2_PLAN_LINES_TABLE)
+                    .select(f"plan_line_id,{optional_col}")
+                    .in_("plan_line_id", chunk)
+                    .execute()
+                )
+                _merge_v2_plan_line_rows(merged, response.data or [])
+            except Exception:  # noqa: BLE001
+                # TODO v2 persistence: system/iwp must be saved from 10B to monthly_plan_lines_v2.
+                continue
+
+    if not merged:
+        return pd.DataFrame()
+    return pd.DataFrame(list(merged.values()))
+
+
+def enrich_packages_with_v2_lines(
+    packages_df: pd.DataFrame,
+    v2_df: pd.DataFrame,
+) -> pd.DataFrame:
+    if packages_df.empty:
+        return packages_df
+
+    v2_lookup: Dict[str, Dict[str, Any]] = {}
+    if not v2_df.empty and "plan_line_id" in v2_df.columns:
+        for _, row in v2_df.iterrows():
+            key = normalize_line_id(row.get("plan_line_id"))
+            if key:
+                v2_lookup[key] = row.to_dict()
+
+    enriched_rows: List[Dict[str, Any]] = []
+    for _, pkg in packages_df.iterrows():
+        line_id = safe_str(pkg.get("line_id"))
+        v2_row = v2_lookup.get(normalize_line_id(line_id), {})
+
+        facility_v2 = safe_str(v2_row.get("facility"))
+        title = (
+            safe_str(v2_row.get("title"))
+            or facility_v2
+            or safe_str(pkg.get("facility_building"))
+        )
+        queue = safe_str(v2_row.get("queue"))
+        if not queue:
+            queue = derive_construction_queue_from_facility(title or facility_v2)
+        discipline = safe_str(v2_row.get("discipline")) or safe_str(
+            pkg.get("construction_discipline")
+        )
+        crew = safe_str(v2_row.get("crew")) or safe_str(pkg.get("crew_id"))
+        planned_qty = v2_row.get("planned_qty") if v2_row else None
+        unit = safe_str(v2_row.get("unit")) if v2_row else ""
+        labor_hours = (
+            safe_num(v2_row.get("labor_hours"))
+            if v2_row
+            else safe_num(pkg.get("required_hours"))
+        )
+        labor_cost = safe_num(v2_row.get("labor_cost")) if v2_row else 0.0
+        plan_value = safe_num(pkg.get("plan_value"))
+        if v2_row and v2_row.get("plan_value") is not None:
+            plan_value = safe_num(v2_row.get("plan_value"))
+        sent_at = v2_row.get("sent_to_constraints_at") if v2_row else None
+
+        row = pkg.to_dict()
+        row["queue_display"] = field_display(queue) if queue else "—"
+        row["title_display"] = field_display(title)
+        row["discipline_display"] = field_display(discipline)
+        # TODO v2 persistence: system/iwp must be saved from 10B to monthly_plan_lines_v2.
+        row["system_display"] = field_display(v2_row.get("system")) if v2_row else "—"
+        row["iwp_display"] = field_display(v2_row.get("iwp")) if v2_row else "—"
+        row["crew_display"] = field_display(crew)
+        row["unit_display"] = field_display(unit)
+        row["planned_qty_display"] = format_qty_display(planned_qty)
+        row["required_hours_display"] = format_labor_hours_display(labor_hours)
+        row["plan_value"] = plan_value
+        row["plan_value_display"] = format_money_display(plan_value)
+        row["labor_cost_display"] = format_money_display(labor_cost)
+        row["sent_to_constraints_display"] = (
+            format_datetime_moscow(sent_at) if has_meaningful_value(sent_at) else "—"
+        )
+        row["package_status_ui"] = PACKAGE_STATUS_RU.get(
+            safe_str(row.get("package_status")),
+            safe_str(row.get("package_status")),
+        )
+        enriched_rows.append(row)
+
+    return pd.DataFrame(enriched_rows)
+
+
+def month_filter_options(packages_df: pd.DataFrame) -> List[str]:
+    data_months: List[str] = []
+    if not packages_df.empty and "month_key" in packages_df.columns:
+        data_months = [
+            month
+            for month in packages_df["month_key"].dropna().astype(str).str.strip().unique()
+            if month
+        ]
+    merged = list(dict.fromkeys([*PLANNING_MONTH_OPTIONS, *sorted(data_months)]))
+    return ["Все"] + merged
+
+
+def package_filter_options(packages_df: pd.DataFrame, col: str) -> List[str]:
+    if packages_df.empty or col not in packages_df.columns:
+        return ["Все"]
+    vals = packages_df[col].astype(str).str.strip()
+    vals = vals[(vals != "") & (vals != "—")].unique().tolist()
+    return ["Все"] + sorted(vals)
+
+
+def apply_constraint_prefilters(
+    df: pd.DataFrame,
+    overdue_only: bool,
+) -> pd.DataFrame:
+    if df.empty:
+        return df
+    result = df.copy()
+    if overdue_only and "is_overdue" in result.columns:
+        result = result[result["is_overdue"].astype(bool)]
+    return result
+
+
+def apply_queue_filters(
+    df: pd.DataFrame,
+    department: str,
+    check_status: str,
+    overdue_only: bool,
+) -> pd.DataFrame:
+    if df.empty:
+        return df
+    result = df.copy()
+    if department != "Все" and "responsible_department" in result.columns:
+        result = result[result["responsible_department"].astype(str) == department]
+    if check_status != "Все" and "check_status" in result.columns:
+        result = result[
+            result["check_status"].astype(str).apply(norm_check_status_key) == check_status
+        ]
+    if overdue_only and "is_overdue" in result.columns:
+        result = result[result["is_overdue"].astype(bool)]
+    return result
+
+
+def apply_package_filters(
+    packages_df: pd.DataFrame,
+    month: str,
+    project: str,
+    queue: str,
+    title: str,
+    discipline: str,
+    package_status: str,
+    search_boq: str,
+    search_iwp: str,
+    search_system: str,
+) -> pd.DataFrame:
+    if packages_df.empty:
+        return packages_df
+    result = packages_df.copy()
+    if month != "Все" and "month_key" in result.columns:
+        result = result[result["month_key"].astype(str) == month]
+    if project != "Все" and "project_code" in result.columns:
+        result = result[result["project_code"].astype(str) == project]
+    if queue != "Все" and "queue_display" in result.columns:
+        result = result[result["queue_display"].astype(str) == queue]
+    if title != "Все" and "title_display" in result.columns:
+        result = result[result["title_display"].astype(str) == title]
+    if discipline != "Все" and "discipline_display" in result.columns:
+        result = result[result["discipline_display"].astype(str) == discipline]
+    if package_status != "Все" and "package_status" in result.columns:
+        result = result[result["package_status"].astype(str) == package_status]
+    if search_boq.strip():
+        query = search_boq.strip().lower()
+        mask = pd.Series(False, index=result.index)
+        for col in ("boq_code", "boq_name", "short_line_id", "line_id"):
+            if col in result.columns:
+                mask = mask | result[col].astype(str).str.lower().str.contains(query, na=False)
+        result = result[mask]
+    if search_iwp.strip() and "iwp_display" in result.columns:
+        query = search_iwp.strip().lower()
+        result = result[result["iwp_display"].astype(str).str.lower().str.contains(query, na=False)]
+    if search_system.strip() and "system_display" in result.columns:
+        query = search_system.strip().lower()
+        result = result[
+            result["system_display"].astype(str).str.lower().str.contains(query, na=False)
+        ]
+    return result
+
+
+def filter_constraints_by_package_keys(
+    constraints_df: pd.DataFrame,
+    package_keys: set[str],
+) -> pd.DataFrame:
+    if constraints_df.empty or not package_keys:
+        return pd.DataFrame()
+    working = constraints_df.copy()
+    working["_package_key"] = working.apply(package_key_from_row, axis=1)
+    filtered = working[working["_package_key"].astype(str).isin(package_keys)]
+    return filtered.drop(columns=["_package_key"], errors="ignore")
+
+
+def reset_admission_filters() -> None:
+    st.session_state[FILTER_SESSION_KEYS["month"]] = "Все"
+    st.session_state[FILTER_SESSION_KEYS["project"]] = "Все"
+    st.session_state[FILTER_SESSION_KEYS["queue"]] = "Все"
+    st.session_state[FILTER_SESSION_KEYS["title"]] = "Все"
+    st.session_state[FILTER_SESSION_KEYS["discipline"]] = "Все"
+    st.session_state[FILTER_SESSION_KEYS["check_status"]] = "Все"
+    st.session_state[FILTER_SESSION_KEYS["search_boq"]] = ""
+    st.session_state[FILTER_SESSION_KEYS["search_iwp"]] = ""
+    st.session_state[FILTER_SESSION_KEYS["search_system"]] = ""
+    st.session_state[FILTER_SESSION_KEYS["department"]] = "Все"
+    st.session_state[FILTER_SESSION_KEYS["overdue_only"]] = False
+
+
+def inject_admission_page_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        .block-container {
+            padding-top: 1.25rem;
+            max-width: 100%;
+        }
+        .admission-v2-filters {
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 0.85rem 1rem 0.35rem 1rem;
+            background: #ffffff;
+            margin-bottom: 0.75rem;
+        }
+        .admission-v2-filters [data-testid="stSelectbox"] > div > div,
+        .admission-v2-filters [data-testid="stTextInput"] input {
+            min-height: 38px;
+            font-size: 0.86rem;
+        }
+        .v2-kpi-row {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 0.75rem;
+            margin: 0.85rem 0 1rem 0;
+        }
+        .v2-kpi-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.65rem;
+            padding: 0.85rem 0.95rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #ffffff;
+            min-height: 78px;
+        }
+        .v2-kpi-card-icon {
+            flex: 0 0 34px;
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            font-weight: 700;
+        }
+        .v2-kpi-card--total .v2-kpi-card-icon { background: #E8EEF5; color: #475F7B; }
+        .v2-kpi-card--open .v2-kpi-card-icon { background: #E6EEF8; color: #2E5B9A; }
+        .v2-kpi-card--ready .v2-kpi-card-icon { background: #E7F5EE; color: #2F6B4F; }
+        .v2-kpi-card--blocked .v2-kpi-card-icon { background: #FEE2E2; color: #B91C1C; }
+        .v2-kpi-card--risk .v2-kpi-card-icon { background: #F9EDE8; color: #A65F45; }
+        .v2-kpi-card-label {
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 0.15rem;
+        }
+        .v2-kpi-card-value {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1.15;
+        }
+        .admission-package-header {
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 0.9rem 1rem;
+            background: #f8fafc;
+            margin: 0.75rem 0 1rem 0;
+        }
+        .admission-explanation {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 0.75rem 0.9rem;
+            margin: 0.5rem 0 0.85rem 0;
+            font-size: 0.86rem;
+            line-height: 1.5;
+            color: #334155;
+            background: #ffffff;
+        }
+        .admission-explanation--blocked {
+            border-color: #fecaca;
+            background: #fffafb;
+        }
+        .admission-explanation--open {
+            border-color: #fde68a;
+            background: #fffdf5;
+        }
+        .admission-explanation--ready {
+            border-color: #bbf7d0;
+            background: #f7fdf9;
+        }
+        .admission-filter-reset button {
+            background: #ffffff !important;
+            color: #475569 !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 6px !important;
+            min-height: 38px !important;
+            font-size: 0.82rem !important;
+            font-weight: 500 !important;
+        }
+        .admission-module-panel {
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #ffffff;
+            padding: 0.85rem 1rem 0.75rem 1rem;
+            margin: 0.5rem 0 0.75rem 0;
+        }
+        .admission-module-kpi-bar {
+            margin: 0.15rem 0 0.55rem 0;
+            padding: 0.55rem 0.75rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #fafbfc;
+        }
+        .admission-module-kpi-bar [data-testid="stMetricLabel"] {
+            font-size: 0.72rem !important;
+            color: #64748b !important;
+        }
+        .admission-module-kpi-bar [data-testid="stMetricValue"] {
+            font-size: 1.15rem !important;
+            color: #0f172a !important;
+        }
+        .admission-module-kpi-detail {
+            margin: 0 0 0.65rem 0;
+            padding: 0.45rem 0.65rem;
+            border: 1px solid #f1f5f9;
+            border-radius: 8px;
+            background: #fcfcfd;
+        }
+        .admission-module-kpi-detail [data-testid="stMetricLabel"] {
+            font-size: 0.68rem !important;
+            color: #94a3b8 !important;
+        }
+        .admission-module-kpi-detail [data-testid="stMetricValue"] {
+            font-size: 0.95rem !important;
+            color: #334155 !important;
+        }
+        .admission-plan-table [data-testid="stDataFrame"] {
+            font-size: 0.84rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .admission-plan-table [data-testid="stDataFrame"] td,
+        .admission-plan-table [data-testid="stDataFrame"] th {
+            padding: 0.28rem 0.45rem !important;
+            white-space: nowrap;
+        }
+        .admission-plan-table [data-testid="stDataFrame"] thead th {
+            background: #f8fafc !important;
+            color: #475569 !important;
+            font-size: 0.76rem !important;
+            font-weight: 600 !important;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            border-bottom: 1px solid #e2e8f0 !important;
+        }
+        .admission-plan-table [data-testid="stDataFrame"] tbody td {
+            border-bottom: 1px solid #f1f5f9 !important;
+            color: #1e293b;
+            line-height: 1.25;
+            background: #ffffff !important;
+        }
+        .admission-plan-table [data-testid="stDataFrame"] div[data-testid="stDataFrameResizable"] {
+            overflow-x: auto !important;
+        }
+        .wb-section {
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #ffffff;
+            padding: 0.65rem 0.85rem 0.5rem 0.85rem;
+            margin-bottom: 0.75rem;
+        }
+        .wb-queue-header {
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            padding: 0.2rem 0 0.35rem 0;
+            border-bottom: 1px solid #f1f5f9;
+            margin-bottom: 0.15rem;
+        }
+        div[data-testid="stHorizontalBlock"] .wb-btn-row button {
+            min-height: 30px !important;
+            padding: 0.15rem 0.45rem !important;
+            font-size: 0.76rem !important;
+            font-weight: 500 !important;
+            border-radius: 5px !important;
+        }
+        div[data-testid="stHorizontalBlock"] .wb-btn-row button[kind="primary"] {
+            background: #1e3a5f !important;
+            border-color: #1e3a5f !important;
+        }
+        .wb-detail-strip {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #f8fafc;
+            padding: 0.55rem 0.75rem;
+            margin: 0.5rem 0 0.65rem 0;
+            font-size: 0.8rem;
+            color: #475569;
+            line-height: 1.45;
+        }
+        [data-testid="stSegmentedControl"] {
+            margin-bottom: 0.5rem;
+        }
+        [data-testid="stSegmentedControl"] button {
+            font-size: 0.8rem !important;
+            min-height: 32px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def kpi_risk_sum(df: pd.DataFrame) -> float:
@@ -844,7 +1787,7 @@ def apply_filters(
     if search.strip():
         q = search.strip().lower()
         mask = pd.Series(False, index=result.index)
-        for col in ("boq_code", "boq_name", "owner_name"):
+        for col in ("boq_code", "boq_name", "owner_name", "line_id"):
             if col in result.columns:
                 mask = mask | result[col].astype(str).str.lower().str.contains(q, na=False)
         result = result[mask]
@@ -919,28 +1862,700 @@ def render_kpi_top_bar(df: pd.DataFrame) -> None:
 
 
 def render_kpis(df: pd.DataFrame) -> None:
-    total = len(df)
-    wait_cnt = len(df[df["check_status"].astype(str) == "ОЖИДАЕТ"]) if "check_status" in df.columns else 0
-    pass_cnt = len(df[df["check_status"].astype(str) == "PASS"]) if "check_status" in df.columns else 0
-    warn_cnt = len(df[df["check_status"].astype(str) == "WARNING"]) if "check_status" in df.columns else 0
-    hold_cnt = len(df[df["check_status"].astype(str) == "HOLD"]) if "check_status" in df.columns else 0
-    fail_cnt = len(df[df["check_status"].astype(str) == "FAIL"]) if "check_status" in df.columns else 0
-    overdue_cnt = int(df["is_overdue"].astype(bool).sum()) if "is_overdue" in df.columns else 0
-    risk_sum = kpi_risk_sum(df)
+    render_admission_module_check_kpis(df, packages_df=None)
 
-    c1, c2, c3, c4, c5, c6, c7, c8 = st.columns(8)
-    c1.metric("Всего ограничений", total)
-    c2.metric("Ожидает проверки", wait_cnt)
-    c3.metric("Пройдено", pass_cnt)
-    c4.metric("Риск", warn_cnt)
-    c5.metric("Удержание", hold_cnt)
-    c6.metric("Не пройдено", fail_cnt)
-    c7.metric("Просрочено", overdue_cnt)
-    c8.metric("Стоимость под риском", money_ru(risk_sum))
+
+def blocked_admission_value(packages_df: pd.DataFrame) -> float:
+    if packages_df.empty or "package_status" not in packages_df.columns:
+        return 0.0
+    blocked = packages_df[packages_df["package_status"].astype(str) == PACKAGE_STATUS_BLOCKED]
+    if blocked.empty or "plan_value" not in blocked.columns:
+        return 0.0
+    return float(blocked["plan_value"].sum())
+
+
+def render_admission_module_summary_kpis(packages_df: pd.DataFrame) -> None:
+    total = len(packages_df)
+    open_cnt = (
+        int((packages_df["package_status"] == PACKAGE_STATUS_OPEN).sum()) if total else 0
+    )
+    ready_cnt = (
+        int((packages_df["package_status"] == PACKAGE_STATUS_READY).sum()) if total else 0
+    )
+    blocked_cnt = (
+        int((packages_df["package_status"] == PACKAGE_STATUS_BLOCKED).sum()) if total else 0
+    )
+    risk_sum = (
+        float(packages_df["plan_value"].sum())
+        if total and "plan_value" in packages_df.columns
+        else 0.0
+    )
+
+    st.markdown('<div class="admission-module-kpi-bar">', unsafe_allow_html=True)
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Строк в допуске", total)
+    c2.metric("Ожидают проверки", open_cnt)
+    c3.metric("Допущено отделами", ready_cnt)
+    c4.metric("Заблокировано", blocked_cnt)
+    c5.metric("Стоимость допуска", money_ru(risk_sum))
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_admission_module_check_kpis(
+    scope_df: pd.DataFrame,
+    packages_df: Optional[pd.DataFrame] = None,
+) -> None:
+    total = len(scope_df)
+    wait_cnt = (
+        len(scope_df[scope_df["check_status"].astype(str) == "ОЖИДАЕТ"])
+        if "check_status" in scope_df.columns
+        else 0
+    )
+    pass_cnt = (
+        len(scope_df[scope_df["check_status"].astype(str) == "PASS"])
+        if "check_status" in scope_df.columns
+        else 0
+    )
+    warn_cnt = (
+        len(scope_df[scope_df["check_status"].astype(str) == "WARNING"])
+        if "check_status" in scope_df.columns
+        else 0
+    )
+    hold_cnt = (
+        len(scope_df[scope_df["check_status"].astype(str) == "HOLD"])
+        if "check_status" in scope_df.columns
+        else 0
+    )
+    fail_cnt = (
+        len(scope_df[scope_df["check_status"].astype(str) == "FAIL"])
+        if "check_status" in scope_df.columns
+        else 0
+    )
+    overdue_cnt = (
+        int(scope_df["is_overdue"].astype(bool).sum())
+        if "is_overdue" in scope_df.columns
+        else 0
+    )
+    blocked_value = blocked_admission_value(packages_df) if packages_df is not None else 0.0
+
+    st.markdown('<div class="admission-module-kpi-detail">', unsafe_allow_html=True)
+    c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
+    c1.metric("Всего строк для допуска", total)
+    c2.metric("Ожидают проверки", wait_cnt)
+    c3.metric("Пройдено проверок", pass_cnt)
+    c4.metric("Уточнение требуется", warn_cnt)
+    c5.metric("Удержание / блок", hold_cnt + fail_cnt)
+    c6.metric("Просрочено", overdue_cnt)
+    c7.metric("Стоимость под блокировкой", money_ru(blocked_value))
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_package_executive_cards(packages_df: pd.DataFrame) -> None:
+    total = len(packages_df)
+    open_cnt = int((packages_df["package_status"] == PACKAGE_STATUS_OPEN).sum()) if total else 0
+    ready_cnt = int((packages_df["package_status"] == PACKAGE_STATUS_READY).sum()) if total else 0
+    blocked_cnt = int((packages_df["package_status"] == PACKAGE_STATUS_BLOCKED).sum()) if total else 0
+    risk_sum = float(packages_df["plan_value"].sum()) if total and "plan_value" in packages_df.columns else 0.0
+
+    st.markdown(
+        f"""
+        <div class="v2-kpi-row">
+            <div class="v2-kpi-card v2-kpi-card--total">
+                <div class="v2-kpi-card-icon">∑</div>
+                <div>
+                    <div class="v2-kpi-card-label">Строк в допуске</div>
+                    <div class="v2-kpi-card-value">{total}</div>
+                </div>
+            </div>
+            <div class="v2-kpi-card v2-kpi-card--open">
+                <div class="v2-kpi-card-icon">○</div>
+                <div>
+                    <div class="v2-kpi-card-label">Ожидают допуска</div>
+                    <div class="v2-kpi-card-value">{open_cnt}</div>
+                </div>
+            </div>
+            <div class="v2-kpi-card v2-kpi-card--ready">
+                <div class="v2-kpi-card-icon">✓</div>
+                <div>
+                    <div class="v2-kpi-card-label">Допущено отделами</div>
+                    <div class="v2-kpi-card-value">{ready_cnt}</div>
+                </div>
+            </div>
+            <div class="v2-kpi-card v2-kpi-card--blocked">
+                <div class="v2-kpi-card-icon">!</div>
+                <div>
+                    <div class="v2-kpi-card-label">Заблокировано</div>
+                    <div class="v2-kpi-card-value">{blocked_cnt}</div>
+                </div>
+            </div>
+            <div class="v2-kpi-card v2-kpi-card--risk">
+                <div class="v2-kpi-card-icon">₽</div>
+                <div>
+                    <div class="v2-kpi-card-label">Стоимость допуска</div>
+                    <div class="v2-kpi-card-value">{money_ru(risk_sum)}</div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def build_workbench_dataframe(
+    constraints_df: pd.DataFrame,
+    packages_df: pd.DataFrame,
+) -> pd.DataFrame:
+    if constraints_df.empty:
+        return pd.DataFrame()
+
+    pkg_lookup: Dict[str, Dict[str, Any]] = {}
+    for _, pkg in packages_df.iterrows():
+        entry = pkg.to_dict()
+        pkg_key = safe_str(pkg.get("package_key"))
+        line_id = safe_str(pkg.get("line_id"))
+        if pkg_key:
+            pkg_lookup[pkg_key] = entry
+        if line_id:
+            pkg_lookup[f"line:{line_id}"] = entry
+
+    rows: List[Dict[str, Any]] = []
+    for _, constraint in constraints_df.iterrows():
+        pkg_key = package_key_from_row(constraint)
+        pkg = pkg_lookup.get(pkg_key, {})
+        status_key = norm_check_status_key(constraint.get("check_status"))
+        resolution_key = norm_tech_value(
+            constraint.get("resolution_status"),
+            RESOLUTION_OPTIONS,
+            RESOLUTION_RU,
+            "OPEN",
+        )
+        gate = safe_str(constraint.get("gate_layer"))
+        row = constraint.to_dict()
+        row.update(
+            {
+                "queue_display": pkg.get("queue_display", "—"),
+                "title_display": pkg.get("title_display", "—"),
+                "discipline_display": pkg.get("discipline_display", "—"),
+                "crew_display": pkg.get("crew_display", "—"),
+                "planned_qty_display": pkg.get("planned_qty_display", "—"),
+                "unit_display": pkg.get("unit_display", "—"),
+                "required_hours_display": pkg.get("required_hours_display", "—"),
+                "plan_value_display": pkg.get(
+                    "plan_value_display", money_ru_compact(row_risk_value(constraint))
+                ),
+                "check_status_ui": CHECK_STATUS_RU.get(status_key, status_key),
+                "resolution_status_ui": RESOLUTION_RU.get(resolution_key, resolution_key),
+                "responsible_department_ui": dept_ui(constraint.get("responsible_department")),
+                "last_decision_display": last_decision_display(constraint),
+                "is_crew_economics": gate == "CREW_ECONOMICS",
+                "_sort_prio": CHECK_STATUS_PRIORITY.get(status_key, 50),
+            }
+        )
+        rows.append(row)
+
+    result = pd.DataFrame(rows)
+    return result.sort_values("_sort_prio").drop(columns=["_sort_prio"])
+
+
+def check_status_dot_color(status_key: str) -> str:
+    if status_key in ("HOLD", "FAIL"):
+        return "#dc2626"
+    if status_key == "PASS":
+        return "#16a34a"
+    if status_key == "WARNING":
+        return "#ca8a04"
+    return "#94a3b8"
+
+
+def apply_check_quick_action(
+    row: pd.Series,
+    action: str,
+    saver_name: str,
+    comment_text: str = "",
+) -> Optional[str]:
+    constraint_id = safe_str(row.get("constraint_id"))
+    if not constraint_id:
+        return "У записи нет constraint_id."
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    saver = saver_name or "Пользователь Streamlit"
+    dept_label = dept_ui(row.get("responsible_department"))
+    existing_comment = safe_str(row.get("comment"))
+
+    if action == "pass":
+        note = f"[{now_moscow_text()}] Допущено отделом: {dept_label}"
+        payload: Dict[str, Any] = {
+            "check_status": "PASS",
+            "resolution_status": "RESOLVED",
+            "constraint_category": NO_CONSTRAINT_CATEGORY,
+            "owner_name": saver,
+            "owner_role": "Не требуется",
+            "value_at_risk": 0.0,
+            "comment": append_action_comment(existing_comment, note),
+            "updated_by": saver,
+            "last_action_at": now_iso,
+            "updated_at": now_iso,
+            "resolved_at": now_iso,
+            "resolved_by": saver,
+            "last_comment_at": now_iso,
+        }
+    elif action == "hold":
+        reason = comment_text.strip()
+        if not reason:
+            return "Укажите причину блокировки в поле комментария."
+        note = f"[{now_moscow_text()}] Заблокировано ({dept_label}): {reason}"
+        payload = {
+            "check_status": "HOLD",
+            "resolution_status": "OPEN",
+            "block_reason": reason,
+            "root_cause": reason,
+            "comment": append_action_comment(existing_comment, note),
+            "updated_by": saver,
+            "last_action_at": now_iso,
+            "updated_at": now_iso,
+            "last_comment_at": now_iso,
+        }
+    elif action == "clarify":
+        reason = comment_text.strip()
+        if not reason:
+            return "Укажите текст уточнения в поле комментария."
+        note = f"[{now_moscow_text()}] Требуется уточнение ({dept_label}): {reason}"
+        payload = {
+            "check_status": "WARNING",
+            "resolution_status": "IN_PROGRESS",
+            "comment": append_action_comment(existing_comment, note),
+            "updated_by": saver,
+            "last_action_at": now_iso,
+            "updated_at": now_iso,
+            "last_comment_at": now_iso,
+        }
+    else:
+        return "Неизвестное действие."
+
+    return update_constraint_record(constraint_id, payload)
+
+
+def render_queue_detail_summary(row: pd.Series) -> None:
+    qty = field_display(row.get("planned_qty_display"))
+    unit = field_display(row.get("unit_display"))
+    qty_text = f"{qty} {unit}" if qty != "—" and unit != "—" else qty
+    status_ui = CHECK_STATUS_RU.get(
+        norm_check_status_key(row.get("check_status")),
+        safe_str(row.get("check_status")),
+    )
+    resolution_ui = RESOLUTION_RU.get(
+        norm_tech_value(
+            row.get("resolution_status"),
+            RESOLUTION_OPTIONS,
+            RESOLUTION_RU,
+            "OPEN",
+        ),
+        safe_str(row.get("resolution_status")),
+    )
+
+    d1, d2, d3 = st.columns(3)
+    d1.markdown(f"**BOQ:** {safe_str(row.get('boq_code'))} — {safe_str(row.get('boq_name')) or '—'}")
+    d1.markdown(f"**Титул:** {field_display(row.get('title_display'))}")
+    d1.markdown(f"**Дисциплина:** {field_display(row.get('discipline_display'))}")
+    d2.markdown(f"**Звено:** {field_display(row.get('crew_display'))}")
+    d2.markdown(f"**Объём:** {qty_text}")
+    d2.markdown(
+        f"**Часы / стоимость:** {field_display(row.get('required_hours_display'))} ч · "
+        f"{field_display(row.get('plan_value_display'))}"
+    )
+    d3.markdown(f"**Проверка:** {safe_str(row.get('check_name')) or '—'}")
+    d3.markdown(f"**Отдел:** {dept_ui(row.get('responsible_department'))}")
+    d3.markdown(f"**Статус:** {status_ui} · **Устранение:** {resolution_ui}")
+
+    c1, c2 = st.columns(2)
+    c1.markdown(f"**Комментарий:** {field_display(row.get('comment'))}")
+    c2.markdown(f"**Причина блокировки:** {field_display(row.get('block_reason'))}")
+    st.caption(f"Последнее действие: {last_decision_display(row)}")
+
+
+def render_workbench_queue_row(
+    row: pd.Series,
+    row_index: int,
+    saver_name: str,
+) -> None:
+    constraint_id = safe_str(row.get("constraint_id"))
+    if not constraint_id:
+        return
+
+    status_key = norm_check_status_key(row.get("check_status"))
+    dot_color = check_status_dot_color(status_key)
+    status_ui = CHECK_STATUS_RU.get(status_key, status_key)
+    resolution_ui = field_display(row.get("resolution_status_ui"))
+    boq_name = safe_str(row.get("boq_name")) or "—"
+    boq_code = safe_str(row.get("boq_code")) or "—"
+    queue = field_display(row.get("queue_display"))
+    title = field_display(row.get("title_display"))
+    discipline = field_display(row.get("discipline_display"))
+    crew = field_display(row.get("crew_display"))
+    qty = field_display(row.get("planned_qty_display"))
+    unit = field_display(row.get("unit_display"))
+    hours = field_display(row.get("required_hours_display"))
+    cost = field_display(row.get("plan_value_display"))
+    check_name = safe_str(row.get("check_name")) or "—"
+    dept_ui_label = field_display(row.get("responsible_department_ui"))
+    last_decision = field_display(row.get("last_decision_display"))
+    economics_note = " · AI" if row.get("is_crew_economics") else ""
+
+    qty_line = f"{qty} {unit}" if qty != "—" and unit != "—" else qty
+    prefix = f"wb_{row_index}_{constraint_id[:8]}"
+    comment_key = f"{prefix}_comment"
+
+    c_main, c_actions = st.columns([5.0, 3.0])
+    with c_main:
+        st.markdown(
+            f"""
+            <div style="border-bottom:1px solid #f1f5f9;padding:0.28rem 0 0.32rem 0;">
+                <div style="display:flex;align-items:center;gap:0.35rem;">
+                    <span style="color:{dot_color};font-size:0.5rem;">●</span>
+                    <span style="font-weight:600;font-size:0.84rem;color:#0f172a;">{boq_code}</span>
+                    <span style="font-size:0.84rem;color:#334155;">{boq_name}</span>
+                </div>
+                <div style="font-size:0.75rem;color:#64748b;margin:0.06rem 0 0 0.8rem;line-height:1.3;">
+                    {title} · {discipline} · {queue} · Звено: {crew}
+                </div>
+                <div style="font-size:0.75rem;color:#64748b;margin:0.03rem 0 0 0.8rem;line-height:1.3;">
+                    Объём: {qty_line} · Часы: {hours} · Стоимость: {cost}
+                </div>
+                <div style="font-size:0.75rem;color:#475569;margin:0.03rem 0 0 0.8rem;line-height:1.3;">
+                    Проверка: {check_name}{economics_note} · Отдел: {dept_ui_label}
+                </div>
+                <div style="font-size:0.75rem;color:#475569;margin:0.03rem 0 0 0.8rem;line-height:1.3;">
+                    Статус: {status_ui} · Устранение: {resolution_ui} · Последнее: {last_decision}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        action_comment = st.text_input(
+            "Комментарий к блокировке / уточнению",
+            value="",
+            key=comment_key,
+            placeholder="Обязательно для «Заблокировать» и «Уточнить»",
+            label_visibility="collapsed",
+        )
+
+    with c_actions:
+        st.markdown('<div class="wb-btn-row">', unsafe_allow_html=True)
+        ar1, ar2 = st.columns(2)
+        if ar1.button("Допустить", key=f"{prefix}_pass", use_container_width=True):
+            err = apply_check_quick_action(row, "pass", saver_name)
+            if err:
+                st.error(err)
+            else:
+                st.cache_data.clear()
+                st.rerun()
+        if ar2.button("Заблокировать", key=f"{prefix}_hold", use_container_width=True):
+            err = apply_check_quick_action(row, "hold", saver_name, action_comment)
+            if err:
+                st.warning(err)
+            else:
+                st.cache_data.clear()
+                st.rerun()
+        ar3, ar4 = st.columns(2)
+        if ar3.button("Уточнить", key=f"{prefix}_warn", use_container_width=True):
+            err = apply_check_quick_action(row, "clarify", saver_name, action_comment)
+            if err:
+                st.warning(err)
+            else:
+                st.cache_data.clear()
+                st.rerun()
+        detail_open = st.session_state.get(WORKBENCH_DETAIL_CID_KEY) == constraint_id
+        detail_label = "Скрыть" if detail_open else "Подробнее"
+        if ar4.button(detail_label, key=f"{prefix}_detail", use_container_width=True):
+            if detail_open:
+                st.session_state.pop(WORKBENCH_DETAIL_CID_KEY, None)
+            else:
+                st.session_state[WORKBENCH_DETAIL_CID_KEY] = constraint_id
+                st.session_state[TABLE_SELECTED_ID_KEY] = constraint_id
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_admission_queue(
+    queue_df: pd.DataFrame,
+    packages_df: pd.DataFrame,
+    department_label: str,
+) -> Optional[pd.Series]:
+    workbench_df = build_workbench_dataframe(queue_df, packages_df)
+
+    if workbench_df.empty:
+        dept_text = (
+            f"отдела «{dept_ui(department_label)}»"
+            if department_label != "Все"
+            else "выбранных фильтров"
+        )
+        st.caption(f"Нет проверок для {dept_text}.")
+        return None
+
+    total = len(workbench_df)
+    shown = workbench_df.head(WORKBENCH_MAX_ROWS)
+    dept_note = (
+        f" · {dept_ui(department_label)}"
+        if department_label != "Все"
+        else ""
+    )
+    st.caption(f"{total} проверок{dept_note}")
+
+    saver_name = st.session_state.get("constraints_saver_name", "Пользователь Streamlit")
+    for idx, (_, row) in enumerate(shown.iterrows()):
+        render_workbench_queue_row(row, idx, saver_name)
+
+    if total > WORKBENCH_MAX_ROWS:
+        st.caption(f"Показаны первые {WORKBENCH_MAX_ROWS} из {total}. Уточните фильтры.")
+
+    detail_cid = st.session_state.get(WORKBENCH_DETAIL_CID_KEY)
+    if not detail_cid:
+        return None
+
+    detail_rows = workbench_df[
+        workbench_df["constraint_id"].astype(str) == str(detail_cid)
+    ]
+    if detail_rows.empty:
+        return None
+    return detail_rows.iloc[0]
+
+
+def style_package_status_bg(val: Any) -> str:
+    for status, style in PACKAGE_STATUS_STYLE.items():
+        if val == PACKAGE_STATUS_RU.get(status, status):
+            return style
+    return ""
+
+
+def style_package_table(df_in: pd.DataFrame):
+    styler = df_in.style
+    status_col = PACKAGE_TABLE_COLUMNS_RU.get("package_status_ui", "Статус допуска")
+    if status_col in styler.data.columns:
+        styler = _apply_cell_style(styler, style_package_status_bg, status_col)
+    return styler
+
+
+def style_admission_status_text(val: Any) -> str:
+    text = str(val).strip()
+    for key, style in ADMISSION_STATUS_TEXT_STYLE.items():
+        if key in text:
+            return style
+    return "color: #475569;"
+
+
+def style_admission_main_table(df_in: pd.DataFrame):
+    status_col = ADMISSION_MAIN_TABLE_COLUMNS_RU.get("package_status_ui", "Статус допуска")
+    styler = df_in.style
+    if status_col in styler.data.columns:
+        styler = _apply_cell_style(styler, style_admission_status_text, status_col)
+    for col in ADMISSION_MAIN_TABLE_NUMERIC_COLUMNS:
+        if col in df_in.columns:
+            styler = styler.set_properties(subset=[col], **{"text-align": "right"})
+    return styler
+
+
+def prepare_constraint_display_df(df: pd.DataFrame) -> pd.DataFrame:
+    display_df = df.copy()
+    if "responsible_department" in display_df.columns:
+        display_df["responsible_department"] = display_df["responsible_department"].apply(dept_ui)
+    if "gate_layer" in display_df.columns:
+        display_df["gate_layer"] = display_df["gate_layer"].apply(
+            lambda v: GATE_LAYER_RU.get(safe_str(v), safe_str(v))
+        )
+    if "check_status" in display_df.columns:
+        display_df["check_status"] = display_df["check_status"].apply(
+            lambda v: CHECK_STATUS_RU.get(norm_check_status_key(v), safe_str(v))
+        )
+    if "severity" in display_df.columns:
+        display_df["severity"] = display_df["severity"].apply(
+            lambda v: SEVERITY_RU.get(
+                norm_tech_value(v, SEVERITY_OPTIONS, SEVERITY_RU, "MEDIUM"),
+                safe_str(v),
+            )
+        )
+    if "updated_by" in display_df.columns:
+        display_df["updated_by"] = display_df["updated_by"].apply(display_dash)
+    if "resolution_status" in display_df.columns:
+        display_df["resolution_status"] = display_df["resolution_status"].apply(
+            lambda v: RESOLUTION_RU.get(
+                norm_tech_value(v, RESOLUTION_OPTIONS, RESOLUTION_RU, safe_str(v)),
+                safe_str(v),
+            )
+        )
+    if "value_at_risk_display" in display_df.columns:
+        display_df["value_at_risk_display"] = display_df["value_at_risk_display"].apply(money_ru)
+    if "target_resolution_date" in display_df.columns:
+        display_df["target_resolution_date"] = display_df["target_resolution_date"].apply(
+            lambda v: safe_date(v).isoformat() if safe_date(v) else ""
+        )
+    return display_df
+
+
+def resolve_selected_package_key(packages_df: pd.DataFrame) -> str:
+    keys = packages_df["package_key"].astype(str).tolist()
+    if not keys:
+        return ""
+
+    selection_state = st.session_state.get(PACKAGE_TABLE_SELECTION_KEY, {})
+    selected_rows = selection_state.get("selection", {}).get("rows", [])
+    if selected_rows:
+        row_idx = int(selected_rows[0])
+        if 0 <= row_idx < len(keys):
+            picked = keys[row_idx]
+            st.session_state[PACKAGE_SELECTED_KEY] = picked
+            return picked
+
+    stored = st.session_state.get(PACKAGE_SELECTED_KEY)
+    if stored in keys:
+        return str(stored)
+
+    return keys[0]
+
+
+def filter_constraints_for_package(
+    constraints_df: pd.DataFrame,
+    package_key: str,
+) -> pd.DataFrame:
+    if constraints_df.empty or not package_key:
+        return pd.DataFrame()
+    working = constraints_df.copy()
+    working["_package_key"] = working.apply(package_key_from_row, axis=1)
+    return working[working["_package_key"].astype(str) == package_key].drop(
+        columns=["_package_key"], errors="ignore"
+    )
+
+
+def resolve_selected_constraint_id_in_subset(
+    df: pd.DataFrame,
+    label_keys: List[str],
+    selection_key: str,
+) -> str:
+    selection_state = st.session_state.get(selection_key, {})
+    selected_rows = selection_state.get("selection", {}).get("rows", [])
+    if selected_rows:
+        row_idx = int(selected_rows[0])
+        if 0 <= row_idx < len(df):
+            picked = safe_str(df.iloc[row_idx].get("constraint_id"))
+            if picked in label_keys:
+                st.session_state[TABLE_SELECTED_ID_KEY] = picked
+                return picked
+
+    manual = st.session_state.get(CONSTRAINT_EDIT_SELECT_KEY)
+    if manual and manual in label_keys:
+        return str(manual)
+
+    stored = st.session_state.get(TABLE_SELECTED_ID_KEY)
+    if stored and stored in label_keys:
+        return str(stored)
+
+    return label_keys[0]
+
+
+def render_package_explanation(
+    pkg_row: pd.Series,
+    package_constraints: pd.DataFrame,
+) -> None:
+    status_key = safe_str(pkg_row.get("package_status"))
+    if status_key == PACKAGE_STATUS_BLOCKED:
+        dept = dept_ui(pkg_row.get("blocking_department")) or field_display(
+            pkg_row.get("who_holds_display")
+        )
+        check_name = field_display(pkg_row.get("blocking_check_name"))
+        st.markdown(
+            f"""
+            <div class="admission-explanation admission-explanation--blocked">
+                <strong>🔴 Работа заблокирована</strong><br>
+                <span><strong>Причина:</strong> {dept} → {check_name}</span><br>
+                <span><strong>Что это значит:</strong> Пакет пока нельзя выпускать в производство или предъявление.</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+
+    if status_key == PACKAGE_STATUS_READY:
+        st.markdown(
+            """
+            <div class="admission-explanation admission-explanation--ready">
+                <strong>🟢 Работа допущена к исполнению</strong><br>
+                <span>Все проверки завершены.</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+
+    waiting_label = safe_str(pkg_row.get("waiting_departments_label"))
+    if not waiting_label and not package_constraints.empty:
+        waiting_label = ", ".join(
+            dept_ui(dept)
+            for dept in compute_waiting_departments(package_constraints)[:5]
+        )
+    waiting_text = waiting_label or format_waiting_checks_label(
+        int(safe_num(pkg_row.get("waiting_checks_count")))
+    )
+    st.markdown(
+        f"""
+        <div class="admission-explanation admission-explanation--open">
+            <strong>🟡 Работа проверяется</strong><br>
+            <span><strong>Ожидаются проверки:</strong> {field_display(waiting_text)}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_package_header(pkg_row: pd.Series) -> None:
+    status_key = safe_str(pkg_row.get("package_status"))
+    status_ui = PACKAGE_STATUS_RU.get(status_key, status_key)
+    reason_ui = safe_str(pkg_row.get("blocking_reason"))
+    line_display = safe_str(pkg_row.get("line_id")) or safe_str(pkg_row.get("package_key"))
+
+    st.markdown(
+        f"""
+        <div class="admission-package-header">
+            <div style="font-size:1.05rem;font-weight:700;color:#0f172a;margin-bottom:0.35rem;">
+                {safe_str(pkg_row.get("boq_code"))} — {safe_str(pkg_row.get("boq_name")) or "—"}
+            </div>
+            <div style="font-size:0.86rem;color:#475569;line-height:1.55;">
+                <span><strong>Очередь:</strong> {field_display(pkg_row.get("queue_display"))}</span>
+                &nbsp;·&nbsp;
+                <span><strong>Титул:</strong> {field_display(pkg_row.get("title_display"))}</span>
+                &nbsp;·&nbsp;
+                <span><strong>Дисциплина:</strong> {field_display(pkg_row.get("discipline_display"))}</span>
+            </div>
+            <div style="font-size:0.86rem;color:#475569;line-height:1.55;margin-top:0.25rem;">
+                <span><strong>Система:</strong> {field_display(pkg_row.get("system_display"))}</span>
+                &nbsp;·&nbsp;
+                <span><strong>IWP:</strong> {field_display(pkg_row.get("iwp_display"))}</span>
+                &nbsp;·&nbsp;
+                <span><strong>Звено:</strong> {field_display(pkg_row.get("crew_display"))}</span>
+            </div>
+            <div style="font-size:0.86rem;color:#475569;line-height:1.55;margin-top:0.25rem;">
+                <span><strong>Объём:</strong> {field_display(pkg_row.get("planned_qty_display"))} {field_display(pkg_row.get("unit_display")) if field_display(pkg_row.get("unit_display")) != "—" else ""}</span>
+                &nbsp;·&nbsp;
+                <span><strong>Часы:</strong> {field_display(pkg_row.get("required_hours_display"))}</span>
+                &nbsp;·&nbsp;
+                <span><strong>Стоимость:</strong> {field_display(pkg_row.get("plan_value_display"))}</span>
+            </div>
+            <div style="font-size:0.86rem;color:#475569;line-height:1.55;margin-top:0.25rem;">
+                <span><strong>Отправлено в допуск MSK:</strong> {field_display(pkg_row.get("sent_to_constraints_display"))}</span>
+                &nbsp;·&nbsp;
+                <span><strong>Статус допуска:</strong> {status_ui}</span>
+                &nbsp;·&nbsp;
+                <span><strong>plan_line_id:</strong> <code>{line_display}</code></span>
+            </div>
+            <div style="font-size:0.86rem;color:#475569;line-height:1.55;margin-top:0.25rem;">
+                <span><strong>Итог:</strong> {field_display(reason_ui)}</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_edit_card(row: pd.Series) -> None:
-    st.markdown("### Карточка ограничения")
+    st.markdown("### Детализация выбранной проверки")
     st.caption(BOQ_MULTI_CONSTRAINT_INFO)
     info1, info2, info3 = st.columns(3)
     info1.markdown(f"**BOQ-код:** {safe_str(row.get('boq_code'))}")
@@ -1247,148 +2862,120 @@ def render_edit_card(row: pd.Series) -> None:
             st.rerun()
 
 
-def main() -> None:
-    st.title("Управление ограничениями месячного плана")
+def prepare_admission_main_table(packages_df: pd.DataFrame) -> pd.DataFrame:
+    if packages_df.empty:
+        return pd.DataFrame(columns=list(ADMISSION_MAIN_TABLE_COLUMNS_RU.values()))
+
+    show_cols = [c for c in ADMISSION_MAIN_TABLE_COLUMNS if c in packages_df.columns]
+    view = packages_df[show_cols].copy()
+    if "package_status" in packages_df.columns and "package_status_ui" in view.columns:
+        view["package_status_ui"] = packages_df["package_status"].map(
+            lambda value: PACKAGE_STATUS_TABLE_LABEL.get(
+                safe_str(value),
+                field_display(value),
+            )
+        )
+    for col in show_cols:
+        if col == "package_status_ui":
+            continue
+        view[col] = view[col].apply(field_display)
+    return view.rename(columns=ADMISSION_MAIN_TABLE_COLUMNS_RU)
+
+
+def render_admission_plan_list_module(
+    packages_df: pd.DataFrame,
+    scope_df: pd.DataFrame,
+) -> None:
+    st.markdown("### Список месячного плана для допуска")
     st.caption(
-        "Рабочая страница для отделов: проверка ограничений, статус, владелец, "
-        "срок закрытия и комментарий."
+        "Строки месячного плана, отправленные из Конструктора v2 в контур допуска."
     )
-    st.info(ADMISSION_INFO)
 
-    base_df = load_constraints()
-    if base_df.empty:
-        st.info(
-            "Ограничений пока нет. Сначала сформируйте проверки по отделам на странице 15."
-        )
+    st.markdown('<div class="admission-module-panel">', unsafe_allow_html=True)
+    render_admission_module_summary_kpis(packages_df)
+    render_admission_module_check_kpis(scope_df, packages_df)
+
+    if packages_df.empty:
+        st.caption("По выбранным фильтрам строк нет.")
+        st.markdown("</div>", unsafe_allow_html=True)
         return
 
-    st.markdown("### Фильтры")
-    f1, f2, f3, f4 = st.columns(4)
-    f5, f6, f7, f8 = st.columns(4)
-    project_opts = filter_options(base_df, "project_code")
-    month_opts = filter_options(base_df, "month_key")
-    facility_opts = filter_options(base_df, "facility_building")
-    discipline_opts = filter_options(base_df, "construction_discipline")
-    department_opts = filter_options(base_df, "responsible_department")
-    check_opts = filter_options_ru(base_df, "check_status", CHECK_STATUS_RU)
-    resolution_opts = filter_options_ru(base_df, "resolution_status", RESOLUTION_RU)
-
-    init_filter_defaults(project_opts, FILTER_SESSION_KEYS["project"])
-    init_filter_defaults(month_opts, FILTER_SESSION_KEYS["month"])
-    init_filter_defaults(facility_opts, FILTER_SESSION_KEYS["facility"])
-    init_filter_defaults(discipline_opts, FILTER_SESSION_KEYS["discipline"])
-    init_filter_defaults(department_opts, FILTER_SESSION_KEYS["department"])
-    init_filter_defaults(check_opts, FILTER_SESSION_KEYS["check_status"])
-    init_filter_defaults(resolution_opts, FILTER_SESSION_KEYS["resolution_status"])
-    if FILTER_SESSION_KEYS["overdue_only"] not in st.session_state:
-        st.session_state[FILTER_SESSION_KEYS["overdue_only"]] = False
-    if FILTER_SESSION_KEYS["search"] not in st.session_state:
-        st.session_state[FILTER_SESSION_KEYS["search"]] = ""
-
-    project_sel = f1.selectbox("Проект", project_opts, key=FILTER_SESSION_KEYS["project"])
-    month_sel = f2.selectbox("Месяц", month_opts, key=FILTER_SESSION_KEYS["month"])
-    facility_sel = f3.selectbox("Здание / объект", facility_opts, key=FILTER_SESSION_KEYS["facility"])
-    discipline_sel = f4.selectbox(
-        "Дисциплина", discipline_opts, key=FILTER_SESSION_KEYS["discipline"]
-    )
-    department_sel = f5.selectbox(
-        "Отдел",
-        department_opts,
-        format_func=lambda v: dept_ui(v) if v != "Все" else "Все",
-        key=FILTER_SESSION_KEYS["department"],
-    )
-    check_status_sel = f6.selectbox(
-        "Статус проверки",
-        check_opts,
-        format_func=lambda v: ru_label(v, CHECK_STATUS_RU),
-        key=FILTER_SESSION_KEYS["check_status"],
-    )
-    resolution_sel = f7.selectbox(
-        "Статус устранения",
-        resolution_opts,
-        format_func=lambda v: ru_label(v, RESOLUTION_RU),
-        key=FILTER_SESSION_KEYS["resolution_status"],
-    )
-    overdue_only = f8.checkbox(
-        "Только просроченные", key=FILTER_SESSION_KEYS["overdue_only"]
-    )
-    search_q = st.text_input(
-        "Поиск по BOQ-коду / наименованию / владельцу",
-        key=FILTER_SESSION_KEYS["search"],
-    )
-
-    df = apply_filters(
-        base_df,
-        project_sel,
-        month_sel,
-        facility_sel,
-        discipline_sel,
-        department_sel,
-        check_status_sel,
-        resolution_sel,
-        overdue_only,
-        search_q,
-    )
-
-    st.markdown("### Сводка")
-    render_kpi_top_bar(df)
-    st.markdown("### KPI")
-    render_kpis(df)
-
-    st.markdown("### Ограничения")
-    if df.empty:
-        st.caption("По выбранным фильтрам ограничений нет.")
-        return
-
-    display_df = df.copy()
-    if "responsible_department" in display_df.columns:
-        display_df["responsible_department"] = display_df["responsible_department"].apply(dept_ui)
-    if "gate_layer" in display_df.columns:
-        display_df["gate_layer"] = display_df["gate_layer"].apply(
-            lambda v: GATE_LAYER_RU.get(safe_str(v), safe_str(v))
-        )
-    if "check_status" in display_df.columns:
-        display_df["check_status"] = display_df["check_status"].apply(
-            lambda v: CHECK_STATUS_RU.get(norm_check_status_key(v), safe_str(v))
-        )
-    if "severity" in display_df.columns:
-        display_df["severity"] = display_df["severity"].apply(
-            lambda v: SEVERITY_RU.get(
-                norm_tech_value(v, SEVERITY_OPTIONS, SEVERITY_RU, "MEDIUM"),
-                safe_str(v),
-            )
-        )
-    if "updated_by" in display_df.columns:
-        display_df["updated_by"] = display_df["updated_by"].apply(display_dash)
-    if "resolution_status" in display_df.columns:
-        display_df["resolution_status"] = display_df["resolution_status"].apply(
-            lambda v: RESOLUTION_RU.get(
-                norm_tech_value(v, RESOLUTION_OPTIONS, RESOLUTION_RU, safe_str(v)),
-                safe_str(v),
-            )
-        )
-    if "value_at_risk_display" in display_df.columns:
-        display_df["value_at_risk_display"] = display_df["value_at_risk_display"].apply(money_ru)
-    if "target_resolution_date" in display_df.columns:
-        display_df["target_resolution_date"] = display_df["target_resolution_date"].apply(
-            lambda v: safe_date(v).isoformat() if safe_date(v) else ""
-        )
-
-    show_cols = [c for c in TABLE_COLUMNS if c in display_df.columns]
-    table_view = display_df[show_cols].rename(columns=TABLE_COLUMNS_RU)
-    st.caption("Выберите строку в таблице — карточка ниже откроется автоматически.")
+    table_view = prepare_admission_main_table(packages_df)
+    row_count = len(table_view)
+    st.markdown('<div class="admission-plan-table">', unsafe_allow_html=True)
     st.dataframe(
-        style_table(table_view),
+        style_admission_main_table(table_view),
         use_container_width=True,
         hide_index=True,
-        height=TABLE_HEIGHT_PX,
+        height=PACKAGE_TABLE_HEIGHT_PX,
         on_select="rerun",
         selection_mode="single-row",
-        key=TABLE_SELECTION_KEY,
+        key=PACKAGE_TABLE_SELECTION_KEY,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.caption(f"Показано {row_count} строк.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_admission_line_details(
+    packages_df: pd.DataFrame,
+    scope_df: pd.DataFrame,
+) -> None:
+    if packages_df.empty:
+        st.caption("По выбранным фильтрам строк нет.")
+        return
+
+    selected_package_key = resolve_selected_package_key(packages_df)
+    pkg_row = packages_df[
+        packages_df["package_key"].astype(str) == selected_package_key
+    ].iloc[0]
+    package_constraints = filter_constraints_for_package(scope_df, selected_package_key)
+
+    render_package_header(pkg_row)
+
+    if package_constraints.empty:
+        st.warning("Для выбранного пакета нет проверок в текущей выборке.")
+        return
+
+    st.markdown("#### Статус допуска строки")
+    render_package_explanation(pkg_row, package_constraints)
+    package_display_df = prepare_constraint_display_df(package_constraints)
+    check_show_cols = [
+        c
+        for c in (
+            "responsible_department",
+            "gate_layer",
+            "check_name",
+            "check_status",
+            "resolution_status",
+            "target_resolution_date",
+            "days_overdue",
+        )
+        if c in package_display_df.columns
+    ]
+    check_table_view = package_display_df[check_show_cols].rename(
+        columns={
+            "responsible_department": "Отдел",
+            "gate_layer": "Контур",
+            "check_name": "Проверка",
+            "check_status": "Статус",
+            "resolution_status": "Устранение",
+            "target_resolution_date": "Срок",
+            "days_overdue": "Просрочка",
+        }
+    )
+    st.dataframe(
+        style_table(check_table_view),
+        use_container_width=True,
+        hide_index=True,
+        height=PACKAGE_CHECK_TABLE_HEIGHT_PX,
+        on_select="rerun",
+        selection_mode="single-row",
+        key=PACKAGE_CHECK_TABLE_KEY,
     )
 
     labels: Dict[str, str] = {}
-    for _, row in df.iterrows():
+    for _, row in package_constraints.iterrows():
         cid = safe_str(row.get("constraint_id"))
         if cid:
             labels[cid] = constraint_human_label(row)
@@ -1397,28 +2984,163 @@ def main() -> None:
         return
 
     label_keys = list(labels.keys())
+    selected_id = resolve_selected_constraint_id_in_subset(
+        package_constraints, label_keys, PACKAGE_CHECK_TABLE_KEY
+    )
+    selected_row = package_constraints[
+        package_constraints["constraint_id"].astype(str) == selected_id
+    ].iloc[0]
 
-    with st.expander("Ручной выбор ограничения", expanded=False):
-        st.caption(
-            "Используется, если в таблице нет выделенной строки. "
-            "При выделении строки в таблице приоритет у таблицы."
-        )
-        fallback_id = st.session_state.get(TABLE_SELECTED_ID_KEY) or label_keys[0]
-        manual_index = label_keys.index(fallback_id) if fallback_id in label_keys else 0
-        st.selectbox(
-            "Ограничение (fallback)",
-            options=label_keys,
-            index=manual_index,
-            format_func=lambda cid: labels.get(cid, cid),
-            key=CONSTRAINT_EDIT_SELECT_KEY,
-        )
-
-    selected_id = resolve_selected_constraint_id(df, label_keys)
-    selected_row = df[df["constraint_id"].astype(str) == selected_id].iloc[0]
-
-    st.markdown("---")
-    st.markdown(f"**Выбрано:** {constraint_human_label(selected_row)}")
+    st.markdown(f"**Редактирование проверки:** {constraint_human_label(selected_row)}")
     render_edit_card(selected_row)
+
+
+def render_admission_secondary_panels(
+    packages_df: pd.DataFrame,
+    scope_df: pd.DataFrame,
+    queue_df: pd.DataFrame,
+    department_sel: str,
+) -> None:
+    with st.expander("Детали выбранной строки и проверки", expanded=False):
+        render_admission_line_details(packages_df, scope_df)
+
+    with st.expander("Очередь допуска выбранного отдела", expanded=False):
+        detail_row = render_admission_queue(queue_df, packages_df, department_sel)
+        if detail_row is not None:
+            st.markdown("#### Детали проверки")
+            render_queue_detail_summary(detail_row)
+            with st.expander("Расширенное редактирование", expanded=False):
+                render_edit_card(detail_row)
+
+    with st.expander("Техническая таблица допуска", expanded=False):
+        technical_df = prepare_constraint_display_df(scope_df)
+        show_cols = [c for c in TABLE_COLUMNS if c in technical_df.columns]
+        table_view = technical_df[show_cols].rename(columns=TABLE_COLUMNS_RU)
+        st.dataframe(
+            style_table(table_view),
+            use_container_width=True,
+            hide_index=True,
+            height=TABLE_HEIGHT_PX,
+        )
+
+
+def main() -> None:
+    inject_admission_page_styles()
+
+    st.title("Контур допуска месячного плана")
+    st.caption(
+        "Проверка готовности работ к включению в исполнимый месячный план. "
+        "Каждый отдел допускает строки в своей зоне ответственности перед передачей в War Room."
+    )
+
+    base_df = load_constraints()
+    if base_df.empty:
+        st.info(
+            "Строк в допуске пока нет. Отправьте план из "
+            "10B Конструктора месячного плана v2."
+        )
+        return
+
+    packages_base = build_package_dataframe(base_df)
+    line_ids = tuple(
+        safe_str(line_id)
+        for line_id in packages_base.get("line_id", pd.Series(dtype=str)).tolist()
+        if safe_str(line_id)
+    )
+    v2_lines_df = load_v2_plan_lines_for_constraints(line_ids)
+    packages_enriched = enrich_packages_with_v2_lines(packages_base, v2_lines_df)
+
+    check_status_opts = filter_options_ru(base_df, "check_status", CHECK_STATUS_RU)
+
+    st.markdown("### Фильтры")
+    with st.container():
+        st.markdown('<div class="admission-v2-filters">', unsafe_allow_html=True)
+        r1c1, r1c2, r1c3, r1c4, r1c5, r1c6 = st.columns(6)
+        r2c1, r2c2, r2c3, r2c4, r2c5, r2c6 = st.columns([1.2, 1.2, 1.2, 1.0, 0.9, 0.8])
+
+        month_opts = month_filter_options(packages_enriched)
+        project_opts = package_filter_options(packages_enriched, "project_code")
+        queue_opts = package_filter_options(packages_enriched, "queue_display")
+        title_opts = package_filter_options(packages_enriched, "title_display")
+        discipline_opts = package_filter_options(packages_enriched, "discipline_display")
+        department_opts = filter_options(base_df, "responsible_department")
+
+        init_filter_defaults(month_opts, FILTER_SESSION_KEYS["month"])
+        init_filter_defaults(project_opts, FILTER_SESSION_KEYS["project"])
+        init_filter_defaults(queue_opts, FILTER_SESSION_KEYS["queue"])
+        init_filter_defaults(title_opts, FILTER_SESSION_KEYS["title"])
+        init_filter_defaults(discipline_opts, FILTER_SESSION_KEYS["discipline"])
+        init_filter_defaults(check_status_opts, FILTER_SESSION_KEYS["check_status"])
+        init_filter_defaults(department_opts, FILTER_SESSION_KEYS["department"])
+        if FILTER_SESSION_KEYS["search_boq"] not in st.session_state:
+            st.session_state[FILTER_SESSION_KEYS["search_boq"]] = ""
+        if FILTER_SESSION_KEYS["search_iwp"] not in st.session_state:
+            st.session_state[FILTER_SESSION_KEYS["search_iwp"]] = ""
+        if FILTER_SESSION_KEYS["search_system"] not in st.session_state:
+            st.session_state[FILTER_SESSION_KEYS["search_system"]] = ""
+        if FILTER_SESSION_KEYS["overdue_only"] not in st.session_state:
+            st.session_state[FILTER_SESSION_KEYS["overdue_only"]] = False
+
+        month_sel = r1c1.selectbox("Месяц", month_opts, key=FILTER_SESSION_KEYS["month"])
+        project_sel = r1c2.selectbox("Проект", project_opts, key=FILTER_SESSION_KEYS["project"])
+        queue_sel = r1c3.selectbox("Очередь", queue_opts, key=FILTER_SESSION_KEYS["queue"])
+        title_sel = r1c4.selectbox("Титул", title_opts, key=FILTER_SESSION_KEYS["title"])
+        discipline_sel = r1c5.selectbox(
+            "Дисциплина", discipline_opts, key=FILTER_SESSION_KEYS["discipline"]
+        )
+        check_status_sel = r1c6.selectbox(
+            "Статус проверки",
+            check_status_opts,
+            format_func=lambda v: CHECK_STATUS_RU.get(v, v) if v != "Все" else "Все",
+            key=FILTER_SESSION_KEYS["check_status"],
+        )
+
+        search_boq = r2c1.text_input("Поиск BOQ", key=FILTER_SESSION_KEYS["search_boq"])
+        search_iwp = r2c2.text_input("Поиск IWP", key=FILTER_SESSION_KEYS["search_iwp"])
+        search_system = r2c3.text_input(
+            "Поиск системы", key=FILTER_SESSION_KEYS["search_system"]
+        )
+        department_sel = r2c4.selectbox(
+            "Отдел допуска",
+            department_opts,
+            format_func=lambda v: dept_ui(v) if v != "Все" else "Все",
+            key=FILTER_SESSION_KEYS["department"],
+        )
+        overdue_only = r2c5.checkbox(
+            "Только просроченные", key=FILTER_SESSION_KEYS["overdue_only"]
+        )
+        with r2c6:
+            st.markdown('<div class="admission-filter-reset"></div>', unsafe_allow_html=True)
+            if st.button("Сбросить", key="admission_filter_reset_btn"):
+                reset_admission_filters()
+                st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    packages_work = build_package_dataframe(base_df)
+    packages_work = enrich_packages_with_v2_lines(packages_work, v2_lines_df)
+    packages_df = apply_package_filters(
+        packages_work,
+        month_sel,
+        project_sel,
+        queue_sel,
+        title_sel,
+        discipline_sel,
+        "Все",
+        search_boq,
+        search_iwp,
+        search_system,
+    )
+    visible_package_keys = set(packages_df["package_key"].astype(str).tolist())
+    scope_df = filter_constraints_by_package_keys(base_df, visible_package_keys)
+    queue_df = apply_queue_filters(
+        scope_df,
+        department_sel,
+        check_status_sel,
+        overdue_only,
+    )
+
+    render_admission_plan_list_module(packages_df, scope_df)
+    render_admission_secondary_panels(packages_df, scope_df, queue_df, department_sel)
 
 
 if __name__ == "__main__":

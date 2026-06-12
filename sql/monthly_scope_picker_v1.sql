@@ -88,6 +88,30 @@ executed_all_time AS (
         upper(trim(coalesce(dp.construction_discipline, ''))),
         upper(trim(dp.boq))
 ),
+systems_iwp_by_boq AS (
+    SELECT
+        upper(trim(coalesce(dp.project_code, ''))) AS project_code_norm,
+        upper(trim(coalesce(dp.facility_building, ''))) AS facility_building_norm,
+        upper(trim(coalesce(dp.construction_discipline, ''))) AS construction_discipline_norm,
+        upper(trim(dp.boq)) AS boq_code_norm,
+        string_agg(
+            DISTINCT nullif(trim(dp.system_label), ''),
+            ', '
+            ORDER BY nullif(trim(dp.system_label), '')
+        ) AS system_label,
+        string_agg(
+            DISTINCT nullif(trim(dp.iwp_id), ''),
+            ', '
+            ORDER BY nullif(trim(dp.iwp_id), '')
+        ) AS iwp_id
+    FROM public.daily_progress_active dp
+    WHERE nullif(trim(dp.boq), '') IS NOT NULL
+    GROUP BY
+        upper(trim(coalesce(dp.project_code, ''))),
+        upper(trim(coalesce(dp.facility_building, ''))),
+        upper(trim(coalesce(dp.construction_discipline, ''))),
+        upper(trim(dp.boq))
+),
 norms_clean AS (
     SELECT
         upper(trim(coalesce(n.project_code, ''))) AS project_code_norm,
@@ -147,13 +171,20 @@ base_scoped AS (
         coalesce(adj.manual_executed_before_system, 0)::numeric AS manual_executed_before_system,
         adj.manual_verified_remaining_qty,
         adj.manual_adjustment_reason,
-        adj.manual_adjustment_comment
+        adj.manual_adjustment_comment,
+        coalesce(sib.system_label, '') AS system_label,
+        coalesce(sib.iwp_id, '') AS iwp_id
     FROM boq_master_priced b
     LEFT JOIN executed_all_time e
         ON e.project_code_norm = b.project_code_norm
        AND e.facility_building_norm = b.facility_building_norm
        AND e.construction_discipline_norm = b.construction_discipline_norm
        AND e.boq_code_norm = b.boq_code_norm
+    LEFT JOIN systems_iwp_by_boq sib
+        ON sib.project_code_norm = b.project_code_norm
+       AND sib.facility_building_norm = b.facility_building_norm
+       AND sib.construction_discipline_norm = b.construction_discipline_norm
+       AND sib.boq_code_norm = b.boq_code_norm
     LEFT JOIN norms_clean n
         ON n.project_code_norm = b.project_code_norm
        AND n.facility_building_norm = b.facility_building_norm
@@ -216,7 +247,9 @@ SELECT
         ELSE 'ИСТОРИЯ ЕСТЬ'
     END AS norm_status,
     (s.planning_remaining_qty * s.p50_hours_per_unit)::numeric AS estimated_hours_p50_remaining,
-    (s.planning_remaining_qty * s.p80_hours_per_unit)::numeric AS estimated_hours_p80_remaining
+    (s.planning_remaining_qty * s.p80_hours_per_unit)::numeric AS estimated_hours_p80_remaining,
+    s.system_label,
+    s.iwp_id
 FROM scoped s;
 
 

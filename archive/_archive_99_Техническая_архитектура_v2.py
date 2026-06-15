@@ -1,7 +1,7 @@
 # ============================================================
 # ARCHIVED — не Streamlit page (вне pages/).
 # Содержимое перенесено в конструктор v2:
-#   pages/10B_Конструктор_месячного_плана_v2.py → модуль 4
+#   pages/10B_Конструктор_месячного_плана.py → модуль 4
 # Исходник handbook:
 #   docs/v2_technical_architecture_handbook.py
 #
@@ -27,4 +27,4 @@ from docs.v2_technical_architecture_handbook import (  # noqa: E402
 #   python archive/_archive_99_Техническая_архитектура_v2.py
 if __name__ == "__main__":
     print("Handbook module: docs/v2_technical_architecture_handbook.py")
-    print("Rendered in: pages/10B_Конструктор_месячного_плана_v2.py (module 4)")
+    print("Rendered in: pages/10B_Конструктор_месячного_плана.py (module 4)")

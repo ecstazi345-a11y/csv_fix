@@ -18,6 +18,7 @@ import pandas as pd
 import streamlit as st
 from supabase import Client, create_client
 
+from services.constraints_service import create_constraints_for_review_queue
 from services.supabase_client import supabase
 
 SCOPE_VIEW = "monthly_scope_picker_view"
@@ -31,8 +32,41 @@ SAVED_DRAFT_KEY = "saved_monthly_plan_draft"
 REVIEW_QUEUE_KEY = "monthly_plan_review_queue"
 SAVED_DRAFT_ID_KEY = "saved_draft_id"
 SOURCE_DRAFT_ID_KEY = "source_draft_id"
+BASE_DRAFT_LINES_KEY = "base_draft_lines"
+ACTIVE_PLAN_MONTH_KEY = "active_plan_month_key"
+SELECTED_PLANNING_MONTH_KEY = "selected_planning_month_key"
+DEFAULT_PLANNING_MONTH = "июнь-2026"
+LINE_SOURCE_SENT_UI = "Ранее отправлено"
+LINE_SOURCE_NEW_UI = "Новый код"
+SENT_PLAN_STATUSES = ("SENT_TO_REVIEW", "APPROVED")
+PREVIOUSLY_SENT_DISPLAY_STATUSES = ("SENT_TO_REVIEW", "APPROVED", "NEED_REVISION")
+PREVIOUSLY_SENT_STATUS_PRIORITY = {
+    "APPROVED": 0,
+    "SENT_TO_REVIEW": 1,
+    "NEED_REVISION": 2,
+}
+SENDABLE_DRAFT_STATUSES = ("DRAFT", "NEED_REVISION")
+CONSTRUCTOR_TABLE_COLUMNS = [
+    "BOQ Code",
+    "Наименование",
+    "Ед. изм.",
+    "Титул",
+    "Дисциплина",
+    "Звено",
+    "Плановый объём",
+    "Плановая стоимость, ₽",
+    "Требуется чел-ч",
+    "Норма",
+    "Стоимость труда, ₽",
+    "Дата внесения / отправки",
+    "Источник",
+]
+CONSTRUCTOR_SELECT_COLUMN = "Выбрать"
+SELECTED_MONTH_PLAN_ROW_KEY = "selected_month_plan_row_key"
+MONTH_PLAN_EDIT_ROW_KEY = "month_plan_edit_row_key"
 DRAFT_VIEW_ONLY_KEY = "draft_view_only"
 LOADED_DRAFT_STATUS_KEY = "loaded_draft_status"
+DRAFT_SKIP_HYDRATE_MONTHS_KEY = "draft_skip_hydrate_months"
 DEFAULT_LABOR_RATE_PER_HOUR = 3000.0
 
 DRAFT_STATUS_FILTER_OPTIONS = [
@@ -105,6 +139,15 @@ DRAFT_STATUS_RU_TO_CODE = {label: code for code, label in DRAFT_STATUS_RU.items(
 
 # Статусы черновиков, резервирующих объём в AVAILABLE REMAINING
 RESERVING_DRAFT_STATUSES = ("DRAFT", "SENT_TO_REVIEW", "NEED_REVISION", "APPROVED")
+
+# Статусы месячного плана для UX-защиты от случайного дубля при save
+MONTHLY_PLAN_GUARD_STATUSES = ("DRAFT", "NEED_REVISION", "SENT_TO_REVIEW", "APPROVED")
+MONTHLY_PLAN_GUARD_STATUS_PRIORITY = {
+    "DRAFT": 0,
+    "NEED_REVISION": 1,
+    "SENT_TO_REVIEW": 2,
+    "APPROVED": 3,
+}
 
 NORM_STATUS_OPTIONS = ["Все", "ИСТОРИЯ ЕСТЬ", "НЕТ ИСТОРИИ"]
 
@@ -468,6 +511,704 @@ def format_month_key(year: int, month: int) -> str:
     if month < 1 or month > 12:
         return ""
     return f"{RU_MONTH_NAMES_LOWER[month - 1]}-{year}"
+
+
+def planning_month_options_2026() -> list[str]:
+    return [
+        "январь-2026",
+        "февраль-2026",
+        "март-2026",
+        "апрель-2026",
+        "май-2026",
+        "июнь-2026",
+        "июль-2026",
+        "август-2026",
+        "сентябрь-2026",
+        "октябрь-2026",
+        "ноябрь-2026",
+        "декабрь-2026",
+    ]
+
+
+def get_selected_planning_month() -> str:
+    selected = safe_str(st.session_state.get(SELECTED_PLANNING_MONTH_KEY))
+    if selected:
+        return selected
+    return DEFAULT_PLANNING_MONTH
+
+
+def session_has_other_month_draft_lines(selected_month: str) -> bool:
+    target = safe_str(selected_month)
+    for key in (BASE_DRAFT_LINES_KEY, DRAFT_KEY):
+        for item in st.session_state.get(key, []):
+            month = safe_str(item.get("month_key"))
+            if month and month != target:
+                return True
+    return False
+
+
+def replace_draft_items_by_uid(updated_items: list[dict]) -> None:
+    updated_uids = {draft_line_uid(x) for x in updated_items}
+    kept = [
+        item
+        for item in st.session_state.get(DRAFT_KEY, [])
+        if draft_line_uid(item) not in updated_uids
+    ]
+    st.session_state[DRAFT_KEY] = kept + updated_items
+
+
+def remove_draft_line_uids(uids: set[str]) -> None:
+    st.session_state[DRAFT_KEY] = [
+        item
+        for item in st.session_state.get(DRAFT_KEY, [])
+        if draft_line_uid(item) not in uids
+    ]
+
+
+def ensure_new_session_lines_added_at(month_key: str, project_filter: str) -> None:
+    """Backfill added_at для новых строк session, если поле потерялось после reload/hydrate."""
+    if not month_key:
+        return
+    sent_lines, _ = load_previously_sent_for_constructor(month_key, project_filter)
+    sent_keys = {draft_item_key_parts(item) for item in sent_lines}
+    now_iso = datetime.now(timezone.utc).isoformat()
+    draft = list(st.session_state.get(DRAFT_KEY, []))
+    updated = False
+    for i, item in enumerate(draft):
+        if safe_str(item.get("month_key")) != month_key:
+            continue
+        if draft_item_key_parts(item) in sent_keys:
+            continue
+        if safe_str(item.get("added_at")):
+            continue
+        draft[i] = {**item, "added_at": now_iso}
+        updated = True
+    if updated:
+        st.session_state[DRAFT_KEY] = draft
+
+
+def format_added_at_display(value) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "—"
+    text = str(value).strip()
+    if not text:
+        return "—"
+    try:
+        dt = pd.to_datetime(text, utc=True)
+        return dt.strftime("%d.%m.%Y %H:%M")
+    except Exception:  # noqa: BLE001
+        return text[:16]
+
+
+def resolve_line_added_at_from_sources(
+    draft_row: dict | None,
+    line_row: dict | None = None,
+) -> str | None:
+    draft_row = draft_row or {}
+    line_row = line_row or {}
+    for key in ("submitted_at", "sent_at", "created_at"):
+        value = safe_str(draft_row.get(key))
+        if value:
+            return value
+    value = safe_str(line_row.get("created_at"))
+    return value or None
+
+
+def _load_sent_draft_meta(
+    draft_ids: list[str],
+    project_code: str | None,
+) -> list[dict]:
+    statuses = list(PREVIOUSLY_SENT_DISPLAY_STATUSES)
+    field_variants = (
+        "draft_id,draft_status,project_code,month_key,created_at,submitted_at,sent_at",
+        "draft_id,draft_status,project_code,month_key,created_at",
+    )
+    for fields in field_variants:
+        try:
+            query = (
+                supabase.table("monthly_plan_drafts")
+                .select(fields)
+                .in_("draft_id", draft_ids)
+                .in_("draft_status", statuses)
+            )
+            if project_code:
+                query = query.eq("project_code", project_code)
+            return query.execute().data or []
+        except Exception as exc:  # noqa: BLE001
+            if fields.endswith("created_at"):
+                return []
+            if "does not exist" not in str(exc).lower() and "column" not in str(exc).lower():
+                raise
+    return []
+
+
+def resolve_constructor_project_code(project_filter: str, items: list[dict]) -> str | None:
+    if project_filter and project_filter != "Все":
+        return str(project_filter).strip()
+    project_values = {
+        safe_str(x.get("project_code"))
+        for x in items
+        if safe_str(x.get("project_code"))
+    }
+    if len(project_values) == 1:
+        return next(iter(project_values))
+    return None
+
+
+def _pick_best_previously_sent_plan_row(rows: list[dict]) -> dict | None:
+    if not rows:
+        return None
+    ordered = sorted(
+        rows,
+        key=lambda r: (
+            PREVIOUSLY_SENT_STATUS_PRIORITY.get(safe_str(r.get("draft_status")), 99),
+            safe_str(r.get("created_at")),
+        ),
+    )
+    best_priority = PREVIOUSLY_SENT_STATUS_PRIORITY.get(
+        safe_str(ordered[0].get("draft_status")), 99
+    )
+    candidates = [
+        row
+        for row in ordered
+        if PREVIOUSLY_SENT_STATUS_PRIORITY.get(safe_str(row.get("draft_status")), 99)
+        == best_priority
+    ]
+    return max(candidates, key=lambda r: safe_str(r.get("created_at")))
+
+
+@st.cache_data(ttl=60)
+def load_previously_sent_lines_for_month(
+    project_code: str | None,
+    month_key: str,
+) -> tuple[list[dict], bool]:
+    """Все ранее отправленные строки месяца из всех draft'ов (не только последний)."""
+    if not month_key:
+        return [], False
+    try:
+        lines_query = (
+            supabase.table("monthly_plan_draft_lines")
+            .select("draft_id,project_code")
+            .eq("month_key", month_key)
+            .limit(5000)
+        )
+        if project_code:
+            lines_query = lines_query.eq("project_code", project_code)
+        lines_resp = lines_query.execute()
+        line_rows = lines_resp.data or []
+        if not line_rows:
+            return [], False
+
+        draft_ids = sorted(
+            {
+                safe_str(row.get("draft_id"))
+                for row in line_rows
+                if safe_str(row.get("draft_id"))
+            }
+        )
+        sent_drafts = _load_sent_draft_meta(draft_ids, project_code)
+        if not sent_drafts:
+            return [], False
+
+        draft_meta = {
+            safe_str(d.get("draft_id")): d
+            for d in sent_drafts
+            if safe_str(d.get("draft_id"))
+        }
+        sent_draft_ids = sorted(draft_meta)
+        legacy_mixed = any(
+            safe_str(d.get("month_key")).upper() == "MIXED" for d in sent_drafts
+        )
+
+        detail_query = (
+            supabase.table("monthly_plan_draft_lines")
+            .select("*")
+            .eq("month_key", month_key)
+            .in_("draft_id", sent_draft_ids)
+            .limit(5000)
+        )
+        if project_code:
+            detail_query = detail_query.eq("project_code", project_code)
+        detail_resp = detail_query.execute()
+
+        rows_by_draft_date: list[tuple[str, dict]] = []
+        for row in detail_resp.data or []:
+            draft_id = safe_str(row.get("draft_id"))
+            if draft_id not in draft_meta:
+                continue
+            draft_created = safe_str(draft_meta[draft_id].get("created_at"))
+            rows_by_draft_date.append((draft_created, row))
+        rows_by_draft_date.sort(key=lambda pair: pair[0])
+
+        merged_by_key: dict[tuple[str, str, str, str], dict] = {}
+        for _, row in rows_by_draft_date:
+            draft_id = safe_str(row.get("draft_id"))
+            item = line_db_to_session_item(row)
+            if project_code and safe_str(item.get("project_code")) != project_code:
+                continue
+            key = draft_item_key_parts(item)
+            added_at = resolve_line_added_at_from_sources(draft_meta.get(draft_id), row)
+            merged_by_key[key] = {
+                **item,
+                "added_at": added_at,
+                "line_id": row.get("line_id"),
+                "draft_id": draft_id,
+                "line_source_ui": LINE_SOURCE_SENT_UI,
+                "read_only": True,
+            }
+
+        sent_lines = sorted(
+            merged_by_key.values(),
+            key=lambda item: draft_item_key_parts(item),
+        )
+        return sent_lines, legacy_mixed
+    except Exception:  # noqa: BLE001
+        return [], False
+
+
+def load_previously_sent_for_constructor(
+    month_key: str,
+    project_filter: str,
+) -> tuple[list[dict], bool]:
+    project_code = resolve_constructor_project_code(
+        project_filter,
+        list(st.session_state.get(DRAFT_KEY, [])),
+    )
+    sent_lines, legacy_mixed = load_previously_sent_lines_for_month(project_code, month_key)
+    if not sent_lines:
+        sent_lines, legacy_mixed = load_previously_sent_lines_for_month(None, month_key)
+    return sent_lines, legacy_mixed
+
+
+def get_new_session_lines_for_month(
+    month_key: str,
+    project_filter: str = "Все",
+    *,
+    sent_keys: set | None = None,
+) -> list[dict]:
+    """Новые строки из DRAFT_KEY; строки, совпадающие с previously_sent, исключаются."""
+    if sent_keys is None:
+        sent_lines, _ = load_previously_sent_for_constructor(month_key, project_filter)
+        sent_keys = {draft_item_key_parts(item) for item in sent_lines}
+    return [
+        item
+        for item in filter_lines_by_month_key(list(st.session_state.get(DRAFT_KEY, [])), month_key)
+        if draft_item_key_parts(item) not in sent_keys
+    ]
+
+
+def remove_new_session_lines_for_month(month_key: str, project_filter: str) -> None:
+    new_lines = get_new_session_lines_for_month(month_key, project_filter)
+    remove_uids = {draft_line_uid(item) for item in new_lines}
+    st.session_state[DRAFT_KEY] = [
+        item
+        for item in st.session_state.get(DRAFT_KEY, [])
+        if draft_line_uid(item) not in remove_uids
+    ]
+    st.session_state[SAVED_DRAFT_ID_KEY] = None
+    st.session_state[LOADED_DRAFT_STATUS_KEY] = None
+    st.session_state[DRAFT_EDIT_MODE_KEY] = False
+    skip_months = st.session_state.setdefault(DRAFT_SKIP_HYDRATE_MONTHS_KEY, set())
+    skip_months.add(month_key)
+
+
+def has_unsaved_new_lines(month_key: str, project_filter: str) -> bool:
+    new_lines = get_new_session_lines_for_month(month_key, project_filter)
+    if not new_lines:
+        return False
+    saved_id = safe_str(st.session_state.get(SAVED_DRAFT_ID_KEY))
+    if not saved_id:
+        return True
+    saved_count = count_saved_draft_lines_for_month(saved_id, month_key)
+    return saved_count != len(new_lines)
+
+
+def resolve_hydrate_project_code(project_filter: str, month_key: str) -> str | None:
+    if project_filter and project_filter != "Все":
+        return str(project_filter).strip()
+    sent_lines, _ = load_previously_sent_for_constructor(month_key, project_filter)
+    return resolve_constructor_project_code(project_filter, sent_lines)
+
+
+def hydrate_saved_draft_lines_for_month(month_key: str, project_filter: str) -> bool:
+    """Восстановить сохранённый черновик месяца из БД после refresh, если session пуст."""
+    if not month_key:
+        return False
+    if st.session_state.get(SOURCE_DRAFT_ID_KEY):
+        return False
+    skip_months = st.session_state.setdefault(DRAFT_SKIP_HYDRATE_MONTHS_KEY, set())
+    if month_key in skip_months:
+        return False
+    if get_new_session_lines_for_month(month_key, project_filter):
+        return False
+    project_code = resolve_hydrate_project_code(project_filter, month_key)
+    if not project_code:
+        return False
+    active = find_active_draft_for_project_month(project_code, month_key)
+    if not active:
+        return False
+    draft_id = safe_str(active.get("draft_id"))
+    draft_status = safe_str(active.get("draft_status")) or "DRAFT"
+    if not draft_id:
+        return False
+    month_items = filter_lines_by_month_key(load_draft_lines_as_items(draft_id), month_key)
+    sent_lines, _ = load_previously_sent_for_constructor(month_key, project_filter)
+    sent_keys = {draft_item_key_parts(item) for item in sent_lines}
+    new_items = [
+        item for item in month_items if draft_item_key_parts(item) not in sent_keys
+    ]
+    if not new_items:
+        return False
+    merged = [
+        item
+        for item in st.session_state.get(DRAFT_KEY, [])
+        if safe_str(item.get("month_key")) != month_key
+    ]
+    merged.extend(new_items)
+    st.session_state[DRAFT_KEY] = merged
+    st.session_state[SAVED_DRAFT_ID_KEY] = draft_id
+    st.session_state[LOADED_DRAFT_STATUS_KEY] = draft_status
+    st.session_state[DRAFT_VIEW_ONLY_KEY] = False
+    return True
+
+
+def resolve_draft_lines_for_save(month_key: str | None = None, project_filter: str = "Все") -> list[dict]:
+    target_month = safe_str(month_key) or get_selected_planning_month()
+    if target_month:
+        return get_new_session_lines_for_month(target_month, project_filter)
+    sent_lines, _ = load_previously_sent_for_constructor(
+        get_selected_planning_month() or "",
+        project_filter,
+    )
+    sent_keys = {draft_item_key_parts(item) for item in sent_lines}
+    return [
+        item
+        for item in st.session_state.get(DRAFT_KEY, [])
+        if draft_item_key_parts(item) not in sent_keys
+    ]
+
+
+def count_saved_draft_lines_for_month(draft_id: str, month_key: str) -> int:
+    if not draft_id or not month_key:
+        return 0
+    items = load_draft_lines_as_items(draft_id)
+    return len(filter_lines_by_month_key(items, month_key))
+
+
+def validate_draft_send_context(
+    new_lines: list[dict],
+    selected_month: str,
+) -> tuple[bool, str, str | None]:
+    if not new_lines:
+        return False, "Нет новых строк для отправки.", None
+
+    saved_draft_id = safe_str(st.session_state.get(SAVED_DRAFT_ID_KEY))
+    if not saved_draft_id:
+        return False, "Сначала сохраните черновик с новыми строками.", None
+
+    loaded_status = safe_str(st.session_state.get(LOADED_DRAFT_STATUS_KEY))
+    if loaded_status not in SENDABLE_DRAFT_STATUSES:
+        return (
+            False,
+            "Нельзя повторно отправить ранее отправленный план. "
+            "Сохраните новые строки как черновик дополнения.",
+            None,
+        )
+
+    source_draft_id = safe_str(st.session_state.get(SOURCE_DRAFT_ID_KEY))
+    if source_draft_id and saved_draft_id == source_draft_id:
+        return (
+            False,
+            "Нельзя повторно отправить исходный план. Сначала сохраните черновик дополнения.",
+            None,
+        )
+
+    saved_line_count = count_saved_draft_lines_for_month(saved_draft_id, selected_month)
+    if saved_line_count != len(new_lines):
+        return (
+            False,
+            "Черновик не совпадает с новыми строками на экране. "
+            f"Сохранено: {saved_line_count}, новых строк: {len(new_lines)}. "
+            "Сохраните черновик перед отправкой.",
+            None,
+        )
+
+    return True, "", saved_draft_id
+
+
+def build_constructor_month_lines(
+    selected_month: str,
+    project_filter: str,
+) -> tuple[list[dict], list[dict], bool]:
+    ensure_new_session_lines_added_at(selected_month, project_filter)
+    sent_lines, legacy_mixed = load_previously_sent_for_constructor(
+        selected_month,
+        project_filter,
+    )
+    sent_keys = {draft_item_key_parts(item) for item in sent_lines}
+    raw_new_lines = get_new_session_lines_for_month(
+        selected_month,
+        project_filter,
+        sent_keys=sent_keys,
+    )
+    new_lines = [
+        {
+            **item,
+            "line_source_ui": LINE_SOURCE_NEW_UI,
+            "read_only": False,
+        }
+        for item in raw_new_lines
+    ]
+    return sent_lines, new_lines, legacy_mixed
+
+
+def constructor_text(value) -> str:
+    text = safe_str(value)
+    return text if text else "-"
+
+
+def constructor_item_norm_cell(item: dict) -> str:
+    scenario_code = item.get("norm_scenario")
+    norm_value = norm_productivity_fmt(
+        item.get("planned_qty"),
+        item.get("required_hours"),
+        pick_field(item, UOM_FALLBACKS),
+    )
+    scenario_label = norm_scenario_display(scenario_code)
+    if norm_value != "—":
+        return f"{norm_value} · {scenario_label}"
+    return scenario_label if scenario_label else "-"
+
+
+def build_constructor_display_df(items: list[dict], *, selected_uid: str = "") -> pd.DataFrame:
+    rows: list[dict] = []
+    for item in items:
+        source_ui = safe_str(item.get("line_source_ui"))
+        if source_ui == LINE_SOURCE_NEW_UI:
+            source_ui = f"🟢 {LINE_SOURCE_NEW_UI}"
+        row_uid = month_plan_row_uid(item)
+        boq_label = constructor_text(pick_field(item, ("boq_code",)))
+        if selected_uid and row_uid == selected_uid:
+            boq_label = f"▶ {boq_label}"
+        rows.append(
+            {
+                "BOQ Code": boq_label,
+                "Наименование": constructor_text(pick_field(item, BOQ_NAME_FALLBACKS)),
+                "Ед. изм.": constructor_text(pick_field(item, UOM_FALLBACKS)),
+                "Титул": constructor_text(pick_field(item, ("facility_building",))),
+                "Дисциплина": constructor_text(pick_field(item, ("construction_discipline",))),
+                "Звено": constructor_text(item.get("crew_code")),
+                "Плановый объём": qty_fmt(safe_num(item.get("planned_qty"))),
+                "Плановая стоимость, ₽": money_ru(safe_num(item.get("plan_value"))),
+                "Требуется чел-ч": hours_fmt(safe_num(item.get("required_hours"))),
+                "Норма": constructor_item_norm_cell(item),
+                "Стоимость труда, ₽": money_ru(safe_num(item.get("labor_cost"))),
+                "Дата внесения / отправки": format_added_at_display(item.get("added_at")),
+                "Источник": constructor_text(source_ui),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_constructor_selectable_table_df(
+    items: list[dict],
+    selected_uid: str,
+) -> tuple[pd.DataFrame, list[str]]:
+    row_uids = [month_plan_row_uid(item) for item in items]
+    table_df = build_constructor_display_df(items, selected_uid=selected_uid)
+    table_df.insert(
+        0,
+        CONSTRUCTOR_SELECT_COLUMN,
+        [uid == selected_uid for uid in row_uids],
+    )
+    return table_df, row_uids
+
+
+def sync_month_plan_row_selection(
+    edited_table: pd.DataFrame,
+    row_uids: list[str],
+) -> tuple[str | None, bool]:
+    if CONSTRUCTOR_SELECT_COLUMN not in edited_table.columns:
+        return st.session_state.get(SELECTED_MONTH_PLAN_ROW_KEY), False
+    checked = edited_table[CONSTRUCTOR_SELECT_COLUMN].fillna(False).astype(bool)
+    checked_indices = [i for i, flag in enumerate(checked) if flag]
+    if len(checked_indices) > 1:
+        return row_uids[checked_indices[0]], True
+    if len(checked_indices) == 1:
+        return row_uids[checked_indices[0]], False
+    return None, False
+
+
+def month_plan_row_key_slug(row_uid: str) -> str:
+    return row_uid.replace("|", "_").replace(" ", "_")[:120]
+
+
+def render_month_plan_row_edit_form(
+    item: dict,
+    source_df: pd.DataFrame,
+    crews: list[str],
+    selected_month: str,
+    project_filter: str,
+) -> None:
+    row_uid = month_plan_row_uid(item)
+    key_slug = month_plan_row_key_slug(row_uid)
+    st.markdown("##### Редактирование выбранной строки")
+    st.text_input(
+        "BOQ Code",
+        value=constructor_text(pick_field(item, ("boq_code",))),
+        disabled=True,
+        key=f"edit_row_boq_{key_slug}",
+    )
+    st.text_input(
+        "Наименование",
+        value=constructor_text(pick_field(item, BOQ_NAME_FALLBACKS)),
+        disabled=True,
+        key=f"edit_row_name_{key_slug}",
+    )
+    planned_qty = st.number_input(
+        "Плановый объём",
+        min_value=0.0,
+        value=safe_float(item.get("planned_qty")) or 0.0,
+        step=0.01,
+        key=f"edit_row_qty_{key_slug}",
+    )
+    if crews:
+        crew_default = safe_str(item.get("crew_code"))
+        crew_options = [""] + crews
+        crew_index = crew_options.index(crew_default) if crew_default in crew_options else 0
+        crew_code = st.selectbox(
+            "Звено",
+            crew_options,
+            index=crew_index,
+            key=f"edit_row_crew_{key_slug}",
+        )
+    else:
+        crew_code = st.text_input(
+            "Звено",
+            value=safe_str(item.get("crew_code")),
+            key=f"edit_row_crew_{key_slug}",
+        )
+    comment = st.text_area(
+        "Комментарий",
+        value=safe_str(item.get("comment")),
+        key=f"edit_row_comment_{key_slug}",
+    )
+    save_col, cancel_col = st.columns(2)
+    with save_col:
+        save_clicked = st.button("Сохранить изменения строки", key=f"edit_row_save_{key_slug}")
+    with cancel_col:
+        cancel_clicked = st.button("Отменить", key=f"edit_row_cancel_{key_slug}")
+
+    if cancel_clicked:
+        st.session_state.pop(MONTH_PLAN_EDIT_ROW_KEY, None)
+        st.rerun()
+
+    if save_clicked:
+        if planned_qty <= 0:
+            st.error("Плановый объём должен быть больше нуля.")
+            return
+        updated = dict(item)
+        updated["planned_qty"] = planned_qty
+        updated["crew_code"] = str(crew_code or "").strip()
+        updated["comment"] = str(comment or "").strip()
+        updated = recalc_new_line_item_values(updated, source_df)
+        remaining_error = validate_new_line_edit_remaining(
+            updated,
+            source_df,
+            selected_month,
+            project_filter,
+        )
+        if remaining_error:
+            st.error(remaining_error)
+            return
+        replace_draft_items_by_uid([updated])
+        st.session_state.pop(MONTH_PLAN_EDIT_ROW_KEY, None)
+        st.success("Строка обновлена.")
+        st.rerun()
+
+
+def render_month_plan_row_actions(
+    merged: list[dict],
+    source_df: pd.DataFrame,
+    crews: list[str],
+    project_filter: str,
+    selected_month: str,
+    *,
+    view_only: bool,
+) -> None:
+    st.markdown("#### Действия с выбранной строкой")
+    selected_uid = safe_str(st.session_state.get(SELECTED_MONTH_PLAN_ROW_KEY))
+    if not selected_uid:
+        st.caption("Выберите строку галочкой.")
+        return
+
+    selected_item = find_month_plan_row_by_uid(merged, selected_uid)
+    if selected_item is None:
+        st.session_state.pop(SELECTED_MONTH_PLAN_ROW_KEY, None)
+        st.session_state.pop(MONTH_PLAN_EDIT_ROW_KEY, None)
+        st.caption("Выберите строку галочкой.")
+        return
+
+    boq = constructor_text(pick_field(selected_item, ("boq_code",)))
+    source_label = safe_str(selected_item.get("line_source_ui"))
+    st.info(f"Выбрано: **{boq}** · {source_label or '—'}")
+
+    if not is_new_month_plan_row(selected_item):
+        st.warning(
+            "Ранее отправленную строку нельзя изменить или удалить из Constructor. "
+            "Для отмены нужна процедура отзыва из допуска."
+        )
+        return
+
+    if view_only:
+        st.caption("Режим просмотра — редактирование недоступно.")
+        return
+
+    edit_uid = safe_str(st.session_state.get(MONTH_PLAN_EDIT_ROW_KEY))
+    if edit_uid == selected_uid:
+        render_month_plan_row_edit_form(
+            selected_item,
+            source_df,
+            crews,
+            selected_month,
+            project_filter,
+        )
+        return
+
+    action_col1, action_col2 = st.columns(2)
+    with action_col1:
+        if st.button("Изменить выбранную строку", key="month_plan_edit_selected_row"):
+            st.session_state[MONTH_PLAN_EDIT_ROW_KEY] = selected_uid
+            st.rerun()
+    with action_col2:
+        if st.button("Удалить выбранную строку", key="month_plan_delete_selected_row"):
+            remove_draft_line_uids({draft_line_uid(selected_item)})
+            st.session_state.pop(SELECTED_MONTH_PLAN_ROW_KEY, None)
+            st.session_state.pop(MONTH_PLAN_EDIT_ROW_KEY, None)
+            st.success("Строка удалена.")
+            st.rerun()
+
+
+def render_constructor_unified_summary(display_lines: list[dict]) -> None:
+    if not display_lines:
+        return
+    sent_count = sum(
+        1 for item in display_lines if safe_str(item.get("line_source_ui")) == LINE_SOURCE_SENT_UI
+    )
+    new_count = len(display_lines) - sent_count
+    boq_codes = {safe_str(d.get("boq_code")) for d in display_lines if safe_str(d.get("boq_code"))}
+    total_ev = sum(safe_num(d.get("plan_value")) for d in display_lines)
+    total_hours = sum(safe_num(d.get("required_hours")) for d in display_lines)
+    total_labor = sum(safe_num(d.get("labor_cost")) for d in display_lines)
+
+    k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
+    k1.metric("Кол-во BOQ кодов", len(boq_codes))
+    k2.metric("Кол-во строк", len(display_lines))
+    k3.metric("Плановая стоимость, ₽", money_ru(total_ev))
+    k4.metric("Direct hours", hours_fmt(total_hours))
+    k5.metric("Стоимость труда, ₽", money_ru(total_labor))
+    k6.metric("Ранее отправлено", sent_count)
+    k7.metric("Новые строки", new_count)
 
 
 def build_month_key_options(existing_keys: list[str] | None = None) -> list[str]:
@@ -1100,6 +1841,89 @@ def draft_line_uid(item: dict) -> str:
     )
 
 
+def month_plan_row_uid(item: dict) -> str:
+    if safe_str(item.get("line_source_ui")) == LINE_SOURCE_NEW_UI:
+        return draft_line_uid(item)
+    line_id = safe_str(item.get("line_id"))
+    draft_id = safe_str(item.get("draft_id"))
+    if draft_id and line_id:
+        return f"{draft_id}|{line_id}"
+    if line_id:
+        return line_id
+    return "sent:" + draft_line_uid(item)
+
+
+def is_new_month_plan_row(item: dict) -> bool:
+    return safe_str(item.get("line_source_ui")) == LINE_SOURCE_NEW_UI
+
+
+def find_month_plan_row_by_uid(items: list[dict], row_uid: str) -> dict | None:
+    for item in items:
+        if month_plan_row_uid(item) == row_uid:
+            return item
+    return None
+
+
+def recalc_new_line_item_values(item: dict, source_df: pd.DataFrame) -> dict:
+    updated = dict(item)
+    key_parts = draft_item_key_parts(updated)
+    src_row = source_row_by_key_parts(source_df, key_parts)
+    unit_price = (
+        safe_float(src_row.get("unit_price"))
+        if src_row is not None
+        else safe_float(updated.get("unit_price"))
+    )
+    unit_price = unit_price or 0.0
+    scenario_code = str(updated.get("norm_scenario") or NORM_SCENARIO_REALISTIC)
+    if src_row is None:
+        norm_hpu = safe_float(updated.get("required_hours")) / max(
+            (safe_float(updated.get("planned_qty")) or 1.0), 1e-9
+        )
+    elif scenario_code == NORM_SCENARIO_REALISTIC:
+        norm_hpu = safe_float(src_row.get("p50_hours_per_unit"))
+    elif scenario_code == NORM_SCENARIO_CAUTIOUS:
+        norm_hpu = safe_float(src_row.get("p80_hours_per_unit"))
+    else:
+        norm_hpu = safe_float(updated.get("manual_norm_value"))
+
+    planned_qty = safe_float(updated.get("planned_qty")) or 0.0
+    updated["plan_value"] = planned_qty * unit_price
+    updated["required_hours"] = planned_qty * (norm_hpu or 0.0)
+    updated["labor_rate_per_hour"] = DEFAULT_LABOR_RATE_PER_HOUR
+    updated["labor_cost"] = (safe_float(updated.get("required_hours")) or 0.0) * DEFAULT_LABOR_RATE_PER_HOUR
+    return updated
+
+
+def validate_new_line_edit_remaining(
+    updated_item: dict,
+    source_df: pd.DataFrame,
+    month_key: str,
+    project_filter: str,
+) -> str | None:
+    sent_lines, _ = load_previously_sent_for_constructor(month_key, project_filter)
+    sent_keys = {draft_item_key_parts(item) for item in sent_lines}
+    peer_items = [
+        item
+        for item in filter_lines_by_month_key(list(st.session_state.get(DRAFT_KEY, [])), month_key)
+        if draft_item_key_parts(item) not in sent_keys
+        and draft_line_uid(item) != draft_line_uid(updated_item)
+    ]
+    test_items = peer_items + [updated_item]
+    planned_map = build_planned_qty_map(test_items)
+    key_parts = draft_item_key_parts(updated_item)
+    reserved_total = planned_map.get(key_parts, 0.0)
+    src_row = source_row_by_key_parts(source_df, key_parts)
+    project_remaining = (
+        safe_float(src_row.get("planning_remaining_qty")) if src_row is not None else None
+    )
+    if project_remaining is not None and reserved_total > project_remaining + 1e-9:
+        return (
+            f"Превышен доступный остаток по коду {key_parts[3]}: "
+            f"остаток {qty_fmt(project_remaining)}, запланировано {qty_fmt(reserved_total)}."
+        )
+    return None
+
+
 def source_row_by_key_parts(source_df: pd.DataFrame, key_parts: tuple[str, str, str, str]) -> pd.Series | None:
     if source_df.empty:
         return None
@@ -1154,11 +1978,99 @@ def validate_draft_for_save(draft: list[dict], source_df: pd.DataFrame) -> list[
     return errors
 
 
+def validate_draft_single_month_key(draft: list[dict]) -> str | None:
+    month_values = {
+        safe_str(d.get("month_key"))
+        for d in draft
+        if safe_str(d.get("month_key"))
+    }
+    if len(month_values) > 1:
+        return (
+            "Нельзя сохранить один месячный черновик с разными месяцами. "
+            "Разделите строки по месяцам."
+        )
+    return None
+
+
+def _pick_best_monthly_plan_row(rows: list[dict]) -> dict | None:
+    if not rows:
+        return None
+    ordered = sorted(
+        rows,
+        key=lambda r: (
+            MONTHLY_PLAN_GUARD_STATUS_PRIORITY.get(
+                safe_str(r.get("draft_status")), 99
+            ),
+            safe_str(r.get("created_at")),
+        ),
+    )
+    return ordered[0]
+
+
+def filter_lines_by_month_key(lines: list[dict], month_key: str) -> list[dict]:
+    target = safe_str(month_key)
+    if not target:
+        return list(lines)
+    return [item for item in lines if safe_str(item.get("month_key")) == target]
+
+
+def resolve_supplement_active_month_key(
+    pending_items: list[dict],
+    project_filter: str = "",
+) -> str | None:
+    pending_months = {
+        safe_str(x.get("month_key"))
+        for x in pending_items
+        if safe_str(x.get("month_key"))
+    }
+    if len(pending_months) == 1:
+        return next(iter(pending_months))
+    active = safe_str(st.session_state.get(ACTIVE_PLAN_MONTH_KEY))
+    if active:
+        return active
+    selected = safe_str(st.session_state.get(SELECTED_PLANNING_MONTH_KEY))
+    if selected:
+        return selected
+    month_filter = safe_str(st.session_state.get("saved_plans_filter_month"))
+    if month_filter and month_filter != "Все":
+        return month_filter
+    _, month_key = resolve_draft_save_context(pending_items, project_filter)
+    return month_key
+
+
+def resolve_supplement_month_for_saved_plan(
+    row: dict,
+    lines: list[dict],
+) -> str | None:
+    selected = get_selected_planning_month()
+    if selected:
+        return selected
+    month_filter = safe_str(st.session_state.get("saved_plans_filter_month"))
+    if month_filter and month_filter != "Все":
+        return month_filter
+    header_month = safe_str(row.get("month_key"))
+    if header_month and header_month.upper() != "MIXED":
+        return header_month
+    line_months = {
+        safe_str(line.get("month_key"))
+        for line in lines
+        if safe_str(line.get("month_key"))
+    }
+    if len(line_months) == 1:
+        return next(iter(line_months))
+    return None
+
+
 def _draft_header_fields(draft: list[dict], draft_status: str = "DRAFT") -> dict:
     project_values = {str(d.get("project_code") or "").strip() for d in draft if str(d.get("project_code") or "").strip()}
     month_values = {str(d.get("month_key") or "").strip() for d in draft if str(d.get("month_key") or "").strip()}
+    if len(month_values) > 1:
+        raise ValueError(
+            "Нельзя сохранить один месячный черновик с разными месяцами. "
+            "Разделите строки по месяцам."
+        )
     project_code = next(iter(project_values), "")
-    month_key = next(iter(month_values), "") if len(month_values) == 1 else "MIXED"
+    month_key = next(iter(month_values), "") if len(month_values) == 1 else ""
     total_plan_value = sum(safe_float(x.get("plan_value")) or 0.0 for x in draft)
     total_required_hours = sum(safe_float(x.get("required_hours")) or 0.0 for x in draft)
     total_labor_cost = sum(safe_float(x.get("labor_cost")) or 0.0 for x in draft)
@@ -1273,6 +2185,9 @@ def save_draft_to_supabase(
     source_df: pd.DataFrame,
     existing_draft_id: str | None = None,
 ) -> str:
+    draft = resolve_draft_lines_for_save()
+    if not draft:
+        raise RuntimeError("Нет новых строк для сохранения.")
     if existing_draft_id:
         loaded_status = str(st.session_state.get(LOADED_DRAFT_STATUS_KEY) or "DRAFT")
         return update_draft_in_supabase(existing_draft_id, draft, source_df, draft_status=loaded_status)
@@ -1337,9 +2252,292 @@ def load_monthly_plan_drafts(status_filter: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def resolve_draft_save_context(
+    draft: list[dict],
+    project_filter: str,
+) -> tuple[str | None, str | None]:
+    """project_code + month_key для проверки дубликата черновика (без новой модели месяца)."""
+    project_values = {
+        safe_str(d.get("project_code"))
+        for d in draft
+        if safe_str(d.get("project_code"))
+    }
+    if len(project_values) == 1:
+        project_code = next(iter(project_values))
+    elif project_filter and project_filter != "Все":
+        project_code = str(project_filter).strip()
+    else:
+        project_code = None
+
+    month_values = {
+        safe_str(d.get("month_key"))
+        for d in draft
+        if safe_str(d.get("month_key"))
+    }
+    if len(month_values) == 1:
+        month_key = next(iter(month_values))
+    elif not draft:
+        month_options = build_month_key_options()
+        month_key = month_options[0] if month_options else None
+    else:
+        month_key = None
+
+    return project_code, month_key
+
+
+@st.cache_data(ttl=60)
+def find_monthly_plan_for_project_month(
+    project_code: str,
+    month_key: str,
+) -> dict | None:
+    """Последний план месяца (DRAFT → NEED_REVISION → SENT_TO_REVIEW → APPROVED)."""
+    if not project_code or not month_key:
+        return None
+    try:
+        resp = (
+            supabase.table("monthly_plan_drafts")
+            .select("draft_id,draft_status,project_code,month_key,created_at")
+            .eq("project_code", project_code)
+            .eq("month_key", month_key)
+            .in_("draft_status", list(MONTHLY_PLAN_GUARD_STATUSES))
+            .order("created_at", desc=True)
+            .limit(20)
+            .execute()
+        )
+        rows = resp.data or []
+        if rows:
+            return _pick_best_monthly_plan_row(rows)
+
+        lines_resp = (
+            supabase.table("monthly_plan_draft_lines")
+            .select("draft_id")
+            .eq("project_code", project_code)
+            .eq("month_key", month_key)
+            .limit(1000)
+            .execute()
+        )
+        draft_ids = sorted(
+            {
+                safe_str(row.get("draft_id"))
+                for row in (lines_resp.data or [])
+                if safe_str(row.get("draft_id"))
+            }
+        )
+        if not draft_ids:
+            return None
+        legacy_resp = (
+            supabase.table("monthly_plan_drafts")
+            .select("draft_id,draft_status,project_code,month_key,created_at")
+            .in_("draft_id", draft_ids)
+            .eq("project_code", project_code)
+            .in_("draft_status", list(MONTHLY_PLAN_GUARD_STATUSES))
+            .order("created_at", desc=True)
+            .limit(20)
+            .execute()
+        )
+        return _pick_best_monthly_plan_row(legacy_resp.data or [])
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def find_active_draft_for_project_month(
+    project_code: str,
+    month_key: str,
+) -> dict | None:
+    """Обратная совместимость: только редактируемые черновики."""
+    plan = find_monthly_plan_for_project_month(project_code, month_key)
+    if plan and safe_str(plan.get("draft_status")) in ("DRAFT", "NEED_REVISION"):
+        return plan
+    return None
+
+
+def merge_pending_draft_items(pending_items: list[dict]) -> None:
+    merged = list(st.session_state.get(DRAFT_KEY, []))
+    known_uids = {draft_line_uid(x) for x in merged}
+    for item in pending_items:
+        uid = draft_line_uid(item)
+        if uid not in known_uids:
+            merged.append(item)
+            known_uids.add(uid)
+    st.session_state[DRAFT_KEY] = merged
+
+
+def merged_monthly_plan_view() -> list[dict]:
+    base = [
+        {**item, "line_source": "BASE"}
+        for item in st.session_state.get(BASE_DRAFT_LINES_KEY, [])
+    ]
+    additions = [
+        {**item, "line_source": "ADDITION"}
+        for item in st.session_state.get(DRAFT_KEY, [])
+    ]
+    return base + additions
+
+
+def unified_plan_month_label(items: list[dict]) -> str:
+    month_values = {
+        safe_str(x.get("month_key"))
+        for x in items
+        if safe_str(x.get("month_key"))
+    }
+    if len(month_values) == 1:
+        return next(iter(month_values))
+    return "—"
+
+
+def session_boq_item_in_items(items: list[dict], row: pd.Series, month_key: str) -> dict | None:
+    target_key = boq_key_parts_from_row(row)
+    target_month = safe_str(month_key)
+    for item in items:
+        if draft_item_key_parts(item) != target_key:
+            continue
+        if target_month and safe_str(item.get("month_key")) != target_month:
+            continue
+        return item
+    return None
+
+
+def begin_new_version_from_plan(
+    source_draft_id: str,
+    pending_items: list[dict],
+    project_filter: str = "",
+) -> None:
+    active_month_key = resolve_supplement_active_month_key(pending_items, project_filter)
+    start_new_draft_version(source_draft_id, active_month_key=active_month_key)
+    if pending_items:
+        merge_pending_draft_items(pending_items)
+
+
+@st.cache_data(ttl=60)
+def find_boq_in_monthly_plans(
+    project_code: str,
+    month_key: str,
+    facility_building: str,
+    construction_discipline: str,
+    boq_code: str,
+    exclude_draft_id: str = "",
+) -> list[dict]:
+    if not all([project_code, month_key, boq_code]):
+        return []
+    try:
+        drafts_resp = (
+            supabase.table("monthly_plan_drafts")
+            .select("draft_id,draft_status")
+            .eq("project_code", project_code)
+            .eq("month_key", month_key)
+            .in_("draft_status", list(MONTHLY_PLAN_GUARD_STATUSES))
+            .limit(100)
+            .execute()
+        )
+        status_by_id = {
+            safe_str(r.get("draft_id")): safe_str(r.get("draft_status"))
+            for r in (drafts_resp.data or [])
+            if safe_str(r.get("draft_id"))
+        }
+        draft_ids = [
+            did
+            for did in status_by_id
+            if did and did != str(exclude_draft_id or "")
+        ]
+        if not draft_ids:
+            return []
+        lines_resp = (
+            supabase.table("monthly_plan_draft_lines")
+            .select("draft_id,planned_qty,boq_code,facility_building,construction_discipline")
+            .in_("draft_id", draft_ids)
+            .eq("boq_code", boq_code)
+            .eq("facility_building", facility_building)
+            .eq("construction_discipline", construction_discipline)
+            .limit(500)
+            .execute()
+        )
+        hits: list[dict] = []
+        for line in lines_resp.data or []:
+            did = safe_str(line.get("draft_id"))
+            hits.append(
+                {
+                    "draft_id": did,
+                    "draft_status": status_by_id.get(did, "—"),
+                    "planned_qty": safe_float(line.get("planned_qty")) or 0.0,
+                }
+            )
+        return hits
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def session_draft_item_for_boq(row: pd.Series, month_key: str) -> dict | None:
+    target_key = boq_key_parts_from_row(row)
+    target_month = safe_str(month_key)
+    for item in st.session_state.get(DRAFT_KEY, []):
+        if draft_item_key_parts(item) != target_key:
+            continue
+        if target_month and safe_str(item.get("month_key")) != target_month:
+            continue
+        return item
+    return None
+
+
+def render_boq_add_duplicate_hints(
+    row: pd.Series,
+    plan_month: str,
+    project_remaining: float,
+    already_planned: float,
+    available_to_add_qty: float,
+) -> None:
+    project_code = safe_str(row.get("project_code"))
+    month_key = safe_str(plan_month)
+    boq_code = safe_str(row.get("boq_code"))
+    facility = safe_str(row.get("facility_building"))
+    discipline = safe_str(row.get("construction_discipline"))
+    exclude_id = safe_str(st.session_state.get(SAVED_DRAFT_ID_KEY))
+
+    in_addition = session_draft_item_for_boq(row, month_key)
+    in_base = session_boq_item_in_items(
+        st.session_state.get(BASE_DRAFT_LINES_KEY, []),
+        row,
+        month_key,
+    )
+    db_hits: list[dict] = []
+    if project_code and month_key and boq_code:
+        db_hits = find_boq_in_monthly_plans(
+            project_code,
+            month_key,
+            facility,
+            discipline,
+            boq_code,
+            exclude_draft_id=exclude_id,
+        )
+
+    if in_addition or in_base or db_hits:
+        st.warning(
+            "BOQ уже присутствует в месячном плане. "
+            "Добавляйте только дополнительный объём."
+        )
+
+    st.caption(
+        f"Уже запланировано в месяце: {qty_fmt(already_planned)} / "
+        f"Остаток: {qty_fmt(project_remaining)} / "
+        f"Доступно к добавлению: {qty_fmt(available_to_add_qty)}"
+    )
+
+
+def render_active_draft_status_banner(project_filter: str = "Все") -> None:
+    selected_month = get_selected_planning_month()
+    new_count = len(get_new_session_lines_for_month(selected_month, project_filter))
+    saved_id = safe_str(st.session_state.get(SAVED_DRAFT_ID_KEY))
+    if saved_id:
+        st.caption(f"Черновик сохранён · новых строк в {selected_month}: {new_count}")
+    elif new_count:
+        st.caption(f"Новых строк в {selected_month}: {new_count} (ещё не сохранены)")
+    else:
+        st.caption("Добавьте новые коды из карточки BOQ.")
+
+
 def open_draft_in_constructor(draft_id: str, draft_status: str, *, view_only: bool) -> None:
     items = load_draft_lines_as_items(draft_id)
     st.session_state[DRAFT_KEY] = items
+    st.session_state[BASE_DRAFT_LINES_KEY] = []
     st.session_state[SAVED_DRAFT_ID_KEY] = draft_id
     st.session_state[LOADED_DRAFT_STATUS_KEY] = draft_status
     st.session_state[DRAFT_VIEW_ONLY_KEY] = view_only
@@ -1348,9 +2546,35 @@ def open_draft_in_constructor(draft_id: str, draft_status: str, *, view_only: bo
         st.session_state[SOURCE_DRAFT_ID_KEY] = None
 
 
-def start_new_draft_version(source_draft_id: str) -> None:
-    items = load_draft_lines_as_items(source_draft_id)
-    st.session_state[DRAFT_KEY] = items
+def start_new_draft_version(source_draft_id: str, active_month_key: str | None = None) -> None:
+    all_items = load_draft_lines_as_items(source_draft_id)
+    if active_month_key:
+        items = filter_lines_by_month_key(all_items, active_month_key)
+        st.session_state[ACTIVE_PLAN_MONTH_KEY] = active_month_key
+    else:
+        items = all_items
+        st.session_state.pop(ACTIVE_PLAN_MONTH_KEY, None)
+        try:
+            header_resp = (
+                supabase.table("monthly_plan_drafts")
+                .select("month_key")
+                .eq("draft_id", source_draft_id)
+                .limit(1)
+                .execute()
+            )
+            header_month = safe_str((header_resp.data or [{}])[0].get("month_key"))
+        except Exception:  # noqa: BLE001
+            header_month = ""
+        line_months = {
+            safe_str(x.get("month_key"))
+            for x in all_items
+            if safe_str(x.get("month_key"))
+        }
+        if header_month.upper() == "MIXED" or len(line_months) > 1:
+            st.session_state["legacy_mixed_draft_warning"] = True
+
+    st.session_state[BASE_DRAFT_LINES_KEY] = items
+    st.session_state[DRAFT_KEY] = []
     st.session_state[SAVED_DRAFT_ID_KEY] = None
     st.session_state[SOURCE_DRAFT_ID_KEY] = source_draft_id
     st.session_state[LOADED_DRAFT_STATUS_KEY] = "DRAFT"
@@ -1734,8 +2958,10 @@ def clear_session_if_deleted_draft(deleted_draft_ids: list[str]) -> None:
         st.session_state[DRAFT_VIEW_ONLY_KEY] = False
         st.session_state[DRAFT_EDIT_MODE_KEY] = False
         st.session_state[DRAFT_KEY] = []
+        st.session_state[BASE_DRAFT_LINES_KEY] = []
     if source_id in deleted_set:
         st.session_state[SOURCE_DRAFT_ID_KEY] = None
+        st.session_state[BASE_DRAFT_LINES_KEY] = []
 
 
 def saved_draft_delete_label(row: dict) -> str:
@@ -1804,10 +3030,34 @@ def maybe_supersede_source_draft(source_draft_id: str) -> None:
         ).eq("draft_id", source_draft_id).execute()
 
 
-def send_draft_to_review_queue(draft_id: str, source_draft_id: str | None = None) -> None:
+def send_draft_to_review_queue(
+    draft_id: str,
+    source_draft_id: str | None = None,
+) -> dict[str, Any]:
     write_client = get_supabase_write_client()
     if write_client is None:
         raise RuntimeError("SUPABASE_SECRET_KEY не задан в .env — отправка в контур недоступна.")
+
+    header_resp = (
+        write_client.table("monthly_plan_drafts")
+        .select("draft_status,rows_count")
+        .eq("draft_id", draft_id)
+        .limit(1)
+        .execute()
+    )
+    header_rows = header_resp.data or []
+    if not header_rows:
+        raise RuntimeError("Черновик для отправки не найден.")
+    draft_status = safe_str(header_rows[0].get("draft_status"))
+    if draft_status not in SENDABLE_DRAFT_STATUSES:
+        raise RuntimeError(
+            f"Нельзя отправить черновик со статусом {draft_status}. "
+            "Сохраните новые строки как отдельный черновик дополнения."
+        )
+    if source_draft_id and draft_id == source_draft_id:
+        raise RuntimeError(
+            "Нельзя повторно отправить исходный план. Сохраните черновик дополнения с новыми строками."
+        )
 
     lines_resp = (
         write_client.table("monthly_plan_draft_lines")
@@ -1855,6 +3105,28 @@ def send_draft_to_review_queue(draft_id: str, source_draft_id: str | None = None
     if source_draft_id:
         maybe_supersede_source_draft(source_draft_id)
 
+    try:
+        constraints_summary = create_constraints_for_review_queue(draft_id=draft_id)
+    except Exception as exc:  # noqa: BLE001
+        constraints_summary = {
+            "created_count": 0,
+            "skipped_count": 0,
+            "source_rows_count": len(queue_payloads),
+            "errors": [str(exc)],
+        }
+    return constraints_summary
+
+
+def constraints_auto_create_succeeded(summary: dict[str, Any]) -> bool:
+    if summary.get("errors"):
+        return False
+    created = int(summary.get("created_count") or 0)
+    skipped = int(summary.get("skipped_count") or 0)
+    source_rows = int(summary.get("source_rows_count") or 0)
+    if created > 0 or skipped > 0:
+        return True
+    return source_rows == 0
+
 
 def load_review_queue_rows(draft_id: str) -> pd.DataFrame:
     if not draft_id:
@@ -1878,8 +3150,7 @@ def render_review_queue_block(draft_id: str) -> None:
     review_df_raw = load_review_queue_rows(draft_id)
     if review_df_raw.empty:
         return
-    st.divider()
-    st.subheader("Контур допуска и проверки")
+    st.caption("Контур допуска и проверки (текущий черновик)")
     review_df = pd.DataFrame(
         {
             "Код": [r.get("boq_code") for _, r in review_df_raw.iterrows()],
@@ -2231,250 +3502,275 @@ def _format_draft_created_at(value) -> str:
         return text[:16]
 
 
-def render_saved_plans_block() -> None:
-    st.divider()
-    st.markdown("### Сохранённые черновики и отправленные планы")
-    drafts_df = load_monthly_plan_drafts("Все")
-    if drafts_df.empty:
-        st.caption("Нет сохранённых планов.")
-        return
+def draft_applies_to_month(row: dict, lines: list[dict], month_key: str) -> bool:
+    if not month_key:
+        return False
+    header = safe_str(row.get("month_key"))
+    if header.upper() == "MIXED":
+        return any(safe_str(line.get("month_key")) == month_key for line in lines)
+    return header == month_key
 
-    draft_ids = [str(r.get("draft_id") or "") for _, r in drafts_df.iterrows() if str(r.get("draft_id") or "")]
-    lines_by_draft = load_draft_lines_by_drafts(draft_ids)
-    all_view_df = enrich_saved_plans_view(drafts_df, lines_by_draft)
 
-    month_options = ["Все"] + saved_plans_filter_options(all_view_df, lines_by_draft, "month_key")
-    facility_options = ["Все"] + saved_plans_filter_options(all_view_df, lines_by_draft, "facility_building")
-    discipline_options = ["Все"] + saved_plans_filter_options(all_view_df, lines_by_draft, "construction_discipline")
-    status_label_options = ["Все"] + [
-        DRAFT_STATUS_RU[code] for code in DRAFT_STATUS_FILTER_OPTIONS if code != "Все"
-    ]
-
-    f1, f2, f3, f4 = st.columns(4)
-    with f1:
-        month_filter = st.selectbox("Месяц", month_options, key="saved_plans_filter_month")
-    with f2:
-        facility_filter = st.selectbox("Титул", facility_options, key="saved_plans_filter_facility")
-    with f3:
-        discipline_filter = st.selectbox("Дисциплина", discipline_options, key="saved_plans_filter_discipline")
-    with f4:
-        selected_status_label = st.selectbox("Статус", status_label_options, key="saved_plans_filter_status")
-    status_filter = (
-        "Все"
-        if selected_status_label == "Все"
-        else DRAFT_STATUS_RU_TO_CODE.get(selected_status_label, selected_status_label)
-    )
-
-    view_df = filter_saved_plans_view(
-        all_view_df,
-        lines_by_draft,
-        month_filter=month_filter,
-        facility_filter=facility_filter,
-        discipline_filter=discipline_filter,
-        status_filter=status_filter,
-    )
-    if view_df.empty:
-        st.caption("Нет сохранённых планов по выбранным фильтрам.")
-        return
-
-    summary_rows = [saved_draft_preview_row(dict(row)) for _, row in view_df.iterrows()]
-    summary = build_saved_drafts_preview_df(summary_rows)
-    st.caption(
-        "Каждая строка — один черновик (один draft_id). "
-        "«Несколько месяцев» / «Несколько титулов» / «Несколько дисциплин» означает, "
-        "что внутри этого draft_id строки плана относятся к разным месяцам или объектам."
-    )
-    st.dataframe(
-        summary,
-        use_container_width=True,
-        hide_index=True,
-        height=min(320, 44 + len(summary) * 36),
-        column_order=SAVED_PLAN_SUMMARY_COLUMNS,
-    )
-
-    delete_candidate_rows: list[dict] = []
-    delete_draft_ids: list[str] = []
-    delete_row_by_id: dict[str, dict] = {}
+def summarize_archive_for_month(
+    view_df: pd.DataFrame,
+    lines_by_draft: dict[str, list[dict]],
+    month_key: str,
+) -> dict:
+    sent_count = 0
+    draft_count = 0
+    legacy_mixed = False
+    if view_df.empty or not month_key:
+        return {
+            "sent_count": 0,
+            "draft_count": 0,
+            "legacy_mixed": False,
+        }
     for _, row in view_df.iterrows():
-        draft_id = str(row.get("draft_id") or "")
-        if not draft_id:
-            continue
-        delete_draft_ids.append(draft_id)
         row_dict = dict(row)
-        delete_candidate_rows.append(row_dict)
-        delete_row_by_id[draft_id] = row_dict
-
-    with st.expander("Удаление сохранённых черновиков", expanded=False):
-        st.caption(
-            "Удаляются только явно выбранные draft_id вместе со строками плана, "
-            "записями очереди допуска и ограничениями этого черновика. "
-            "Фильтры месяца / титула / дисциплины на удаление не влияют."
-        )
-        if delete_draft_ids:
-            selected_draft_ids = st.multiselect(
-                "Выберите draft_id для удаления",
-                options=delete_draft_ids,
-                format_func=lambda did: saved_draft_delete_label(
-                    delete_row_by_id.get(str(did), {"draft_id": did})
-                ),
-                key="saved_drafts_delete_select",
-            )
-            st.warning("Для удаления введите: УДАЛИТЬ")
-            st.caption(
-                "Будут удалены только выбранные draft_id вместе со связанными "
-                "строками, очередью допуска и ограничениями."
-            )
-            confirm_delete_text = st.text_input(
-                "Подтверждение удаления",
-                placeholder="Введите УДАЛИТЬ",
-                key="delete_saved_drafts_confirm_text",
-            )
-            if selected_draft_ids:
-                st.write("Будут удалены только следующие draft_id:")
-                preview_rows = [
-                    r for r in delete_candidate_rows if str(r.get("draft_id")) in selected_draft_ids
-                ]
-                st.dataframe(
-                    build_saved_drafts_preview_df(preview_rows),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_order=SAVED_DRAFT_DELETE_PREVIEW_COLUMNS,
-                )
-                st.caption(
-                    "Будут удалены: monthly_plan_drafts, monthly_plan_draft_lines, "
-                    "monthly_plan_review_queue и monthly_plan_constraints, "
-                    "связанные только с выбранными draft_id."
-                )
-            delete_confirmed = confirm_delete_text.strip().upper() == "УДАЛИТЬ"
-            delete_btn_disabled = not selected_draft_ids or not delete_confirmed
-            if st.button(
-                "Удалить выбранные черновики",
-                key="saved_drafts_delete_btn",
-                type="secondary",
-                disabled=delete_btn_disabled,
-            ):
-                if not selected_draft_ids:
-                    st.warning("Выберите черновики для удаления.")
-                elif not delete_confirmed:
-                    st.warning("Введите УДАЛИТЬ для подтверждения удаления.")
-                else:
-                    deleted_ok: list[str] = []
-                    for draft_id in selected_draft_ids:
-                        result = delete_monthly_plan_draft_cascade(draft_id)
-                        if result.get("skipped_reason"):
-                            st.warning(
-                                f"draft_id {draft_id}: {result['skipped_reason']}"
-                            )
-                        else:
-                            deleted_ok.append(draft_id)
-                            st.success(
-                                "Удалено: "
-                                f"draft_id={result.get('draft_id')} · "
-                                f"ограничений={result.get('deleted_constraints_count', 0)} · "
-                                f"очередь={result.get('deleted_review_queue_count', 0)} · "
-                                f"строк плана={result.get('deleted_draft_lines_count', 0)} · "
-                                f"черновиков={result.get('deleted_draft_count', 0)}"
-                            )
-                    if deleted_ok:
-                        clear_session_if_deleted_draft(deleted_ok)
-                        st.rerun()
-        else:
-            st.caption("Нет черновиков для удаления по текущим фильтрам.")
-
-    for _, row in view_df.iterrows():
-        draft_id = str(row.get("draft_id") or "")
-        if not draft_id:
-            continue
-        draft_status = str(row.get("draft_status") or "")
-        status_label = str(row.get("status_label") or "")
+        draft_id = safe_str(row_dict.get("draft_id"))
         lines = lines_by_draft.get(draft_id, [])
-        title = saved_plan_expander_title(dict(row), lines)
-        with st.expander(title, expanded=False):
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Проект", str(row.get("project_code") or "—"))
-            m2.metric("Месяц", str(row.get("month_label") or "—"))
-            m3.metric("Статус", status_label)
-            m4.metric("Строк", int(row.get("rows_count") or len(lines) or 0))
-            n1, n2, n3 = st.columns(3)
-            n1.metric("План, ₽", money_ru(row.get("total_plan_value")))
-            n2.metric("Чел-часы", hours_fmt(row.get("total_required_hours")))
-            n3.metric("Труд, ₽", money_ru(row.get("total_labor_cost")))
-            st.caption(
-                f"Создан: {_format_draft_created_at(row.get('created_at'))} · "
-                f"{row.get('draft_name') or 'Без названия'} · draft_id: {draft_id}"
-            )
-            if (
-                str(row.get("month_label") or "") == "Несколько месяцев"
-                or str(row.get("facility_label") or "") == "Несколько титулов"
-                or str(row.get("discipline_label") or "") == "Несколько дисциплин"
-            ):
-                st.caption(
-                    "Один черновик (один draft_id): внутри него строки могут относиться "
-                    "к разным месяцам, титулам или дисциплинам. Удаление затрагивает "
-                    "только этот draft_id."
-                )
+        if not draft_applies_to_month(row_dict, lines, month_key):
+            continue
+        if safe_str(row_dict.get("month_key")).upper() == "MIXED":
+            legacy_mixed = True
+        status = safe_str(row_dict.get("draft_status"))
+        if status in ("SENT_TO_REVIEW", "APPROVED"):
+            sent_count += 1
+        elif status in ("DRAFT", "NEED_REVISION"):
+            draft_count += 1
+    return {
+        "sent_count": sent_count,
+        "draft_count": draft_count,
+        "legacy_mixed": legacy_mixed,
+    }
 
-            detail_df = build_draft_lines_detail_df(lines)
-            if detail_df.empty:
-                st.caption("Строки плана не найдены.")
+
+def render_saved_plans_block() -> None:
+    with st.expander("Архив черновиков и отправок — технический блок", expanded=False):
+        drafts_df = load_monthly_plan_drafts("Все")
+        selected_month = get_selected_planning_month()
+        if drafts_df.empty:
+            st.caption("Нет архивных записей за выбранный месяц")
+            return
+
+        draft_ids = [
+            str(r.get("draft_id") or "")
+            for _, r in drafts_df.iterrows()
+            if str(r.get("draft_id") or "")
+        ]
+        lines_by_draft = load_draft_lines_by_drafts(draft_ids)
+        all_view_df = enrich_saved_plans_view(drafts_df, lines_by_draft)
+        archive_summary = summarize_archive_for_month(all_view_df, lines_by_draft, selected_month)
+
+        archive_records_count = archive_summary["sent_count"] + archive_summary["draft_count"]
+        if archive_records_count == 0 and not archive_summary["legacy_mixed"]:
+            st.caption("Нет архивных записей за выбранный месяц")
+            return
+
+        st.markdown(
+            f"- **Найдено отправок за выбранный месяц:** {archive_summary['sent_count']}\n"
+            f"- **Черновиков:** {archive_summary['draft_count']}\n"
+            f"- **Legacy MIXED найден:** {'да' if archive_summary['legacy_mixed'] else 'нет'}"
+        )
+        if archive_summary["legacy_mixed"]:
+            st.info(
+                "Есть старый отправленный план с технической меткой MIXED. "
+                "В рабочем режиме он отображается по строкам выбранного месяца."
+            )
+
+        with st.expander("Показать технические записи", expanded=False):
+            month_options = [
+                m
+                for m in ["Все"] + saved_plans_filter_options(all_view_df, lines_by_draft, "month_key")
+                if m.upper() != "MIXED"
+            ]
+            if "saved_plans_filter_month" not in st.session_state:
+                if selected_month in month_options and selected_month.upper() != "MIXED":
+                    st.session_state["saved_plans_filter_month"] = selected_month
+                else:
+                    st.session_state["saved_plans_filter_month"] = "Все"
+            status_label_options = ["Все"] + [
+                DRAFT_STATUS_RU[code] for code in DRAFT_STATUS_FILTER_OPTIONS if code != "Все"
+            ]
+
+            f1, f2 = st.columns(2)
+            with f1:
+                month_filter = st.selectbox("Месяц", month_options, key="saved_plans_filter_month")
+            with f2:
+                selected_status_label = st.selectbox(
+                    "Статус", status_label_options, key="saved_plans_filter_status"
+                )
+            status_filter = (
+                "Все"
+                if selected_status_label == "Все"
+                else DRAFT_STATUS_RU_TO_CODE.get(selected_status_label, selected_status_label)
+            )
+
+            view_df = filter_saved_plans_view(
+                all_view_df,
+                lines_by_draft,
+                month_filter=month_filter,
+                facility_filter="Все",
+                discipline_filter="Все",
+                status_filter=status_filter,
+            )
+            if view_df.empty:
+                st.caption("Нет сохранённых планов по выбранным фильтрам.")
             else:
-                detail_height = min(650, max(260, 40 + len(detail_df) * 34))
+                summary_rows = [saved_draft_preview_row(dict(row)) for _, row in view_df.iterrows()]
+                summary = build_saved_drafts_preview_df(summary_rows)
                 st.dataframe(
-                    detail_df,
+                    summary,
                     use_container_width=True,
                     hide_index=True,
-                    height=detail_height,
-                    column_order=SAVED_PLAN_DETAIL_COLUMNS,
-                )
-                st.caption(
-                    "Итого: "
-                    f"строк {len(lines)} · "
-                    f"план {money_ru(sum(safe_num(l.get('plan_value')) for l in lines))} · "
-                    f"чел-ч {hours_fmt(sum(safe_num(l.get('required_hours')) for l in lines))} · "
-                    f"труд {money_ru(sum(safe_num(l.get('labor_cost')) for l in lines))}"
+                    height=min(240, 44 + len(summary) * 36),
+                    column_order=SAVED_PLAN_SUMMARY_COLUMNS,
                 )
 
-            btn_cols = st.columns(4)
-            if draft_status == "DRAFT":
-                if btn_cols[0].button("Открыть в конструкторе", key=f"open_draft_{draft_id}"):
-                    open_draft_in_constructor(draft_id, draft_status, view_only=False)
-                    st.rerun()
-                if btn_cols[1].button("Отменить черновик", key=f"cancel_draft_{draft_id}"):
-                    try:
-                        cancel_draft_record(draft_id)
-                        st.success("Черновик отменён.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Ошибка отмены: {exc}")
-            elif draft_status == "SENT_TO_REVIEW":
-                if btn_cols[0].button("Открыть только для просмотра", key=f"view_draft_{draft_id}"):
-                    open_draft_in_constructor(draft_id, draft_status, view_only=True)
-                    st.rerun()
-                if btn_cols[1].button("Создать новую версию", key=f"new_ver_{draft_id}"):
-                    start_new_draft_version(draft_id)
-                    st.rerun()
-                if btn_cols[2].button("Отозвать из проверки", key=f"revoke_{draft_id}"):
-                    try:
-                        revoke_draft_from_review(draft_id)
-                        st.success("План отозван из контура допуска и переведён на доработку.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Ошибка отзыва: {exc}")
-            elif draft_status == "NEED_REVISION":
-                if btn_cols[0].button("Открыть для исправления", key=f"fix_draft_{draft_id}"):
-                    open_draft_in_constructor(draft_id, draft_status, view_only=False)
-                    st.rerun()
-            elif draft_status == "APPROVED":
-                if btn_cols[0].button("Открыть только для просмотра", key=f"view_appr_{draft_id}"):
-                    open_draft_in_constructor(draft_id, draft_status, view_only=True)
-                    st.rerun()
-                if btn_cols[1].button("Создать корректировку", key=f"corr_{draft_id}"):
-                    start_new_draft_version(draft_id)
-                    st.rerun()
-            elif draft_status in ("CANCELLED", "SUPERSEDED"):
-                if btn_cols[0].button("Только просмотр", key=f"view_only_{draft_id}"):
-                    open_draft_in_constructor(draft_id, draft_status, view_only=True)
-                    st.rerun()
+                delete_candidate_rows: list[dict] = []
+                delete_draft_ids: list[str] = []
+                delete_row_by_id: dict[str, dict] = {}
+                for _, row in view_df.iterrows():
+                    draft_id = str(row.get("draft_id") or "")
+                    if not draft_id:
+                        continue
+                    delete_draft_ids.append(draft_id)
+                    row_dict = dict(row)
+                    delete_candidate_rows.append(row_dict)
+                    delete_row_by_id[draft_id] = row_dict
+
+                with st.expander("Удаление сохранённых черновиков", expanded=False):
+                    st.caption(
+                        "Удаляются только явно выбранные draft_id вместе со строками плана, "
+                        "записями очереди допуска и ограничениями этого черновика."
+                    )
+                    if delete_draft_ids:
+                        selected_draft_ids = st.multiselect(
+                            "Выберите draft_id для удаления",
+                            options=delete_draft_ids,
+                            format_func=lambda did: saved_draft_delete_label(
+                                delete_row_by_id.get(str(did), {"draft_id": did})
+                            ),
+                            key="saved_drafts_delete_select",
+                        )
+                        st.warning("Для удаления введите: УДАЛИТЬ")
+                        confirm_delete_text = st.text_input(
+                            "Подтверждение удаления",
+                            placeholder="Введите УДАЛИТЬ",
+                            key="delete_saved_drafts_confirm_text",
+                        )
+                        if selected_draft_ids:
+                            preview_rows = [
+                                r
+                                for r in delete_candidate_rows
+                                if str(r.get("draft_id")) in selected_draft_ids
+                            ]
+                            st.dataframe(
+                                build_saved_drafts_preview_df(preview_rows),
+                                use_container_width=True,
+                                hide_index=True,
+                                column_order=SAVED_DRAFT_DELETE_PREVIEW_COLUMNS,
+                            )
+                        delete_confirmed = confirm_delete_text.strip().upper() == "УДАЛИТЬ"
+                        delete_btn_disabled = not selected_draft_ids or not delete_confirmed
+                        if st.button(
+                            "Удалить выбранные черновики",
+                            key="saved_drafts_delete_btn",
+                            type="secondary",
+                            disabled=delete_btn_disabled,
+                        ):
+                            if not selected_draft_ids:
+                                st.warning("Выберите черновики для удаления.")
+                            elif not delete_confirmed:
+                                st.warning("Введите УДАЛИТЬ для подтверждения удаления.")
+                            else:
+                                deleted_ok: list[str] = []
+                                for draft_id in selected_draft_ids:
+                                    result = delete_monthly_plan_draft_cascade(draft_id)
+                                    if result.get("skipped_reason"):
+                                        st.warning(
+                                            f"draft_id {draft_id}: {result['skipped_reason']}"
+                                        )
+                                    else:
+                                        deleted_ok.append(draft_id)
+                                        st.success(
+                                            "Удалено: "
+                                            f"draft_id={result.get('draft_id')} · "
+                                            f"строк плана={result.get('deleted_draft_lines_count', 0)}"
+                                        )
+                                if deleted_ok:
+                                    clear_session_if_deleted_draft(deleted_ok)
+                                    st.rerun()
+                    else:
+                        st.caption("Нет черновиков для удаления по текущим фильтрам.")
+
+                for _, row in view_df.iterrows():
+                    draft_id = str(row.get("draft_id") or "")
+                    if not draft_id:
+                        continue
+                    draft_status = str(row.get("draft_status") or "")
+                    status_label = str(row.get("status_label") or "")
+                    lines = lines_by_draft.get(draft_id, [])
+                    title = saved_plan_expander_title(dict(row), lines)
+                    with st.expander(title, expanded=False):
+                        m1, m2, m3 = st.columns(3)
+                        m1.metric("Проект", str(row.get("project_code") or "—"))
+                        m2.metric("Месяц", str(row.get("month_label") or "—"))
+                        m3.metric("Статус", status_label)
+                        st.caption(
+                            f"Создан: {_format_draft_created_at(row.get('created_at'))} · "
+                            f"{row.get('draft_name') or 'Без названия'} · draft_id: {draft_id}"
+                        )
+
+                        btn_cols = st.columns(4)
+                        if draft_status == "DRAFT":
+                            if btn_cols[0].button("Открыть в конструкторе", key=f"open_draft_{draft_id}"):
+                                open_draft_in_constructor(draft_id, draft_status, view_only=False)
+                                st.rerun()
+                            if btn_cols[1].button("Отменить черновик", key=f"cancel_draft_{draft_id}"):
+                                try:
+                                    cancel_draft_record(draft_id)
+                                    st.success("Черновик отменён.")
+                                    st.rerun()
+                                except Exception as exc:
+                                    st.error(f"Ошибка отмены: {exc}")
+                        elif draft_status == "SENT_TO_REVIEW":
+                            if btn_cols[0].button("Открыть только для просмотра", key=f"view_draft_{draft_id}"):
+                                open_draft_in_constructor(draft_id, draft_status, view_only=True)
+                                st.rerun()
+                            if btn_cols[1].button(
+                                "Создать дополнение к месячному плану",
+                                key=f"new_ver_{draft_id}",
+                            ):
+                                active_month = resolve_supplement_month_for_saved_plan(dict(row), lines)
+                                start_new_draft_version(draft_id, active_month_key=active_month)
+                                st.rerun()
+                            if btn_cols[2].button("Отозвать из проверки", key=f"revoke_{draft_id}"):
+                                try:
+                                    revoke_draft_from_review(draft_id)
+                                    st.success("План отозван из контура допуска и переведён на доработку.")
+                                    st.rerun()
+                                except Exception as exc:
+                                    st.error(f"Ошибка отзыва: {exc}")
+                        elif draft_status == "NEED_REVISION":
+                            if btn_cols[0].button("Открыть для исправления", key=f"fix_draft_{draft_id}"):
+                                open_draft_in_constructor(draft_id, draft_status, view_only=False)
+                                st.rerun()
+                        elif draft_status == "APPROVED":
+                            if btn_cols[0].button("Открыть только для просмотра", key=f"view_appr_{draft_id}"):
+                                open_draft_in_constructor(draft_id, draft_status, view_only=True)
+                                st.rerun()
+                            if btn_cols[1].button("Создать корректировку", key=f"corr_{draft_id}"):
+                                active_month = resolve_supplement_month_for_saved_plan(dict(row), lines)
+                                start_new_draft_version(draft_id, active_month_key=active_month)
+                                st.rerun()
+                        elif draft_status in ("CANCELLED", "SUPERSEDED"):
+                            if btn_cols[0].button("Только просмотр", key=f"view_only_{draft_id}"):
+                                open_draft_in_constructor(draft_id, draft_status, view_only=True)
+                                st.rerun()
+
+            saved_draft_id = st.session_state.get(SAVED_DRAFT_ID_KEY) or ""
+            render_review_queue_block(saved_draft_id)
 
 
 def merge_adjustments(scope: pd.DataFrame, adjustments: pd.DataFrame) -> pd.DataFrame:
@@ -3041,20 +4337,14 @@ def render_detail_card(row: pd.Series, crews: list[str]) -> None:
                     st.error(f"Ошибка сохранения корректировки: {exc}")
 
     with st.expander("Добавить в черновик планирования", expanded=True):
-        existing_month_keys = [
-            safe_str(d.get("month_key"))
-            for d in st.session_state.get(DRAFT_KEY, [])
-            if safe_str(d.get("month_key"))
-        ]
-        # month_key должен быть позже унифицирован с Supabase month_key.
-        month_options = build_month_key_options(existing_month_keys)
+        plan_month = get_selected_planning_month()
         p1, p2, p3 = st.columns(3)
         with p1:
-            plan_month = st.selectbox(
-                "Ключ месяца",
-                month_options,
-                index=0,
-                key=f"plan_month_{rk}",
+            st.text_input(
+                "Месяц планирования",
+                value=plan_month,
+                disabled=True,
+                key=f"plan_month_display_{rk}",
             )
             plan_qty = st.number_input(
                 "Плановый объём",
@@ -3151,6 +4441,15 @@ def render_detail_card(row: pd.Series, crews: list[str]) -> None:
         view_only = bool(st.session_state.get(DRAFT_VIEW_ONLY_KEY, False))
         if view_only:
             st.caption("Режим просмотра загруженного плана — добавление в черновик отключено.")
+
+        render_boq_add_duplicate_hints(
+            row,
+            str(plan_month).strip(),
+            project_remaining,
+            already_planned,
+            available_to_add_qty,
+        )
+
         add_disabled = (
             view_only
             or (plan_qty > available_to_add_qty)
@@ -3175,7 +4474,7 @@ def render_detail_card(row: pd.Series, crews: list[str]) -> None:
                     "boq_name": pick_field(row, BOQ_NAME_FALLBACKS),
                     "facility_building": row.get("facility_building"),
                     "construction_discipline": row.get("construction_discipline"),
-                    "month_key": str(plan_month).strip(),
+                    "month_key": plan_month,
                     "crew_code": str(plan_crew).strip() if plan_crew else "",
                     "line_scope_note": str(line_scope_note).strip(),
                     "planned_qty": plan_qty,
@@ -3189,12 +4488,22 @@ def render_detail_card(row: pd.Series, crews: list[str]) -> None:
                     "comment": plan_comment,
                     "customer_accepted_qty": customer_accepted,
                     "recognition_remaining_qty": recognition_remaining,
+                    "added_at": datetime.now(timezone.utc).isoformat(),
+                    "line_source_ui": LINE_SOURCE_NEW_UI,
+                    "read_only": False,
                 }
                 new_uid = draft_line_uid(draft_item)
                 kept = [d for d in st.session_state[DRAFT_KEY] if draft_line_uid(d) != new_uid]
                 kept.append(draft_item)
                 st.session_state[DRAFT_KEY] = kept
-                st.success("Строка добавлена в черновик.")
+                skip_months = st.session_state.setdefault(DRAFT_SKIP_HYDRATE_MONTHS_KEY, set())
+                skip_months.discard(str(plan_month).strip())
+                toast_msg = (
+                    "Код добавлен в черновик. "
+                    "Нажмите «Сохранить черновик» перед обновлением страницы."
+                )
+                st.toast(toast_msg)
+                st.success(toast_msg)
                 st.rerun()
 
 
@@ -3213,6 +4522,7 @@ def build_draft_display_df(draft: list[dict]) -> pd.DataFrame:
         )
         rows.append(
             {
+                "Line_Source": "BASE" if item.get("line_source") == "BASE" else "ADDITION",
                 "Код BOQ": pick_field(item, ("boq_code",)),
                 "Наименование работы": pick_field(item, BOQ_NAME_FALLBACKS) or "—",
                 "Ед. изм.": pick_field(item, UOM_FALLBACKS) or "—",
@@ -3264,24 +4574,68 @@ def draft_table_height(row_count: int) -> int:
     return min(650, max(260, 90 + row_count * 35))
 
 
-def render_draft_primary_actions(draft: list[dict], source_df: pd.DataFrame) -> None:
-    b1, b2, b3, b4 = st.columns(4)
+def render_draft_primary_actions(
+    draft: list[dict],
+    source_df: pd.DataFrame,
+    project_filter: str,
+) -> None:
+    selected_month = get_selected_planning_month()
+    new_lines = get_new_session_lines_for_month(selected_month, project_filter)
+    new_count = len(new_lines)
+    save_lines = new_lines
+    saved_id = st.session_state.get(SAVED_DRAFT_ID_KEY)
+    is_supplement = bool(st.session_state.get(SOURCE_DRAFT_ID_KEY))
+    project_code, month_key = resolve_draft_save_context(save_lines, project_filter)
+    if selected_month:
+        month_key = selected_month
+    save_blocked = False
+    if not saved_id and project_code and month_key and not is_supplement:
+        conflicting = find_monthly_plan_for_project_month(project_code, month_key)
+        if conflicting:
+            existing_id = safe_str(conflicting.get("draft_id"))
+            existing_status = safe_str(conflicting.get("draft_status")) or "DRAFT"
+            if existing_status in ("DRAFT", "NEED_REVISION"):
+                save_blocked = True
+                st.warning(
+                    "Уже существует активный черновик месяца. "
+                    "Чтобы добавить коды в него, сначала откройте его в конструкторе."
+                )
+                if st.button(
+                    "Продолжить существующий черновик",
+                    key="continue_existing_draft_btn",
+                    type="primary",
+                ):
+                    pending_items = list(new_lines)
+                    open_draft_in_constructor(existing_id, existing_status, view_only=False)
+                    if pending_items:
+                        merge_pending_draft_items(pending_items)
+                    st.rerun()
+
+    send_ok, send_hint, _ = validate_draft_send_context(new_lines, selected_month)
+    unsaved = has_unsaved_new_lines(selected_month, project_filter)
+
+    b1, b2, b3 = st.columns(3)
     with b1:
-        if st.button("Очистить черновик", key="clear_draft", use_container_width=True):
-            st.session_state[DRAFT_KEY] = []
-            st.session_state[SAVED_DRAFT_ID_KEY] = None
-            st.session_state[SOURCE_DRAFT_ID_KEY] = None
-            st.session_state[LOADED_DRAFT_STATUS_KEY] = None
+        if st.button("Очистить новые строки", key="clear_draft"):
+            remove_new_session_lines_for_month(selected_month, project_filter)
             st.session_state[DRAFT_VIEW_ONLY_KEY] = False
+            st.session_state.pop(SELECTED_MONTH_PLAN_ROW_KEY, None)
+            st.session_state.pop(MONTH_PLAN_EDIT_ROW_KEY, None)
             st.rerun()
     with b2:
-        if st.button("Изменить черновик", key="edit_draft", use_container_width=True):
-            st.session_state[DRAFT_EDIT_MODE_KEY] = True
-            st.rerun()
-    with b3:
-        if st.button("Сохранить черновик", key="save_draft", use_container_width=True):
-            validation_errors = validate_draft_for_save(draft, source_df)
-            if validation_errors:
+        if st.button(
+            "Сохранить черновик",
+            key="save_draft",
+            type="primary" if unsaved else "secondary",
+            disabled=save_blocked or not save_lines,
+        ):
+            month_error = validate_draft_single_month_key(save_lines)
+            validation_errors = validate_draft_for_save(save_lines, source_df)
+            if not save_lines:
+                st.warning("Нет новых строк для сохранения.")
+            elif month_error:
+                st.error(month_error)
+            elif validation_errors:
                 st.error("Ошибки черновика:\n- " + "\n- ".join(validation_errors))
             else:
                 try:
@@ -3289,44 +4643,82 @@ def render_draft_primary_actions(draft: list[dict], source_df: pd.DataFrame) -> 
                     loaded_status = str(st.session_state.get(LOADED_DRAFT_STATUS_KEY) or "")
                     update_id = (
                         saved_id
-                        if saved_id and loaded_status in ("DRAFT", "NEED_REVISION")
+                        if saved_id and loaded_status in SENDABLE_DRAFT_STATUSES
                         else None
                     )
                     draft_id = save_draft_to_supabase(
-                        draft, source_df, existing_draft_id=update_id
+                        save_lines, source_df, existing_draft_id=update_id
                     )
                     st.session_state[SAVED_DRAFT_ID_KEY] = draft_id
-                    st.session_state[LOADED_DRAFT_STATUS_KEY] = loaded_status or "DRAFT"
+                    st.session_state[LOADED_DRAFT_STATUS_KEY] = "DRAFT"
+                    st.session_state[DRAFT_VIEW_ONLY_KEY] = False
+                    skip_months = st.session_state.setdefault(
+                        DRAFT_SKIP_HYDRATE_MONTHS_KEY, set()
+                    )
+                    skip_months.discard(selected_month)
                     st.success(
-                        "Черновик обновлён в Supabase."
-                        if update_id
-                        else "Черновик сохранён в Supabase."
+                        f"Черновик сохранён. Новых строк: {len(save_lines)}. "
+                        "Ранее отправленные строки не затронуты."
                     )
                     _load_reserved_planned_qty_from_db.clear()
                     _load_boq_planning_usage_cache.clear()
+                    find_monthly_plan_for_project_month.clear()
+                    find_boq_in_monthly_plans.clear()
+                    load_previously_sent_lines_for_month.clear()
                 except Exception as exc:
                     st.error(f"Ошибка сохранения черновика: {exc}")
-    with b4:
+    with b3:
         if st.button(
-            "Отправить в контур допуска и проверки",
+            "Отправить новые строки в контур допуска",
             key="send_draft_approval",
-            use_container_width=True,
-            type="primary",
+            type="primary" if send_ok and not unsaved else "secondary",
+            disabled=not send_ok,
         ):
-            saved_draft_id = st.session_state.get(SAVED_DRAFT_ID_KEY)
-            if not saved_draft_id:
-                st.warning("Сначала сохраните черновик.")
+            can_send, send_error, send_draft_id = validate_draft_send_context(
+                new_lines, selected_month
+            )
+            if not can_send:
+                st.warning(send_error)
+            elif not send_draft_id:
+                st.warning("Сначала сохраните черновик с новыми строками.")
             else:
                 try:
                     source_id = st.session_state.get(SOURCE_DRAFT_ID_KEY)
-                    send_draft_to_review_queue(saved_draft_id, source_draft_id=source_id)
+                    constraints_summary = send_draft_to_review_queue(
+                        send_draft_id,
+                        source_draft_id=source_id,
+                    )
                     if source_id:
                         st.session_state[SOURCE_DRAFT_ID_KEY] = None
                     st.session_state[LOADED_DRAFT_STATUS_KEY] = "SENT_TO_REVIEW"
                     st.session_state[DRAFT_VIEW_ONLY_KEY] = True
-                    st.success("Черновик отправлен в контур допуска и проверки.")
+                    load_previously_sent_lines_for_month.clear()
+                    find_monthly_plan_for_project_month.clear()
+                    created_constraints = int(constraints_summary.get("created_count") or 0)
+                    if constraints_auto_create_succeeded(constraints_summary):
+                        st.success(
+                            f"Отправлено в контур допуска. "
+                            f"Проверки по отделам сформированы: {created_constraints}."
+                        )
+                    else:
+                        st.warning(
+                            "Строки отправлены в контур допуска, но проверки по отделам "
+                            "не сформированы автоматически. Сформируйте их на странице "
+                            "Контур допуска."
+                        )
+                        for err in constraints_summary.get("errors") or []:
+                            st.caption(str(err))
                 except Exception as exc:
                     st.error(f"Ошибка отправки в контур: {exc}")
+
+    st.caption(
+        f"К отправке: {new_count} новых строк. "
+        "Ранее отправленные строки повторно не отправляются."
+    )
+    if new_count == 0:
+        st.warning("Нет новых строк для отправки.")
+    elif not send_ok and send_hint:
+        st.warning(send_hint)
 
 
 def render_draft_kpis(draft: list[dict]) -> None:
@@ -3351,13 +4743,13 @@ def render_draft_delete_controls(draft: list[dict]) -> None:
         return
 
     st.warning(
-        "Операции удаления влияют только на текущий черновик на экране. "
-        "Сохранённые версии требуют отдельного удаления."
+        "Удаление доступно только для новых строк текущего месяца. "
+        "Ранее отправленные строки удалить из конструктора нельзя."
     )
 
     st.markdown("##### Удаление одной строки")
     labels = [draft_item_label(item, index=i) for i, item in enumerate(draft)]
-    label_to_idx = {label: idx for idx, label in enumerate(labels)}
+    label_to_item = {label: item for label, item in zip(labels, draft)}
 
     selected_label = st.selectbox(
         "Выберите строку для удаления",
@@ -3372,7 +4764,7 @@ def render_draft_delete_controls(draft: list[dict]) -> None:
         if not confirm_single:
             st.warning("Подтвердите удаление строки.")
         else:
-            remove_draft_indices({label_to_idx[selected_label]})
+            remove_draft_line_uids({draft_line_uid(label_to_item[selected_label])})
             st.success("Строка удалена из черновика.")
             st.rerun()
 
@@ -3393,218 +4785,95 @@ def render_draft_delete_controls(draft: list[dict]) -> None:
         elif not confirm_bulk:
             st.warning("Подтвердите массовое удаление.")
         else:
-            indices = {label_to_idx[label] for label in selected_labels}
-            remove_draft_indices(indices)
-            st.success(f"Удалено строк: {len(indices)}")
+            uids = {draft_line_uid(label_to_item[label]) for label in selected_labels}
+            remove_draft_line_uids(uids)
+            st.success(f"Удалено строк: {len(uids)}")
             st.rerun()
 
 
-def render_draft_panel(source_df: pd.DataFrame, crews: list[str]):
+def render_draft_panel(source_df: pd.DataFrame, crews: list[str], project_filter: str):
     st.markdown('<div class="draft-panel-block">', unsafe_allow_html=True)
-    st.markdown('<h2 class="draft-panel-title">Черновик месячного плана</h2>', unsafe_allow_html=True)
-    if st.session_state.pop("new_version_info", False):
-        st.info(
-            "Создана новая версия на основе отправленного плана. "
-            "После сохранения будет создан новый черновик."
+    selected_month = get_selected_planning_month()
+    sent_lines, new_lines, legacy_mixed = build_constructor_month_lines(
+        selected_month,
+        project_filter,
+    )
+    merged = sent_lines + new_lines
+    st.markdown(
+        f'<h2 class="draft-panel-title">Единый месячный план: {html_lib.escape(selected_month)}</h2>',
+        unsafe_allow_html=True,
+    )
+    if session_has_other_month_draft_lines(selected_month):
+        st.warning(
+            "В session есть строки другого месяца. "
+            "Они не отображаются в текущем месяце."
         )
+    if legacy_mixed or st.session_state.pop("legacy_mixed_draft_warning", False):
+        st.info(
+            "Есть старый отправленный план с технической меткой MIXED. "
+            "В рабочем режиме он отображается по строкам выбранного месяца."
+        )
+    if st.session_state.pop("new_version_info", False):
+        pass
+    render_active_draft_status_banner(project_filter)
     view_only = bool(st.session_state.get(DRAFT_VIEW_ONLY_KEY, False))
     if view_only:
         st.caption("Режим просмотра: редактирование и сохранение недоступны.")
-    draft: list[dict] = st.session_state[DRAFT_KEY]
-    edit_mode = bool(st.session_state.get(DRAFT_EDIT_MODE_KEY, False)) and not view_only
 
-    if not draft:
-        st.caption("Черновик пуст. Добавьте позиции из карточки кода.")
+    if not merged:
+        st.caption("Нет строк для выбранного месяца. Добавьте новые коды из карточки BOQ.")
     else:
-        render_draft_executive_summary(draft)
-
-        months_options = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
-        if edit_mode:
-            editor_df = pd.DataFrame(
-                {
-                    "Код": [d.get("boq_code") for d in draft],
-                    "Наименование": [pick_field(d, BOQ_NAME_FALLBACKS) for d in draft],
-                    "Ед. изм.": [pick_field(d, UOM_FALLBACKS) or "—" for d in draft],
-                    "Титул": [d.get("facility_building") for d in draft],
-                    "Дисциплина": [d.get("construction_discipline") for d in draft],
-                    "Месяц": [d.get("month_key") for d in draft],
-                    "Звено": [d.get("crew_code") for d in draft],
-                    "Задача / зона / помещение": [d.get("line_scope_note") or "" for d in draft],
-                    "Объём": [safe_float(d.get("planned_qty")) or 0.0 for d in draft],
-                    "Сценарий нормы": [
-                        {
-                            "P50": NORM_SCENARIO_REALISTIC,
-                            "P80": NORM_SCENARIO_CAUTIOUS,
-                            "Ручной": NORM_SCENARIO_MANUAL,
-                        }.get(d.get("norm_scenario"), d.get("norm_scenario") or NORM_SCENARIO_REALISTIC)
-                        for d in draft
-                    ],
-                    "Ручная норма, ч/ед": [
-                        safe_float(d.get("manual_norm_value")) or 0.0 for d in draft
-                    ],
-                    "Комментарий": [d.get("comment") or "" for d in draft],
-                    "Плановая стоимость": [money_ru(d.get("plan_value")) for d in draft],
-                    "Требуемые чел-часы": [hours_fmt(d.get("required_hours")) for d in draft],
-                    "Ставка чел-часа": [
-                        money_ru(safe_float(d.get("labor_rate_per_hour")) or DEFAULT_LABOR_RATE_PER_HOUR)
-                        for d in draft
-                    ],
-                    "Стоимость трудозатрат": [money_ru(d.get("labor_cost")) for d in draft],
-                    "Удалить": [False for _ in draft],
-                }
-            )
-
-        table_height = draft_table_height(len(draft))
-        save_clicked = False
-        cancel_clicked = False
-        edited = None
-
-        editor_column_config = {
-            "Код": st.column_config.TextColumn(disabled=True),
-            "Наименование": st.column_config.TextColumn(disabled=True),
-            "Ед. изм.": st.column_config.TextColumn(disabled=True),
-            "Титул": st.column_config.TextColumn(disabled=True),
-            "Дисциплина": st.column_config.TextColumn(disabled=True),
-            "Месяц": st.column_config.SelectboxColumn(options=months_options, required=True),
-            "Звено": (
-                st.column_config.SelectboxColumn(options=[""] + crews)
-                if crews
-                else st.column_config.TextColumn()
-            ),
-            "Задача / зона / помещение": st.column_config.TextColumn(),
-            "Объём": st.column_config.NumberColumn(min_value=0.0, step=0.01),
-            "Сценарий нормы": st.column_config.SelectboxColumn(
-                options=[NORM_SCENARIO_REALISTIC, NORM_SCENARIO_CAUTIOUS, NORM_SCENARIO_MANUAL]
-            ),
-            "Ручная норма, ч/ед": st.column_config.NumberColumn(min_value=0.0, step=0.01),
-            "Комментарий": st.column_config.TextColumn(),
-            "Плановая стоимость": st.column_config.TextColumn(disabled=True),
-            "Требуемые чел-часы": st.column_config.TextColumn(disabled=True),
-            "Ставка чел-часа": st.column_config.TextColumn(disabled=True),
-            "Стоимость трудозатрат": st.column_config.TextColumn(disabled=True),
-            "Удалить": st.column_config.CheckboxColumn(),
+        render_constructor_unified_summary(merged)
+        if new_lines:
+            if has_unsaved_new_lines(selected_month, project_filter):
+                st.warning(
+                    "Новые строки ещё не сохранены. Нажмите «Сохранить черновик», "
+                    "иначе после обновления страницы они могут исчезнуть."
+                )
+            elif safe_str(st.session_state.get(SAVED_DRAFT_ID_KEY)):
+                st.caption("Новый код — сохранённый черновик (восстановлен из БД).")
+        table_height = draft_table_height(len(merged))
+        selected_uid = safe_str(st.session_state.get(SELECTED_MONTH_PLAN_ROW_KEY))
+        table_df, row_uids = build_constructor_selectable_table_df(merged, selected_uid)
+        select_column_config = {
+            col: st.column_config.TextColumn(disabled=True)
+            for col in CONSTRUCTOR_TABLE_COLUMNS
         }
+        select_column_config[CONSTRUCTOR_SELECT_COLUMN] = st.column_config.CheckboxColumn(
+            default=False,
+            help="Выберите одну строку для редактирования или удаления",
+        )
+        edited_table = st.data_editor(
+            table_df,
+            use_container_width=True,
+            hide_index=True,
+            num_rows="fixed",
+            height=table_height,
+            column_config=select_column_config,
+            column_order=[CONSTRUCTOR_SELECT_COLUMN] + CONSTRUCTOR_TABLE_COLUMNS,
+            disabled=CONSTRUCTOR_TABLE_COLUMNS,
+            key="month_plan_unified_select_editor",
+        )
+        new_selected_uid, multiple_selected = sync_month_plan_row_selection(
+            edited_table,
+            row_uids,
+        )
+        if multiple_selected:
+            st.warning("Выберите только одну строку.")
+        if new_selected_uid != selected_uid:
+            st.session_state.pop(MONTH_PLAN_EDIT_ROW_KEY, None)
+        st.session_state[SELECTED_MONTH_PLAN_ROW_KEY] = new_selected_uid
 
-        if edit_mode:
-            edited = st.data_editor(
-                editor_df,
-                use_container_width=True,
-                hide_index=True,
-                num_rows="fixed",
-                height=table_height,
-                column_config=editor_column_config,
-            )
-            ec1, ec2 = st.columns([1, 1])
-            with ec1:
-                save_clicked = st.button("Сохранить изменения", key="save_draft_changes")
-            with ec2:
-                cancel_clicked = st.button("Отменить изменения", key="cancel_draft_changes")
-        else:
-            display_df = build_draft_display_df(draft)
-            styled_draft = style_draft_display_df(display_df, draft, source_df)
-            st.dataframe(
-                styled_draft,
-                use_container_width=True,
-                hide_index=True,
-                height=table_height,
-            )
-
-        if not edit_mode and not view_only:
-            render_draft_primary_actions(draft, source_df)
-            with st.expander("Дополнительные операции с черновиком", expanded=False):
-                render_draft_delete_controls(draft)
-    if draft and edit_mode:
-        if cancel_clicked:
-            st.session_state[DRAFT_EDIT_MODE_KEY] = False
-            st.rerun()
-
-        if save_clicked and edited is not None:
-            updated_items: list[dict] = []
-            for i, row in edited.iterrows():
-                if bool(row.get("Удалить")):
-                    continue
-                src_item = draft[i]
-                scenario_ui = str(row.get("Сценарий нормы") or "").strip() or NORM_SCENARIO_REALISTIC
-                scenario_code = {
-                    NORM_SCENARIO_REALISTIC: NORM_SCENARIO_REALISTIC,
-                    NORM_SCENARIO_CAUTIOUS: NORM_SCENARIO_CAUTIOUS,
-                    NORM_SCENARIO_MANUAL: NORM_SCENARIO_MANUAL,
-                }.get(scenario_ui, NORM_SCENARIO_REALISTIC)
-                manual_norm = safe_float(row.get("Ручная норма, ч/ед")) or 0.0
-                planned_qty = safe_float(row.get("Объём")) or 0.0
-                updated = dict(src_item)
-                updated["month_key"] = str(row.get("Месяц") or "").strip()
-                updated["crew_code"] = str(row.get("Звено") or "").strip()
-                updated["line_scope_note"] = str(row.get("Задача / зона / помещение") or "").strip()
-                updated["planned_qty"] = planned_qty
-                updated["norm_scenario"] = scenario_code
-                updated["manual_norm_value"] = manual_norm if scenario_code == NORM_SCENARIO_MANUAL else None
-                updated["comment"] = str(row.get("Комментарий") or "").strip()
-                updated_items.append(updated)
-
-            if any((safe_float(x.get("planned_qty")) or 0.0) <= 0 for x in updated_items):
-                st.error("В черновике есть строки с нулевым или отрицательным объёмом.")
-            elif any(not str(x.get("month_key") or "").strip() for x in updated_items):
-                st.error("В черновике есть строки без месяца.")
-            elif any(
-                str(x.get("norm_scenario")) == NORM_SCENARIO_MANUAL
-                and (safe_float(x.get("manual_norm_value")) or 0.0) <= 0
-                for x in updated_items
-            ):
-                st.error("Для ручного сценария необходимо указать ручную норму.")
-            else:
-                has_empty_crew = any(not str(x.get("crew_code") or "").strip() for x in updated_items)
-                planned_map = build_planned_qty_map(updated_items)
-                updated_keys = {draft_item_key_parts(x) for x in updated_items}
-                exceeded = None
-                for key_parts, reserved_total in planned_map.items():
-                    if key_parts not in updated_keys:
-                        continue
-                    src_row = source_row_by_key_parts(source_df, key_parts)
-                    project_remaining = (
-                        safe_float(src_row.get("planning_remaining_qty")) if src_row is not None else None
-                    )
-                    if project_remaining is not None and reserved_total > project_remaining + 1e-9:
-                        exceeded = (key_parts, project_remaining, reserved_total)
-                        break
-
-                if exceeded is not None:
-                    key_parts, project_remaining, reserved_total = exceeded
-                    st.error(
-                        "После редактирования превышен доступный остаток по коду "
-                        f"{key_parts[3]} ({key_parts[1]} / {key_parts[2]}): "
-                        f"остаток проекта {qty_fmt(project_remaining)}, "
-                        f"запланировано {qty_fmt(reserved_total)}, "
-                        f"доступно {qty_fmt(project_remaining - reserved_total)}."
-                    )
-                else:
-                    for item in updated_items:
-                        key_parts = draft_item_key_parts(item)
-                        src_row = source_row_by_key_parts(source_df, key_parts)
-                        unit_price = safe_float(src_row.get("unit_price")) if src_row is not None else safe_float(item.get("unit_price"))
-                        unit_price = unit_price or 0.0
-                        scenario_code = str(item.get("norm_scenario") or NORM_SCENARIO_REALISTIC)
-                        if src_row is None:
-                            norm_hpu = safe_float(item.get("required_hours")) / max((safe_float(item.get("planned_qty")) or 1.0), 1e-9)
-                        elif scenario_code == NORM_SCENARIO_REALISTIC:
-                            norm_hpu = safe_float(src_row.get("p50_hours_per_unit"))
-                        elif scenario_code == NORM_SCENARIO_CAUTIOUS:
-                            norm_hpu = safe_float(src_row.get("p80_hours_per_unit"))
-                        else:
-                            norm_hpu = safe_float(item.get("manual_norm_value"))
-
-                        planned_qty = safe_float(item.get("planned_qty")) or 0.0
-                        item["plan_value"] = planned_qty * unit_price
-                        item["required_hours"] = planned_qty * (norm_hpu or 0.0)
-                        item["labor_rate_per_hour"] = DEFAULT_LABOR_RATE_PER_HOUR
-                        item["labor_cost"] = (safe_float(item.get("required_hours")) or 0.0) * DEFAULT_LABOR_RATE_PER_HOUR
-
-                    st.session_state[DRAFT_KEY] = updated_items
-                    st.session_state[DRAFT_EDIT_MODE_KEY] = False
-                    if has_empty_crew:
-                        st.warning("В черновике есть строки без звена.")
-                    st.success("Черновик обновлён.")
-                    st.rerun()
+        render_month_plan_row_actions(
+            merged,
+            source_df,
+            crews,
+            project_filter,
+            selected_month,
+            view_only=view_only,
+        )
+        if not view_only:
+            render_draft_primary_actions(new_lines, source_df, project_filter)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -3616,6 +4885,10 @@ if CUSTOMER_ACCEPTED_KEY not in st.session_state:
     st.session_state[CUSTOMER_ACCEPTED_KEY] = {}
 if SELECTED_RK_KEY not in st.session_state:
     st.session_state[SELECTED_RK_KEY] = ""
+if SELECTED_MONTH_PLAN_ROW_KEY not in st.session_state:
+    st.session_state[SELECTED_MONTH_PLAN_ROW_KEY] = None
+if MONTH_PLAN_EDIT_ROW_KEY not in st.session_state:
+    st.session_state[MONTH_PLAN_EDIT_ROW_KEY] = None
 if DRAFT_EDIT_MODE_KEY not in st.session_state:
     st.session_state[DRAFT_EDIT_MODE_KEY] = False
 if SAVED_DRAFT_KEY not in st.session_state:
@@ -3626,10 +4899,18 @@ if SAVED_DRAFT_ID_KEY not in st.session_state:
     st.session_state[SAVED_DRAFT_ID_KEY] = None
 if SOURCE_DRAFT_ID_KEY not in st.session_state:
     st.session_state[SOURCE_DRAFT_ID_KEY] = None
+if BASE_DRAFT_LINES_KEY not in st.session_state:
+    st.session_state[BASE_DRAFT_LINES_KEY] = []
+if ACTIVE_PLAN_MONTH_KEY not in st.session_state:
+    st.session_state[ACTIVE_PLAN_MONTH_KEY] = None
+if SELECTED_PLANNING_MONTH_KEY not in st.session_state:
+    st.session_state[SELECTED_PLANNING_MONTH_KEY] = DEFAULT_PLANNING_MONTH
 if DRAFT_VIEW_ONLY_KEY not in st.session_state:
     st.session_state[DRAFT_VIEW_ONLY_KEY] = False
 if LOADED_DRAFT_STATUS_KEY not in st.session_state:
     st.session_state[LOADED_DRAFT_STATUS_KEY] = None
+if DRAFT_SKIP_HYDRATE_MONTHS_KEY not in st.session_state:
+    st.session_state[DRAFT_SKIP_HYDRATE_MONTHS_KEY] = set()
 
 scope_raw = load_scope()
 adjustments_raw = load_adjustments()
@@ -3642,6 +4923,24 @@ if scope_raw.empty:
 data = merge_adjustments(scope_raw, adjustments_raw)
 planned_qty_map = build_planned_qty_map()
 data = apply_available_remaining(data, planned_qty_map)
+
+planning_month_options = planning_month_options_2026()
+current_planning_month = get_selected_planning_month()
+planning_month_index = (
+    planning_month_options.index(current_planning_month)
+    if current_planning_month in planning_month_options
+    else planning_month_options.index(DEFAULT_PLANNING_MONTH)
+)
+selected_planning_month = st.selectbox(
+    "Месяц планирования",
+    planning_month_options,
+    index=planning_month_index,
+    key="constructor_planning_month_select",
+)
+st.session_state[SELECTED_PLANNING_MONTH_KEY] = selected_planning_month
+st.session_state[ACTIVE_PLAN_MONTH_KEY] = selected_planning_month
+
+st.divider()
 
 f1, f2, f3, f4, f5, f6, f7 = st.columns([1.0, 1.15, 1.1, 1.0, 1.0, 1.2, 1.2])
 with f1:
@@ -3797,9 +5096,9 @@ else:
             st.session_state[SELECTED_RK_KEY] = ""
 
 st.divider()
-render_draft_panel(data, crew_options)
+hydrate_saved_draft_lines_for_month(selected_planning_month, sel_project)
+render_draft_panel(data, crew_options, sel_project)
 render_saved_plans_block()
-render_review_queue_block(st.session_state.get(SAVED_DRAFT_ID_KEY) or "")
 
 with st.expander("Показать исходные данные", expanded=False):
     st.dataframe(filtered, use_container_width=True, hide_index=True)

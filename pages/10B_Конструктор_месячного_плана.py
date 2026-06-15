@@ -34,7 +34,7 @@ from services.monthly_scope_adjustments import (
 
 # --- Константы UI (заглушки, без бизнес-логики) ---
 
-PAGE_TITLE = "Конструктор месячного плана v2"
+PAGE_TITLE = "Конструктор месячного плана"
 
 SCOPE_MODULE_TITLE = "Остатки и доступность к планированию"
 SCOPE_MODULE_SUBTITLE = (
@@ -1311,6 +1311,7 @@ def inject_page_styles() -> None:
 
 def render_page_header() -> None:
     st.markdown(f'<h1 class="constructor-v2-header">{PAGE_TITLE}</h1>', unsafe_allow_html=True)
+    st.caption("активная версия v2")
 
 
 def _empty_table(columns: list[str]) -> pd.DataFrame:
@@ -5825,7 +5826,7 @@ def main() -> None:
 
 # --- Точка входа Streamlit ---
 st.set_page_config(
-    page_title="Конструктор месячного плана v2",
+    page_title="Конструктор месячного плана",
     layout="wide",
     initial_sidebar_state="expanded",
 )

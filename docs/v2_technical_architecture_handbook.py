@@ -1,6 +1,6 @@
 # ============================================================
 # Техническая архитектура v2 — enterprise technical handbook (library)
-# Рендерится из: pages/10B_Конструктор_месячного_плана_v2.py → модуль 4
+# Рендерится из: pages/10B_Конструктор_месячного_плана.py → модуль 4
 # Read-only документация. Без Supabase write, без расчётов runtime.
 # Архив standalone: archive/_archive_99_Техническая_архитектура_v2.py
 # ============================================================
@@ -15,7 +15,7 @@ PAGE_SUBTITLE = (
     "Полный паспорт логики, данных, расчётов, session-модели и потоков "
     "конструктора месячного плана v2 (EPC / enterprise system handbook)."
 )
-PRODUCTION_PAGE = "pages/10B_Конструктор_месячного_плана_v2.py"
+PRODUCTION_PAGE = "pages/10B_Конструктор_месячного_плана.py"
 SQL_SCHEMA = "sql/monthly_plan_lines_v2.sql"
 
 

@@ -1,5 +1,6 @@
+import html
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
@@ -86,6 +87,179 @@ PACKAGE_CHECK_TABLE_HEIGHT_PX = 280
 
 WORKBENCH_DETAIL_CID_KEY = "admission_workbench_detail_cid"
 WORKBENCH_MAX_ROWS = 80
+
+DIRECT_ADMIT_SELECTED_CID_KEY = "direct_admit_selected_cid"
+DIRECT_ADMIT_PENDING_ACTION_KEY = "direct_admit_pending_action"
+DIRECT_ADMIT_LAYOUT_KEY = "direct_admit_layout_preset"
+
+DIRECT_ADMIT_LAYOUT_PRESETS: dict[str, list[float]] = {
+    "Баланс": [28, 42, 30],
+    "Широкая очередь": [35, 40, 25],
+    "Широкая фиксация": [24, 38, 38],
+}
+
+DIRECT_ADMIT_QUEUE_STATUS = {
+    "pending": ("Требует допуска", "#64748b", "#2E5B9A"),
+    "approved": ("Допущено", "#64748b", "#2F6B4F"),
+    "blocked": ("Заблокировано", "#b45353", "#9B3D3D"),
+    "clarify": ("Требует уточнения", "#b45309", "#92610E"),
+}
+
+DIRECT_ADMIT_CONSTRAINT_TYPE_OPTIONS = [
+    "РД",
+    "МТР",
+    "Front",
+    "Исполнительная",
+    "Разрешение",
+    "Люди",
+    "Техника",
+    "Другое",
+]
+
+DIRECT_ADMIT_ROLE_OPTIONS = [
+    "Участок",
+    "ПТО",
+    "МТО",
+    "PM",
+    "Заказчик",
+    "ГП",
+    "Субподрядчик",
+    "Другое",
+]
+
+DIRECT_ADMIT_SEVERITY_OPTIONS = ["LOW", "MEDIUM", "HIGH"]
+
+DIRECT_ADMIT_GENERIC_CRITERIA = [
+    "Данные понятны",
+    "Ограничений не выявлено",
+    "Ответственный определён",
+    "Решение можно зафиксировать",
+]
+
+DIRECT_ADMIT_CRIT_STATUS_READY = "READY"
+DIRECT_ADMIT_CRIT_STATUS_PARTIAL = "PARTIAL"
+DIRECT_ADMIT_CRIT_STATUS_RISK = "RISK"
+DIRECT_ADMIT_CRIT_STATUS_BLOCKER = "BLOCKER"
+DIRECT_ADMIT_CRIT_STATUS_UNCHECKED = "UNCHECKED"
+
+DIRECT_ADMIT_CRIT_STATUS_ORDER = [
+    DIRECT_ADMIT_CRIT_STATUS_UNCHECKED,
+    DIRECT_ADMIT_CRIT_STATUS_READY,
+    DIRECT_ADMIT_CRIT_STATUS_PARTIAL,
+    DIRECT_ADMIT_CRIT_STATUS_RISK,
+    DIRECT_ADMIT_CRIT_STATUS_BLOCKER,
+]
+
+DIRECT_ADMIT_CRIT_STATUS_UI = {
+    DIRECT_ADMIT_CRIT_STATUS_READY: ("ГОТОВО", "#2F6B4F"),
+    DIRECT_ADMIT_CRIT_STATUS_PARTIAL: ("ЧАСТИЧНО", "#C4920A"),
+    DIRECT_ADMIT_CRIT_STATUS_RISK: ("РИСК", "#C2410C"),
+    DIRECT_ADMIT_CRIT_STATUS_BLOCKER: ("БЛОКЕР", "#B45353"),
+    DIRECT_ADMIT_CRIT_STATUS_UNCHECKED: ("НЕ ПРОВЕРЕНО", "#64748b"),
+}
+
+DIRECT_ADMIT_OTHER_CRITERION_LABEL = "Другое ограничение"
+
+DIRECT_ADMIT_CRITERIA_BY_DEPT: dict[str, list[str]] = {
+    "Участок": [
+        "Фронт работ передан",
+        "Стройготовность обеспечена",
+        "Смежники не блокируют",
+        "Доступ к зоне обеспечен",
+        "Леса / подмости готовы",
+        "Подъёмные механизмы доступны",
+        "Инструмент и оснастка доступны",
+        "Бригада укомплектована",
+        "Критические простои отсутствуют",
+        "Производственный маршрут выполним",
+        "Другое ограничение",
+    ],
+    "ПТО": [
+        "РД выдана",
+        "РД актуальна",
+        "Статус IFC подтверждён",
+        "Пакет/IWP сформирован",
+        "BOQ ↔ РД согласованы",
+        "Узлы / детали проработаны",
+        "TQ/RFI не блокируют",
+        "Коллизии со смежниками сняты",
+        "Последовательность работ определена",
+        "Исполнительная стратегия понятна",
+        "Другое ограничение",
+    ],
+    "МТО": [
+        "Критический МТР обеспечен",
+        "Комплектность МТР подтверждена",
+        "Long lead позиции доступны",
+        "МТР доставлены в зону",
+        "Входной контроль пройден",
+        "Паспорта/сертификаты доступны",
+        "Дефицитных позиций нет",
+        "Буфер материалов достаточен",
+        "Оснастка/расходники обеспечены",
+        "Риск дефицита отсутствует",
+        "Другое ограничение",
+    ],
+    "QAQC": [
+        "Критерии качества понятны",
+        "ITP/требования инспекции доступны",
+        "Hold/Witness points определены",
+        "Возможность предъявления обеспечена",
+        "Предыдущий этап принят",
+        "Блокирующих NCR нет",
+        "Инспекция доступна",
+        "Готовность test package подтверждена",
+        "Документация качества готова",
+        "Критический QA hold отсутствует",
+        "Другое ограничение",
+    ],
+    "ОТиТБ": [
+        "Наряд-допуск действителен",
+        "Риски/JSA согласованы",
+        "Рабочая зона безопасна",
+        "Огневой допуск активен",
+        "Подъёмные операции согласованы",
+        "Изоляция/LOTO подтверждена",
+        "HSE замечания отсутствуют",
+        "Аварийная готовность обеспечена",
+        "Обязательный надзор назначен",
+        "Блокирующих HSE замечаний нет",
+        "Другое ограничение",
+    ],
+    "Коммерческий отдел": [
+        "Объём работ официально выдан",
+        "Доступ официально предоставлен",
+        "Ограничение формально зафиксировано",
+        "Неурегулированных изменений нет",
+        "Зависимость от заказчика снята",
+        "Платёжный blocker отсутствует",
+        "Все согласования получены",
+        "Контрактный риск допустим",
+        "Delay event зафиксирован",
+        "Блокирующей переписки нет",
+        "Другое ограничение",
+    ],
+    "ПНР": [
+        "Mechanical completion подтверждён",
+        "Punch list допустим",
+        "Электропитание подано",
+        "Автоматика готова",
+        "Утилиты доступны",
+        "Vendor support подтверждён",
+        "Среда испытаний доступна",
+        "Pre-commissioning завершён",
+        "Документация готова",
+        "Последовательность запуска утверждена",
+        "Другое ограничение",
+    ],
+}
+
+DIRECT_ADMIT_CRITERIA_WARN_KEY = "direct_admit_criteria_warn"
+DIRECT_ADMIT_DECISION_DRAFT_KEY = "direct_admit_decision_draft"
+DIRECT_ADMIT_DECISION_FIO_ERROR_KEY = "direct_admit_decision_fio_error"
+DIRECT_ADMIT_DECISION_WARN_KEY = "direct_admit_decision_warn"
+DIRECT_ADMIT_DECISION_RECOMMENDED_KEY = "direct_admit_decision_recommended"
+DIRECT_ADMIT_STATUS_PATCHES_KEY = "direct_admit_status_patches"
 
 PACKAGE_STATUS_OPEN = "OPEN"
 PACKAGE_STATUS_READY = "READY"
@@ -821,6 +995,10 @@ def now_moscow_text() -> str:
     return datetime.now(ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M MSK")
 
 
+def now_moscow_decision_text() -> str:
+    return datetime.now(ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M МСК")
+
+
 def append_action_comment(existing: str, line: str) -> str:
     base = (existing or "").strip()
     return f"{base}\n{line}".strip() if base else line
@@ -1276,6 +1454,423 @@ def inject_admission_page_styles() -> None:
             border-bottom: 1px solid #f1f5f9;
             margin-bottom: 0.15rem;
         }
+        .direct-admit-shell {
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #fafbfc;
+            padding: 0.65rem 0.75rem 0.55rem 0.75rem;
+            margin: 0.65rem 0 0.75rem 0;
+        }
+        .da-module-header {
+            margin-bottom: 0.55rem;
+            padding-bottom: 0.45rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .da-module-title {
+            font-size: 1.02rem;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1.2;
+        }
+        .da-module-sub {
+            font-size: 0.78rem;
+            color: #64748b;
+            margin-top: 0.18rem;
+            line-height: 1.35;
+        }
+        .da-module-progress {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem 1rem;
+            font-size: 0.76rem;
+            color: #64748b;
+            margin-top: 0.35rem;
+        }
+        .da-module-progress strong { color: #334155; font-weight: 600; }
+        .da-dept-chip-card {
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+            padding: 0.4rem 0.6rem;
+            margin-bottom: 0.35rem;
+        }
+        .da-dept-chip-label {
+            font-size: 0.68rem;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .da-dept-chip-name {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #1e3a5f;
+            line-height: 1.2;
+            margin-top: 0.08rem;
+        }
+        .da-dept-chip-role {
+            font-size: 0.72rem;
+            color: #475569;
+            margin-top: 0.12rem;
+            line-height: 1.3;
+        }
+        .da-pane {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #ffffff;
+            padding: 0.5rem 0.6rem 0.45rem 0.6rem;
+        }
+        .da-pane-heading {
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #334155;
+            margin-bottom: 0.08rem;
+        }
+        .da-pane-sub {
+            font-size: 0.72rem;
+            color: #94a3b8;
+            margin-bottom: 0.4rem;
+            line-height: 1.3;
+        }
+        .da-pane-counter {
+            font-size: 0.72rem;
+            color: #64748b;
+            padding: 0.28rem 0.4rem;
+            border: 1px solid #f1f5f9;
+            border-radius: 6px;
+            background: #f8fafc;
+            margin-bottom: 0.4rem;
+        }
+        #da-queue-scroll-host { display: none; }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-queue-scroll-host) {
+            max-height: 1200px !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            scrollbar-width: auto;
+            scrollbar-color: #94a3b8 #eef2f7;
+            padding-right: 0.15rem;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-queue-scroll-host)::-webkit-scrollbar {
+            width: 11px;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-queue-scroll-host)::-webkit-scrollbar-track {
+            background: #eef2f7;
+            border-radius: 6px;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-queue-scroll-host)::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+            border-radius: 6px;
+            border: 2px solid #eef2f7;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-queue-scroll-host)::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        .da-queue-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 5px;
+            background: #ffffff;
+            padding: 0.18rem 0.38rem 0.16rem 0.38rem;
+            margin-bottom: 0.08rem;
+            line-height: 1.22;
+        }
+        .da-queue-card-selected {
+            border-color: #93c5fd;
+            background: #eff6ff;
+        }
+        .da-queue-row1 {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 0.25rem;
+        }
+        .da-queue-row1-main {
+            display: flex;
+            align-items: baseline;
+            flex: 1;
+            min-width: 0;
+            gap: 0.4rem;
+        }
+        .da-queue-ordinal {
+            font-size: 0.76rem;
+            font-weight: 700;
+            color: #334155;
+            flex-shrink: 0;
+            min-width: 1.35rem;
+        }
+        .da-queue-code {
+            font-size: 0.84rem;
+            font-weight: 700;
+            color: #0f172a;
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .da-queue-row1-right {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            flex-shrink: 0;
+        }
+        .da-queue-vybran {
+            font-size: 0.66rem;
+            font-weight: 600;
+            color: #2563eb;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            flex-shrink: 0;
+        }
+        .da-queue-name {
+            display: block;
+            font-size: 0.75rem;
+            color: #334155;
+            margin-top: 0.06rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.22;
+            max-height: 2.5em;
+        }
+        .da-queue-status-line {
+            display: block;
+            font-size: 0.72rem;
+            margin-top: 0.06rem;
+            line-height: 1.2;
+        }
+        .da-queue-status-label {
+            color: #334155;
+            font-weight: 400;
+        }
+        .da-queue-status-value {
+            font-weight: 500;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-queue-card-clickable):not(:has(#da-queue-scroll-host)),
+        div[data-testid="stVerticalBlock"]:has(.da-queue-card-clickable):not(:has(#da-queue-scroll-host)) {
+            position: relative !important;
+            margin-bottom: 0.08rem !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-queue-card-clickable):not(:has(#da-queue-scroll-host)) [data-testid="stElementContainer"]:has([data-testid="stButton"]),
+        div[data-testid="stVerticalBlock"]:has(.da-queue-card-clickable):not(:has(#da-queue-scroll-host)) [data-testid="stElementContainer"]:has([data-testid="stButton"]) {
+            position: absolute !important;
+            inset: 0 !important;
+            z-index: 2 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            min-height: 0 !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-queue-card-clickable):not(:has(#da-queue-scroll-host)) [data-testid="stButton"],
+        div[data-testid="stVerticalBlock"]:has(.da-queue-card-clickable):not(:has(#da-queue-scroll-host)) [data-testid="stButton"] {
+            position: absolute !important;
+            inset: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: 100% !important;
+            width: 100% !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-queue-card-clickable):not(:has(#da-queue-scroll-host)) [data-testid="stButton"] button,
+        div[data-testid="stVerticalBlock"]:has(.da-queue-card-clickable):not(:has(#da-queue-scroll-host)) [data-testid="stButton"] button {
+            opacity: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            background: transparent !important;
+            cursor: pointer !important;
+            box-shadow: none !important;
+        }
+        .da-queue-pane-wrap [data-testid="stVerticalBlockBorderWrapper"] {
+            padding: 0 !important;
+        }
+        .da-queue-pane-wrap [data-testid="stCaptionContainer"] {
+            margin-bottom: 0.12rem !important;
+        }
+        .direct-admit-queue-item {
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            background: #ffffff;
+            padding: 0.38rem 0.45rem;
+            margin-bottom: 0.28rem;
+        }
+        .direct-admit-queue-item.selected {
+            border-color: #93c5fd;
+            background: #f8fafc;
+            box-shadow: inset 3px 0 0 #3b82f6;
+        }
+        .da-queue-selected-badge {
+            font-size: 0.62rem;
+            font-weight: 600;
+            color: #1d4ed8;
+            background: #dbeafe;
+            border-radius: 4px;
+            padding: 0.05rem 0.35rem;
+            margin-left: auto;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .da-queue-line1 {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #0f172a;
+            line-height: 1.25;
+        }
+        .da-queue-line1 .status-label {
+            font-weight: 500;
+            font-size: 0.72rem;
+        }
+        .direct-admit-queue-name {
+            font-size: 0.74rem;
+            color: #475569;
+            line-height: 1.25;
+            margin-top: 0.1rem;
+        }
+        .direct-admit-queue-meta {
+            font-size: 0.71rem;
+            color: #64748b;
+            line-height: 1.28;
+            margin-top: 0.08rem;
+        }
+        .da-empty-state {
+            font-size: 0.82rem;
+            color: #64748b;
+            padding: 0.75rem 0.5rem;
+            border: 1px dashed #e2e8f0;
+            border-radius: 6px;
+            background: #f8fafc;
+            text-align: center;
+        }
+        .direct-admit-boq-code {
+            font-size: 1.22rem;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1.15;
+        }
+        .direct-admit-boq-name {
+            font-size: 0.84rem;
+            color: #334155;
+            margin-top: 0.12rem;
+            line-height: 1.32;
+        }
+        .da-status-chip {
+            display: inline-block;
+            font-size: 0.72rem;
+            font-weight: 500;
+            margin-top: 0.25rem;
+        }
+        .direct-admit-section-label {
+            font-size: 0.67rem;
+            font-weight: 600;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin: 0.45rem 0 0.22rem 0;
+        }
+        .da-kv-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.15rem 0.65rem;
+            font-size: 0.76rem;
+            color: #475569;
+            line-height: 1.35;
+        }
+        .da-kv-grid span.label { color: #94a3b8; }
+        .da-kv-grid span.val { color: #334155; font-weight: 500; }
+        .da-metrics-row {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.35rem;
+            margin-top: 0.15rem;
+        }
+        .da-metric-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            background: #f8fafc;
+            padding: 0.35rem 0.45rem;
+        }
+        .da-metric-card .label {
+            font-size: 0.65rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .da-metric-card .value {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #0f172a;
+            margin-top: 0.08rem;
+            line-height: 1.2;
+        }
+        .da-check-block {
+            font-size: 0.76rem;
+            color: #475569;
+            line-height: 1.4;
+            padding: 0.35rem 0.45rem;
+            border: 1px solid #f1f5f9;
+            border-radius: 6px;
+            background: #fcfcfd;
+        }
+        .da-check-block strong { color: #334155; }
+        .da-criteria-box {
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            background: #fcfcfd;
+            padding: 0.35rem 0.45rem 0.25rem 0.45rem;
+        }
+        .da-criteria-box label {
+            font-size: 0.76rem !important;
+        }
+        .da-criteria-progress {
+            font-size: 0.72rem;
+            color: #64748b;
+            margin-top: 0.2rem;
+            padding-top: 0.2rem;
+            border-top: 1px solid #f1f5f9;
+        }
+        div[data-testid="stHorizontalBlock"] .da-queue-pick button {
+            min-height: 26px !important;
+            padding: 0.08rem 0.4rem !important;
+            font-size: 0.71rem !important;
+            font-weight: 500 !important;
+            border-radius: 5px !important;
+            margin-top: 0.15rem !important;
+        }
+        .da-history-block {
+            font-size: 0.76rem;
+            color: #475569;
+            line-height: 1.42;
+            padding: 0.4rem 0.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            background: #f8fafc;
+        }
+        .da-history-block .title {
+            font-size: 0.68rem;
+            font-weight: 600;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 0.25rem;
+        }
+        div[data-testid="stHorizontalBlock"] .direct-admit-actions button {
+            min-height: 38px !important;
+            font-size: 0.8rem !important;
+            font-weight: 600 !important;
+            border-radius: 6px !important;
+        }
+        div[data-testid="stHorizontalBlock"] .da-queue-pick button {
+            min-height: 28px !important;
+            padding: 0.1rem 0.35rem !important;
+            font-size: 0.72rem !important;
+        }
         div[data-testid="stHorizontalBlock"] .wb-btn-row button {
             min-height: 30px !important;
             padding: 0.15rem 0.45rem !important;
@@ -1303,6 +1898,174 @@ def inject_admission_page_styles() -> None:
         [data-testid="stSegmentedControl"] button {
             font-size: 0.8rem !important;
             min-height: 32px !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-pass):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)),
+        div[data-testid="stVerticalBlock"]:has(.da-block-d-btn-pass):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) {
+            position: relative !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-pass):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) .da-block-d-pass-visual {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 34px;
+            padding: 0.18rem 0.35rem;
+            border-radius: 0.5rem;
+            background-color: #2F6B4F;
+            border: 1px solid #2F6B4F;
+            color: #ffffff;
+            font-size: 0.76rem;
+            font-weight: 600;
+            line-height: 1.2;
+            text-align: center;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-pass):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)):hover .da-block-d-pass-visual {
+            background-color: #276052;
+            border-color: #276052;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-pass):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stElementContainer"]:has([data-testid="stButton"]),
+        div[data-testid="stVerticalBlock"]:has(.da-block-d-btn-pass):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stElementContainer"]:has([data-testid="stButton"]) {
+            position: absolute !important;
+            inset: 0 !important;
+            z-index: 2 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            min-height: 0 !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-pass):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stButton"],
+        div[data-testid="stVerticalBlock"]:has(.da-block-d-btn-pass):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stButton"] {
+            position: absolute !important;
+            inset: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: 100% !important;
+            width: 100% !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-pass):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stButton"] button,
+        div[data-testid="stVerticalBlock"]:has(.da-block-d-btn-pass):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stButton"] button {
+            opacity: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            background: transparent !important;
+            cursor: pointer !important;
+            box-shadow: none !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-clarify):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)),
+        div[data-testid="stVerticalBlock"]:has(.da-block-d-btn-clarify):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) {
+            position: relative !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-clarify):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) .da-block-d-clarify-visual {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 34px;
+            padding: 0.18rem 0.35rem;
+            border-radius: 0.5rem;
+            background-color: #C4920A;
+            border: 1px solid #C4920A;
+            color: #ffffff;
+            font-size: 0.76rem;
+            font-weight: 600;
+            line-height: 1.2;
+            text-align: center;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-clarify):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)):hover .da-block-d-clarify-visual {
+            background-color: #A67C08;
+            border-color: #A67C08;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-clarify):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stElementContainer"]:has([data-testid="stButton"]),
+        div[data-testid="stVerticalBlock"]:has(.da-block-d-btn-clarify):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stElementContainer"]:has([data-testid="stButton"]) {
+            position: absolute !important;
+            inset: 0 !important;
+            z-index: 2 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            min-height: 0 !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-clarify):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stButton"],
+        div[data-testid="stVerticalBlock"]:has(.da-block-d-btn-clarify):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stButton"] {
+            position: absolute !important;
+            inset: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: 100% !important;
+            width: 100% !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-clarify):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stButton"] button,
+        div[data-testid="stVerticalBlock"]:has(.da-block-d-btn-clarify):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stButton"] button {
+            opacity: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            background: transparent !important;
+            cursor: pointer !important;
+            box-shadow: none !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-block):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)),
+        div[data-testid="stVerticalBlock"]:has(.da-block-d-btn-block):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) {
+            position: relative !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-block):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) .da-block-d-block-visual {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 34px;
+            padding: 0.18rem 0.35rem;
+            border-radius: 0.5rem;
+            background-color: #9B3D3D;
+            border: 1px solid #9B3D3D;
+            color: #ffffff;
+            font-size: 0.76rem;
+            font-weight: 600;
+            line-height: 1.2;
+            text-align: center;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-block):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)):hover .da-block-d-block-visual {
+            background-color: #863434;
+            border-color: #863434;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-block):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stElementContainer"]:has([data-testid="stButton"]),
+        div[data-testid="stVerticalBlock"]:has(.da-block-d-btn-block):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stElementContainer"]:has([data-testid="stButton"]) {
+            position: absolute !important;
+            inset: 0 !important;
+            z-index: 2 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            min-height: 0 !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-block):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stButton"],
+        div[data-testid="stVerticalBlock"]:has(.da-block-d-btn-block):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stButton"] {
+            position: absolute !important;
+            inset: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: 100% !important;
+            width: 100% !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.da-block-d-btn-block):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stButton"] button,
+        div[data-testid="stVerticalBlock"]:has(.da-block-d-btn-block):not(:has(#da-queue-scroll-host)):not(:has([data-testid="stSelectbox"])):not(:has(.da-c2-matrix-marker)):not(:has(.da-c2-crit-ctrl-marker)) [data-testid="stButton"] button {
+            opacity: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            background: transparent !important;
+            cursor: pointer !important;
+            box-shadow: none !important;
         }
         </style>
         """,
@@ -2043,6 +2806,15 @@ def build_workbench_dataframe(
                 "plan_value_display": pkg.get(
                     "plan_value_display", money_ru_compact(row_risk_value(constraint))
                 ),
+                "labor_cost_display": pkg.get("labor_cost_display", "—"),
+                "system_display": pkg.get("system_display", "—"),
+                "iwp_display": pkg.get("iwp_display", "—"),
+                "project_code_display": safe_str(
+                    pkg.get("project_code") or constraint.get("project_code")
+                ),
+                "month_key_display": safe_str(
+                    pkg.get("month_key") or constraint.get("month_key")
+                ),
                 "check_status_ui": CHECK_STATUS_RU.get(status_key, status_key),
                 "resolution_status_ui": RESOLUTION_RU.get(resolution_key, resolution_key),
                 "responsible_department_ui": dept_ui(constraint.get("responsible_department")),
@@ -2133,6 +2905,1592 @@ def apply_check_quick_action(
         return "Неизвестное действие."
 
     return update_constraint_record(constraint_id, payload)
+
+
+def direct_admit_queue_status(status_key: str) -> tuple[str, str, str]:
+    """UI label, dot color, text color for queue item."""
+    if status_key in ("HOLD", "FAIL"):
+        return DIRECT_ADMIT_QUEUE_STATUS["blocked"]
+    if status_key == "PASS":
+        return DIRECT_ADMIT_QUEUE_STATUS["approved"]
+    if status_key == "WARNING":
+        return DIRECT_ADMIT_QUEUE_STATUS["clarify"]
+    return DIRECT_ADMIT_QUEUE_STATUS["pending"]
+
+
+def direct_admit_is_pending(status_key: str) -> bool:
+    return norm_check_status_key(status_key) in ("ОЖИДАЕТ", "WARNING")
+
+
+def compute_direct_admit_progress(workbench_df: pd.DataFrame) -> dict[str, int]:
+    counts = {"total": 0, "pending": 0, "approved": 0, "blocked": 0, "clarify": 0}
+    if workbench_df.empty:
+        return counts
+    counts["total"] = len(workbench_df)
+    for _, row in workbench_df.iterrows():
+        status_key = norm_check_status_key(row.get("check_status"))
+        if status_key in ("HOLD", "FAIL"):
+            counts["blocked"] += 1
+        elif status_key == "PASS":
+            counts["approved"] += 1
+        elif status_key == "WARNING":
+            counts["clarify"] += 1
+        else:
+            counts["pending"] += 1
+    return counts
+
+
+def resolve_direct_admit_selected_cid(
+    workbench_df: pd.DataFrame,
+    prefer_pending: bool = True,
+) -> str:
+    if workbench_df.empty:
+        return ""
+    cids = workbench_df["constraint_id"].astype(str).tolist()
+    stored = safe_str(st.session_state.get(DIRECT_ADMIT_SELECTED_CID_KEY))
+    if stored in cids:
+        return stored
+    if prefer_pending:
+        for _, row in workbench_df.iterrows():
+            if direct_admit_is_pending(row.get("check_status")):
+                return safe_str(row.get("constraint_id"))
+    return safe_str(workbench_df.iloc[0].get("constraint_id"))
+
+
+def advance_direct_admit_selection(workbench_df: pd.DataFrame, current_cid: str) -> str:
+    if workbench_df.empty:
+        return ""
+    cids = workbench_df["constraint_id"].astype(str).tolist()
+    if current_cid not in cids:
+        return resolve_direct_admit_selected_cid(workbench_df)
+    start_idx = cids.index(current_cid) + 1
+    for cid in cids[start_idx:] + cids[:start_idx]:
+        row = workbench_df[workbench_df["constraint_id"].astype(str) == cid].iloc[0]
+        if direct_admit_is_pending(row.get("check_status")):
+            return cid
+    return current_cid
+
+
+def sort_workbench_for_queue(workbench_df: pd.DataFrame) -> pd.DataFrame:
+    """Pending items first; completed (PASS) sink to bottom."""
+    if workbench_df.empty:
+        return workbench_df
+    out = workbench_df.copy()
+    out["_da_sort"] = out["check_status"].apply(
+        lambda value: CHECK_STATUS_PRIORITY.get(norm_check_status_key(value), 50)
+    )
+    out = out.sort_values(["_da_sort", "boq_code"], ascending=[True, True])
+    return out.drop(columns=["_da_sort"])
+
+
+def direct_admit_layout_weights() -> list[float]:
+    preset = st.session_state.get(DIRECT_ADMIT_LAYOUT_KEY, "Баланс")
+    if preset not in DIRECT_ADMIT_LAYOUT_PRESETS:
+        preset = "Баланс"
+    return DIRECT_ADMIT_LAYOUT_PRESETS[preset]
+
+
+def resolve_direct_admit_dept_key(department_label: str, row: pd.Series | None) -> str:
+    if department_label and department_label != "Все":
+        return department_label
+    if row is not None:
+        return safe_str(row.get("responsible_department"))
+    return ""
+
+
+def direct_admit_criteria_for_department(dept_key: str) -> list[str]:
+    if dept_key in DIRECT_ADMIT_CRITERIA_BY_DEPT:
+        return DIRECT_ADMIT_CRITERIA_BY_DEPT[dept_key]
+    return list(DIRECT_ADMIT_GENERIC_CRITERIA)
+
+
+def _da_crit_status_key(cid: str, idx: int) -> str:
+    return f"da_crit_{cid}_{idx}"
+
+
+def _da_crit_pct_key(cid: str, idx: int) -> str:
+    return f"da_crit_pct_{cid}_{idx}"
+
+
+def _da_crit_normalize_status(raw: Any) -> str:
+    if raw is True:
+        return DIRECT_ADMIT_CRIT_STATUS_READY
+    if raw is False or raw is None or safe_str(raw) == "":
+        return DIRECT_ADMIT_CRIT_STATUS_UNCHECKED
+    status = safe_str(raw)
+    if status in DIRECT_ADMIT_CRIT_STATUS_UI:
+        return status
+    return DIRECT_ADMIT_CRIT_STATUS_UNCHECKED
+
+
+def _da_crit_read_row(cid: str, idx: int) -> tuple[str, int | None]:
+    status = _da_crit_normalize_status(st.session_state.get(_da_crit_status_key(cid, idx)))
+    pct_raw = st.session_state.get(_da_crit_pct_key(cid, idx))
+    pct: int | None = None
+    if pct_raw is not None and safe_str(pct_raw) != "":
+        try:
+            pct = int(float(pct_raw))
+            pct = max(0, min(100, pct))
+        except (TypeError, ValueError):
+            pct = None
+    return status, pct
+
+
+def _da_crit_score_points(status: str, pct: int | None) -> float | None:
+    if status == DIRECT_ADMIT_CRIT_STATUS_READY:
+        return 100.0
+    if status == DIRECT_ADMIT_CRIT_STATUS_PARTIAL:
+        return float(pct if pct is not None else 0)
+    if status == DIRECT_ADMIT_CRIT_STATUS_RISK:
+        return 50.0
+    if status == DIRECT_ADMIT_CRIT_STATUS_BLOCKER:
+        return 0.0
+    return None
+
+
+def _da_crit_status_label(status: str) -> str:
+    return DIRECT_ADMIT_CRIT_STATUS_UI.get(
+        status,
+        DIRECT_ADMIT_CRIT_STATUS_UI[DIRECT_ADMIT_CRIT_STATUS_UNCHECKED],
+    )[0]
+
+
+def _da_crit_status_css_suffix(status: str) -> str:
+    return status.lower().replace("_", "-")
+
+
+def _da_exec_bar_fill_style(score_pct: int, blocker_count: int) -> str:
+    if score_pct >= 80 and blocker_count <= 1:
+        color = "#2F6B4F"
+    elif score_pct >= 50:
+        color = "#C4920A"
+    else:
+        color = "#B45353"
+    gradient = "linear-gradient(90deg, #B45353 0%, #C4920A 52%, #2F6B4F 100%)"
+    if score_pct >= 80 and blocker_count <= 1:
+        fill_bg = color
+    elif score_pct >= 50:
+        fill_bg = gradient
+    else:
+        fill_bg = color
+    return f"width:{score_pct}%;background:{fill_bg};"
+
+
+def _da_crit_status_badge_html(status: str, pct: int | None = None) -> str:
+    label, color = DIRECT_ADMIT_CRIT_STATUS_UI.get(
+        status,
+        DIRECT_ADMIT_CRIT_STATUS_UI[DIRECT_ADMIT_CRIT_STATUS_UNCHECKED],
+    )
+    text = label
+    if status == DIRECT_ADMIT_CRIT_STATUS_PARTIAL and pct is not None:
+        text = f"{label} {pct}%"
+    return (
+        f'<div class="da-c2-exec-badge" style="color:{color};">'
+        f"{html.escape(text)}</div>"
+    )
+
+
+def direct_admit_criteria_summary(
+    cid: str,
+    criteria: list[str],
+) -> dict[str, Any]:
+    counts = {
+        DIRECT_ADMIT_CRIT_STATUS_READY: 0,
+        DIRECT_ADMIT_CRIT_STATUS_PARTIAL: 0,
+        DIRECT_ADMIT_CRIT_STATUS_RISK: 0,
+        DIRECT_ADMIT_CRIT_STATUS_BLOCKER: 0,
+        DIRECT_ADMIT_CRIT_STATUS_UNCHECKED: 0,
+    }
+    score_points: list[float] = []
+    for idx in range(len(criteria)):
+        status, pct = _da_crit_read_row(cid, idx)
+        counts[status] = counts.get(status, 0) + 1
+        points = _da_crit_score_points(status, pct)
+        if points is not None:
+            score_points.append(points)
+    total = len(criteria) or 1
+    score_pct = int(round(sum(score_points) / total)) if score_points else 0
+    return {
+        "counts": counts,
+        "score_pct": score_pct,
+        "total": len(criteria),
+    }
+
+
+def direct_admit_criteria_progress(cid: str, criteria: list[str]) -> tuple[int, int]:
+    ready = sum(
+        1
+        for idx in range(len(criteria))
+        if _da_crit_read_row(cid, idx)[0] == DIRECT_ADMIT_CRIT_STATUS_READY
+    )
+    return ready, len(criteria)
+
+
+def _da_resolve_owner_role(dept_key: str) -> str:
+    dept_label = dept_ui(dept_key) if dept_key else ""
+    if dept_label in DIRECT_ADMIT_ROLE_OPTIONS:
+        return dept_label
+    return "Другое"
+
+
+def build_direct_admit_decision_draft(
+    action: str,
+    cid: str,
+    dept_key: str,
+    officer_fio: str,
+    criteria: list[str],
+) -> dict[str, Any]:
+    owner = dept_ui(dept_key) if dept_key else "—"
+    decided_at = now_moscow_decision_text()
+    owner_role = _da_resolve_owner_role(dept_key)
+    if action == "pass":
+        return {
+            "cid": cid,
+            "action": "pass",
+            "decision_label": "ДОПУЩЕНО",
+            "reason": "Критерии допуска выполнены",
+            "action_text": "Включить код в месячный план / разрешить выполнение работ",
+            "owner": owner,
+            "target_date": date.today(),
+            "officer_fio": officer_fio,
+            "decided_at_msk": decided_at,
+            "owner_role": owner_role,
+        }
+    if action == "clarify":
+        return {
+            "cid": cid,
+            "action": "clarify",
+            "decision_label": "ТРЕБУЕТ УТОЧНЕНИЯ",
+            "reason": "Есть непроверенные / частично снятые / рискованные ограничения",
+            "action_text": "Запросить уточнение у ответственного отдела",
+            "owner": owner,
+            "target_date": date.today() + timedelta(days=2),
+            "officer_fio": officer_fio,
+            "decided_at_msk": decided_at,
+            "owner_role": owner_role,
+        }
+    return {
+        "cid": cid,
+        "action": "block",
+        "decision_label": "ЗАБЛОКИРОВАНО",
+        "reason": "Есть блокирующие ограничения",
+        "action_text": "Зафиксировать ограничение и назначить корректирующее действие",
+        "owner": owner,
+        "target_date": date.today(),
+        "officer_fio": officer_fio,
+        "decided_at_msk": decided_at,
+        "owner_role": owner_role,
+    }
+
+
+def format_direct_admit_audit_trail(draft: dict[str, Any]) -> str:
+    return (
+        f"{draft['decided_at_msk']}\n"
+        f"{draft['officer_fio']}\n"
+        f"Решение:\n{draft['decision_label']}\n\n"
+        f"Причина:\n{draft['reason']}"
+    )
+
+
+def _da_gov_fixation_summary_text(draft: dict[str, Any]) -> str:
+    target_text = draft["target_date"].strftime("%d.%m.%Y")
+    return (
+        f"Тип решения: {draft['decision_label']}\n"
+        f"Причина: {draft['reason']}\n"
+        f"Действие: {draft['action_text']}\n"
+        f"Ответственный: {draft['owner']}\n"
+        f"Срок: {target_text}\n"
+        f"ФИО принявшего решение: {draft['officer_fio']}\n"
+        f"Дата и время: {draft['decided_at_msk']}"
+    )
+
+
+def apply_direct_admit_decision_draft_to_gov(
+    prefix: str,
+    pending_action: str,
+    draft: dict[str, Any],
+    cid: str,
+) -> None:
+    if draft.get("cid") != cid:
+        return
+    summary = _da_gov_fixation_summary_text(draft)
+    if pending_action == "pass":
+        st.session_state[f"{prefix}_pass_by"] = draft["officer_fio"]
+        st.session_state[f"{prefix}_pass_comment"] = summary
+        return
+    if pending_action == "clarify":
+        st.session_state[f"{prefix}_owner"] = draft["owner"]
+        st.session_state[f"{prefix}_role"] = draft["owner_role"]
+        st.session_state[f"{prefix}_target"] = draft["target_date"]
+        st.session_state[f"{prefix}_desc"] = summary
+        return
+    st.session_state[f"{prefix}_owner"] = draft["owner"]
+    st.session_state[f"{prefix}_role"] = draft["owner_role"]
+    st.session_state[f"{prefix}_target"] = draft["target_date"]
+    st.session_state[f"{prefix}_block_reason"] = draft["reason"]
+    st.session_state[f"{prefix}_desc"] = summary
+
+
+def _da_clear_decision_session() -> None:
+    st.session_state.pop(DIRECT_ADMIT_DECISION_DRAFT_KEY, None)
+    st.session_state.pop(DIRECT_ADMIT_DECISION_FIO_ERROR_KEY, None)
+    st.session_state.pop(DIRECT_ADMIT_DECISION_WARN_KEY, None)
+    st.session_state.pop(DIRECT_ADMIT_DECISION_RECOMMENDED_KEY, None)
+
+
+def _da_decision_button_handler(
+    action: str,
+    cid: str,
+    dept_key: str,
+    criteria: list[str],
+    officer_fio: str,
+) -> None:
+    if not officer_fio.strip():
+        st.session_state[DIRECT_ADMIT_DECISION_FIO_ERROR_KEY] = cid
+        return
+
+    summary = direct_admit_criteria_summary(cid, criteria)
+    counts = summary["counts"]
+    st.session_state.pop(DIRECT_ADMIT_DECISION_FIO_ERROR_KEY, None)
+    st.session_state.pop(DIRECT_ADMIT_DECISION_WARN_KEY, None)
+    st.session_state.pop(DIRECT_ADMIT_DECISION_RECOMMENDED_KEY, None)
+
+    if action == "pass":
+        checked_now, total_now = direct_admit_criteria_progress(cid, criteria)
+        if checked_now < total_now:
+            st.session_state[DIRECT_ADMIT_CRITERIA_WARN_KEY] = True
+        else:
+            st.session_state.pop(DIRECT_ADMIT_CRITERIA_WARN_KEY, None)
+        if counts[DIRECT_ADMIT_CRIT_STATUS_BLOCKER] > 0:
+            st.session_state[DIRECT_ADMIT_DECISION_WARN_KEY] = (
+                "Обнаружены блокирующие ограничения"
+            )
+    elif action == "clarify":
+        st.session_state.pop(DIRECT_ADMIT_CRITERIA_WARN_KEY, None)
+        partial_risk = (
+            counts[DIRECT_ADMIT_CRIT_STATUS_UNCHECKED]
+            + counts[DIRECT_ADMIT_CRIT_STATUS_PARTIAL]
+            + counts[DIRECT_ADMIT_CRIT_STATUS_RISK]
+        )
+        if partial_risk > 0:
+            st.session_state[DIRECT_ADMIT_DECISION_RECOMMENDED_KEY] = (
+                "Рекомендуется уточнение: есть непроверенные, частичные или рискованные критерии"
+            )
+    else:
+        st.session_state.pop(DIRECT_ADMIT_CRITERIA_WARN_KEY, None)
+
+    draft = build_direct_admit_decision_draft(action, cid, dept_key, officer_fio, criteria)
+    st.session_state[DIRECT_ADMIT_DECISION_DRAFT_KEY] = draft
+    st.session_state[DIRECT_ADMIT_PENDING_ACTION_KEY] = action
+    apply_direct_admit_decision_draft_to_gov(f"da_gov_{cid[:8]}", action, draft, cid)
+
+
+def _render_direct_admit_block_d(
+    cid: str,
+    criteria: list[str],
+    dept_key: str,
+) -> None:
+    st.markdown('<div class="da-c2-section-title">D. Решение</div>', unsafe_allow_html=True)
+
+    officer_key = f"da_officer_{cid[:8]}"
+    officer_fio = st.text_input(
+        "ФИО лица, принимающего решение",
+        placeholder="Виталий Тронин",
+        key=officer_key,
+    )
+    if safe_str(officer_fio).strip():
+        st.session_state.pop(DIRECT_ADMIT_DECISION_FIO_ERROR_KEY, None)
+    if st.session_state.get(DIRECT_ADMIT_DECISION_FIO_ERROR_KEY) == cid:
+        st.error("Укажите ФИО лица, принимающего решение")
+
+    warn_msg = st.session_state.get(DIRECT_ADMIT_DECISION_WARN_KEY)
+    if warn_msg:
+        st.warning(warn_msg)
+    rec_msg = st.session_state.get(DIRECT_ADMIT_DECISION_RECOMMENDED_KEY)
+    if rec_msg:
+        st.info(rec_msg)
+
+    a1, a2, a3 = st.columns(3, gap="small")
+    with a1:
+        with st.container(border=False):
+            st.markdown(
+                '<span class="da-block-d-btn-pass"></span>'
+                '<div class="da-block-d-pass-visual" style="display:flex;align-items:center;'
+                'justify-content:center;min-height:34px;padding:0.18rem 0.35rem;border-radius:0.5rem;'
+                'background-color:#2F6B4F;border:1px solid #2F6B4F;color:#ffffff;font-size:0.76rem;'
+                'font-weight:600;line-height:1.2;text-align:center;">ДОПУСТИТЬ</div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("ДОПУСТИТЬ", key=f"da_act_pass_{cid[:8]}", use_container_width=True):
+                officer_value = safe_str(officer_fio).strip() or safe_str(
+                    st.session_state.get(officer_key)
+                ).strip()
+                _da_decision_button_handler(
+                    "pass", cid, dept_key, criteria, officer_value
+                )
+                st.rerun()
+    with a2:
+        with st.container(border=False):
+            st.markdown(
+                '<span class="da-block-d-btn-clarify"></span>'
+                '<div class="da-block-d-clarify-visual" style="display:flex;align-items:center;'
+                'justify-content:center;min-height:34px;padding:0.18rem 0.35rem;border-radius:0.5rem;'
+                'background-color:#C4920A;border:1px solid #C4920A;color:#ffffff;font-size:0.76rem;'
+                'font-weight:600;line-height:1.2;text-align:center;">ТРЕБУЕТ ДОРАБОТКИ</div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("ТРЕБУЕТ ДОРАБОТКИ", key=f"da_act_clarify_{cid[:8]}", use_container_width=True):
+                officer_value = safe_str(officer_fio).strip() or safe_str(
+                    st.session_state.get(officer_key)
+                ).strip()
+                _da_decision_button_handler(
+                    "clarify", cid, dept_key, criteria, officer_value
+                )
+                st.rerun()
+    with a3:
+        with st.container(border=False):
+            st.markdown(
+                '<span class="da-block-d-btn-block"></span>'
+                '<div class="da-block-d-block-visual" style="display:flex;align-items:center;'
+                'justify-content:center;min-height:34px;padding:0.18rem 0.35rem;border-radius:0.5rem;'
+                'background-color:#9B3D3D;border:1px solid #9B3D3D;color:#ffffff;font-size:0.76rem;'
+                'font-weight:600;line-height:1.2;text-align:center;">ЗАБЛОКИРОВАТЬ</div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("ЗАБЛОКИРОВАТЬ", key=f"da_act_block_{cid[:8]}", use_container_width=True):
+                officer_value = safe_str(officer_fio).strip() or safe_str(
+                    st.session_state.get(officer_key)
+                ).strip()
+                _da_decision_button_handler(
+                    "block", cid, dept_key, criteria, officer_value
+                )
+                st.rerun()
+
+
+def _render_da_criteria_executability_summary(cid: str, criteria: list[str]) -> None:
+    summary = direct_admit_criteria_summary(cid, criteria)
+    counts = summary["counts"]
+    score_pct = summary["score_pct"]
+    blocker_count = counts[DIRECT_ADMIT_CRIT_STATUS_BLOCKER]
+    bar_style = _da_exec_bar_fill_style(score_pct, blocker_count)
+    st.markdown(
+        f'<div class="da-c2-exec-summary">'
+        f'<span style="color:#2F6B4F;">ГОТОВО: {counts[DIRECT_ADMIT_CRIT_STATUS_READY]}</span>'
+        f'<span style="color:#C4920A;">ЧАСТИЧНО: {counts[DIRECT_ADMIT_CRIT_STATUS_PARTIAL]}</span>'
+        f'<span style="color:#C2410C;">РИСК: {counts[DIRECT_ADMIT_CRIT_STATUS_RISK]}</span>'
+        f'<span style="color:#B45353;">БЛОКЕРЫ: {blocker_count}</span>'
+        f"</div>"
+        f'<div class="da-c2-exec-score-line">EXECUTABILITY SCORE: {score_pct}%</div>'
+        f'<div class="da-c2-exec-bar-track">'
+        f'<div class="da-c2-exec-bar-fill" style="{bar_style}"></div>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_direct_admit_block_c(
+    cid: str,
+    criteria: list[str],
+    dept_criteria_label: str,
+    row: pd.Series,
+    saver_name: str,
+) -> None:
+    st.markdown('<div class="da-c2-section-title">C. Критерии допуска</div>', unsafe_allow_html=True)
+    st.caption(dept_criteria_label)
+    with st.container(border=True):
+        _render_da_criteria_executability_summary(cid, criteria)
+        st.markdown(
+            '<div class="da-c2-matrix-head"><span>Критерий</span><span>Статус</span></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown('<span class="da-c2-matrix-marker"></span>', unsafe_allow_html=True)
+        for crit_idx, crit_label in enumerate(criteria):
+            status_key = _da_crit_status_key(cid, crit_idx)
+            pct_key = _da_crit_pct_key(cid, crit_idx)
+            current_status, current_pct = _da_crit_read_row(cid, crit_idx)
+            crit_col, badge_col, ctrl_col = st.columns([0.46, 0.24, 0.30], gap="small")
+            with crit_col:
+                st.markdown(
+                    f'<div class="da-c2-crit-label">{html.escape(crit_label)}</div>',
+                    unsafe_allow_html=True,
+                )
+                if crit_label == DIRECT_ADMIT_OTHER_CRITERION_LABEL:
+                    other_text = st.text_input(
+                        "Прочее ограничение",
+                        value="",
+                        placeholder="Опишите ограничение вручную…",
+                        key=f"da_crit_other_text_{cid}",
+                        label_visibility="collapsed",
+                    )
+                    if st.button(
+                        "Сохранить ограничение",
+                        key=f"da_crit_other_save_{cid}",
+                        use_container_width=True,
+                    ):
+                        err = apply_check_quick_action(
+                            row,
+                            "clarify",
+                            saver_name,
+                            other_text,
+                        )
+                        if err:
+                            st.warning(err)
+                        else:
+                            st.cache_data.clear()
+                            st.success("Ограничение сохранено в реестр проверки.")
+                            st.rerun()
+            with ctrl_col:
+                try:
+                    status_index = DIRECT_ADMIT_CRIT_STATUS_ORDER.index(current_status)
+                except ValueError:
+                    status_index = 0
+                selected_status = st.selectbox(
+                    "Статус",
+                    DIRECT_ADMIT_CRIT_STATUS_ORDER,
+                    index=status_index,
+                    format_func=_da_crit_status_label,
+                    key=status_key,
+                    label_visibility="collapsed",
+                )
+                st.markdown(
+                    f'<span class="da-c2-crit-ctrl-marker da-c2-crit-{_da_crit_status_css_suffix(selected_status)}"></span>',
+                    unsafe_allow_html=True,
+                )
+                selected_pct: int | None = None
+                if selected_status == DIRECT_ADMIT_CRIT_STATUS_PARTIAL:
+                    selected_pct = int(
+                        st.number_input(
+                            "%",
+                            min_value=0,
+                            max_value=100,
+                            value=current_pct if current_pct is not None else 0,
+                            step=5,
+                            key=pct_key,
+                            label_visibility="collapsed",
+                        )
+                    )
+            with badge_col:
+                st.markdown(
+                    _da_crit_status_badge_html(selected_status, selected_pct),
+                    unsafe_allow_html=True,
+                )
+        summary = direct_admit_criteria_summary(cid, criteria)
+        st.markdown(
+            f'<div class="da-c2-score">EXECUTABILITY SCORE: {summary["score_pct"]}%</div>',
+            unsafe_allow_html=True,
+        )
+
+
+def direct_admit_mtr_cost_display(row: pd.Series) -> str:
+    for field in ("mtr_cost_display", "mtr_cost_value", "mtr_cost", "material_cost"):
+        raw = row.get(field)
+        if has_meaningful_value(raw):
+            try:
+                return format_money_display(safe_num(raw))
+            except Exception:  # noqa: BLE001
+                return field_display(raw)
+    return "—"
+
+
+def _render_da_compact_grid_html(cells: list[tuple[str, str]], *, columns: int = 2) -> str:
+    """Compact label/value metric grid for center pane (rendering only)."""
+    if not cells:
+        return ""
+    col_w = max(1, min(columns, 3))
+    rows_html: list[str] = []
+    for row_start in range(0, len(cells), col_w):
+        chunk = cells[row_start : row_start + col_w]
+        cells_html = []
+        for label, value in chunk:
+            lbl = html.escape(label)
+            val = html.escape(value or "—")
+            cells_html.append(
+                f'<div class="da-c2-cell">'
+                f'<div class="da-c2-label">{lbl}</div>'
+                f'<div class="da-c2-value">{val}</div>'
+                f"</div>"
+            )
+        while len(cells_html) < col_w:
+            cells_html.append('<div class="da-c2-cell da-c2-cell-empty"></div>')
+        rows_html.append(f'<div class="da-c2-row da-c2-cols-{col_w}">{"".join(cells_html)}</div>')
+    return f'<div class="da-c2-grid">{"".join(rows_html)}</div>'
+
+
+def _da_center_status_badge_html(status_key: str, queue_label: str, queue_text_color: str) -> str:
+    label = html.escape(queue_label.upper())
+    return (
+        f'<span class="da-c2-status-badge" style="color:{queue_text_color};">'
+        f"{label}</span>"
+    )
+
+
+def _da_center_pills_html(pills: list[str]) -> str:
+    items = [
+        f'<span class="da-c2-pill">{html.escape(p)}</span>'
+        for p in pills
+        if p and p != "—"
+    ]
+    if not items:
+        return ""
+    return f'<div class="da-c2-pills">{"".join(items)}</div>'
+
+
+def _da_center_pane_styles() -> str:
+    return """
+    <style>
+    .da-c2-header {
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        background: #f8fafc;
+        padding: 0.45rem 0.55rem 0.4rem 0.55rem;
+        margin-bottom: 0.35rem;
+    }
+    .da-c2-header-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    .da-c2-code {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #0f172a;
+        letter-spacing: 0.01em;
+        line-height: 1.15;
+    }
+    .da-c2-status-badge {
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+    }
+    .da-c2-title {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #1e293b;
+        margin-top: 0.18rem;
+        line-height: 1.25;
+        white-space: normal;
+        word-break: break-word;
+    }
+    .da-c2-desc {
+        font-size: 0.72rem;
+        color: #64748b;
+        margin-top: 0.12rem;
+        line-height: 1.3;
+    }
+    .da-c2-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        margin-top: 0.28rem;
+    }
+    .da-c2-pill {
+        display: inline-block;
+        font-size: 0.66rem;
+        font-weight: 600;
+        color: #475569;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        padding: 0.08rem 0.42rem;
+        line-height: 1.2;
+    }
+    .da-c2-section-title {
+        font-size: 0.74rem;
+        font-weight: 700;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin: 0.28rem 0 0.18rem 0;
+    }
+    .da-c2-panel {
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        background: #ffffff;
+        padding: 0.35rem 0.4rem 0.3rem 0.4rem;
+        margin-bottom: 0.25rem;
+    }
+    .da-c2-ab-outer {
+        display: flex;
+        align-items: stretch;
+        gap: 0.35rem;
+        margin-bottom: 0.25rem;
+    }
+    .da-c2-ab-side {
+        flex: 1 1 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    .da-c2-ab-panel {
+        flex: 1 1 auto;
+        margin-bottom: 0;
+    }
+    .da-c2-grid { width: 100%; }
+    .da-c2-row {
+        display: grid;
+        gap: 0.28rem;
+        margin-bottom: 0.22rem;
+    }
+    .da-c2-row:last-child { margin-bottom: 0; }
+    .da-c2-cols-2 { grid-template-columns: 1fr 1fr; }
+    .da-c2-cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .da-c2-cell {
+        border: 1px solid #f1f5f9;
+        border-radius: 4px;
+        background: #fafbfc;
+        padding: 0.22rem 0.32rem;
+        min-height: 2.1rem;
+    }
+    .da-c2-cell-empty {
+        visibility: hidden;
+        border-color: transparent;
+        background: transparent;
+    }
+    .da-c2-label {
+        font-size: 0.62rem;
+        font-weight: 600;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        line-height: 1.15;
+    }
+    .da-c2-value {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #0f172a;
+        line-height: 1.25;
+        margin-top: 0.06rem;
+        word-break: break-word;
+    }
+    .da-c2-matrix-head {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.35rem;
+        font-size: 0.62rem;
+        font-weight: 700;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding: 0 0.05rem 0.18rem 0.05rem;
+        border-bottom: 1px solid #f1f5f9;
+        margin-bottom: 0.12rem;
+    }
+    .da-c2-matrix-row {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 0.35rem;
+        align-items: center;
+        padding: 0.14rem 0.05rem;
+        border-bottom: 1px solid #f8fafc;
+    }
+    .da-c2-matrix-row:last-child { border-bottom: none; }
+    .da-c2-crit-label {
+        font-size: 0.85rem;
+        color: #334155;
+        line-height: 1.25;
+    }
+    .da-c2-exec-badge {
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+    }
+    [data-testid="column"]:has(.da-c2-crit-ctrl-marker) [data-testid="stSelectbox"] [data-baseweb="select"] span {
+        font-size: 0.74rem !important;
+    }
+    [data-testid="column"]:has(.da-c2-crit-ready) [data-testid="stSelectbox"] div[data-baseweb="select"] {
+        border-color: #2F6B4F !important;
+    }
+    [data-testid="column"]:has(.da-c2-crit-partial) [data-testid="stSelectbox"] div[data-baseweb="select"] {
+        border-color: #C4920A !important;
+    }
+    [data-testid="column"]:has(.da-c2-crit-risk) [data-testid="stSelectbox"] div[data-baseweb="select"] {
+        border-color: #C2410C !important;
+    }
+    [data-testid="column"]:has(.da-c2-crit-blocker) [data-testid="stSelectbox"] div[data-baseweb="select"] {
+        border-color: #B45353 !important;
+    }
+    [data-testid="column"]:has(.da-c2-crit-unchecked) [data-testid="stSelectbox"] div[data-baseweb="select"] {
+        border-color: #94a3b8 !important;
+    }
+    [data-testid="column"]:has(.da-c2-crit-ready) [data-testid="stSelectbox"] span {
+        color: #2F6B4F !important;
+    }
+    [data-testid="column"]:has(.da-c2-crit-partial) [data-testid="stSelectbox"] span {
+        color: #C4920A !important;
+    }
+    [data-testid="column"]:has(.da-c2-crit-risk) [data-testid="stSelectbox"] span {
+        color: #C2410C !important;
+    }
+    [data-testid="column"]:has(.da-c2-crit-blocker) [data-testid="stSelectbox"] span {
+        color: #B45353 !important;
+    }
+    [data-testid="column"]:has(.da-c2-crit-unchecked) [data-testid="stSelectbox"] span {
+        color: #64748b !important;
+    }
+    .da-c2-exec-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        font-size: 0.68rem;
+        font-weight: 600;
+        color: #475569;
+        margin-bottom: 0.18rem;
+    }
+    .da-c2-exec-score-line {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #1e40af;
+        margin-bottom: 0.15rem;
+    }
+    .da-c2-exec-bar-track {
+        height: 6px;
+        background: #e2e8f0;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 0.22rem;
+    }
+    .da-c2-exec-bar-fill {
+        height: 100%;
+        border-radius: 4px;
+        transition: width 0.15s ease;
+    }
+    .da-c2-score {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #1e40af;
+        margin-top: 0.22rem;
+        padding-top: 0.18rem;
+        border-top: 1px solid #f1f5f9;
+    }
+    [data-testid="column"]:has(.da-c2-matrix-marker) [data-testid="stCheckbox"] {
+        margin-top: 0 !important;
+    }
+    [data-testid="column"]:has(.da-c2-matrix-marker) [data-testid="stCheckbox"] label {
+        min-height: 0 !important;
+    }
+    #da-center-scroll-host {
+        display: none;
+    }
+    </style>
+    """
+
+
+def _da_center_optional_field(row: pd.Series, *keys: str) -> str:
+    for key in keys:
+        val = row.get(key)
+        if has_meaningful_value(val):
+            return field_display(val)
+    return "—"
+
+
+def render_direct_admit_module_header(
+    department_label: str,
+    progress: dict[str, int],
+) -> None:
+    if department_label != "Все":
+        dept_full = dept_ui(department_label)
+        if " / " in dept_full:
+            dept_chip_name, dept_role = dept_full.split(" / ", 1)
+            dept_chip_name = dept_chip_name.strip()
+            dept_role = dept_role.strip()
+        else:
+            dept_chip_name = dept_full
+            dept_role = DEPARTMENT_RU.get(department_label, "")
+            if dept_role == dept_chip_name:
+                dept_role = "Контур допуска выбранного отдела"
+    else:
+        dept_chip_name = "Все отделы"
+        dept_role = "Выберите отдел допуска в фильтрах, чтобы работать от имени конкретного отдела."
+
+    st.markdown("### Непосредственный допуск по отделам")
+    st.markdown(
+        f'<div class="da-dept-chip-card"><div class="da-dept-chip-label">ВЫБРАН ОТДЕЛ ДОПУСКА</div>'
+        f'<div class="da-dept-chip-name">{html.escape(dept_chip_name)}</div></div>',
+        unsafe_allow_html=True,
+    )
+    if department_label == "Все":
+        st.caption(dept_role)
+    st.caption(
+        "Очередь → решение → фиксация. Выберите код слева, проверьте критерии в центре, "
+        "зафиксируйте решение справа."
+    )
+    st.caption(
+        f"Всего в очереди: **{progress['total']}** · "
+        f"Осталось: **{progress['pending']}** · "
+        f"Допущено: **{progress['approved']}** · "
+        f"Заблокировано: **{progress['blocked']}** · "
+        f"Уточнение: **{progress['clarify']}**"
+    )
+
+
+def render_direct_admit_fixation_history(row: pd.Series) -> None:
+    history = field_display(last_decision_display(row))
+    comment = field_display(row.get("comment"))
+    block_reason = field_display(row.get("block_reason"))
+    owner = field_display(row.get("owner_name"))
+    owner_role = field_display(row.get("owner_role"))
+    target = safe_date(row.get("target_resolution_date"))
+    target_text = target.isoformat() if target else "—"
+    with st.container(border=True):
+        st.markdown("**История и фиксация**")
+        st.markdown(f"**Последнее действие:** {history}")
+        st.markdown(f"**Владелец:** {owner} · **Роль:** {owner_role}")
+        st.markdown(f"**Причина блокировки:** {block_reason}")
+        st.markdown(f"**Комментарий:** {comment}")
+        st.markdown(f"**Срок ответа:** {target_text}")
+
+
+def direct_admit_check_status_for_action(action: str) -> str:
+    if action == "pass":
+        return "PASS"
+    if action == "clarify":
+        return "WARNING"
+    if action == "block":
+        return "HOLD"
+    return "ОЖИДАЕТ"
+
+
+def _register_direct_admit_status_patch(constraint_id: str, action: str) -> str:
+    status = direct_admit_check_status_for_action(action)
+    patches = dict(st.session_state.get(DIRECT_ADMIT_STATUS_PATCHES_KEY) or {})
+    patches[safe_str(constraint_id)] = status
+    st.session_state[DIRECT_ADMIT_STATUS_PATCHES_KEY] = patches
+    return status
+
+
+def apply_direct_admit_status_patches(df: pd.DataFrame) -> pd.DataFrame:
+    patches = st.session_state.get(DIRECT_ADMIT_STATUS_PATCHES_KEY) or {}
+    if df.empty or not patches:
+        return df
+    out = df.copy()
+    remaining: dict[str, str] = {}
+    for cid, patched_status in patches.items():
+        mask = out["constraint_id"].astype(str) == safe_str(cid)
+        if not mask.any():
+            remaining[safe_str(cid)] = patched_status
+            continue
+        db_status = norm_check_status_key(out.loc[mask, "check_status"].iloc[0])
+        target_status = norm_check_status_key(patched_status)
+        if db_status == target_status:
+            continue
+        out.loc[mask, "check_status"] = target_status
+        if "check_status_ui" in out.columns:
+            out.loc[mask, "check_status_ui"] = CHECK_STATUS_RU.get(target_status, target_status)
+        remaining[safe_str(cid)] = patched_status
+    st.session_state[DIRECT_ADMIT_STATUS_PATCHES_KEY] = remaining
+    return out
+
+
+def save_direct_admission_decision(
+    row: pd.Series,
+    action: str,
+    saver_name: str,
+    *,
+    comment: str = "",
+    constraint_type: str = "",
+    owner_role: str = "",
+    owner_name: str = "",
+    description: str = "",
+    block_reason: str = "",
+    target_date: date | None = None,
+    severity: str = "MEDIUM",
+) -> Optional[str]:
+    """Save governance decision from right pane (existing DB fields only)."""
+    constraint_id = safe_str(row.get("constraint_id"))
+    if not constraint_id:
+        return "У записи нет constraint_id."
+
+    dept_label = dept_ui(row.get("responsible_department"))
+    existing_comment = safe_str(row.get("comment"))
+    now_iso = datetime.now(timezone.utc).isoformat()
+    owner = owner_name.strip() or saver_name
+    role = owner_role.strip() or "Другое"
+    category = constraint_type.strip() or "Другое"
+    target_iso = (
+        target_date.isoformat()
+        if target_date
+        else (safe_date(row.get("target_resolution_date")) or date.today()).isoformat()
+    )
+    check_status = direct_admit_check_status_for_action(action)
+
+    if action == "pass":
+        note = f"[{now_moscow_text()}] Допущено отделом: {dept_label}."
+        if comment.strip():
+            note = f"{note} {comment.strip()}"
+        payload = {
+            "check_status": check_status,
+            "resolution_status": "RESOLVED",
+            "constraint_category": NO_CONSTRAINT_CATEGORY,
+            "owner_name": owner,
+            "owner_role": "Не требуется",
+            "value_at_risk": 0.0,
+            "comment": append_action_comment(existing_comment, note),
+            "updated_by": saver_name,
+            "last_action_at": now_iso,
+            "updated_at": now_iso,
+            "resolved_at": now_iso,
+            "resolved_by": saver_name,
+            "last_comment_at": now_iso,
+        }
+        err = update_constraint_record(constraint_id, payload)
+        if err is None:
+            _register_direct_admit_status_patch(constraint_id, action)
+            load_constraints.clear()
+        return err
+
+    description = description.strip()
+    block_reason_text = block_reason.strip()
+    if action == "block":
+        if not block_reason_text:
+            return "Причина блокировки обязательна."
+        if not description:
+            description = block_reason_text
+    elif action == "clarify" and not description:
+        return "Краткое описание обязательно для уточнения."
+
+    if action == "clarify":
+        note = f"[{now_moscow_text()}] Требуется уточнение ({dept_label}): {description}"
+        payload: Dict[str, Any] = {
+            "check_status": check_status,
+            "resolution_status": "IN_PROGRESS",
+            "constraint_category": category,
+            "owner_name": owner,
+            "owner_role": role,
+            "block_reason": description,
+            "root_cause": description,
+            "target_resolution_date": target_iso,
+            "severity": severity,
+            "comment": append_action_comment(existing_comment, note),
+            "updated_by": saver_name,
+            "last_action_at": now_iso,
+            "updated_at": now_iso,
+            "last_comment_at": now_iso,
+        }
+    elif action == "block":
+        note = f"[{now_moscow_text()}] Заблокировано ({dept_label}): {description}"
+        payload = {
+            "check_status": check_status,
+            "resolution_status": "OPEN",
+            "constraint_category": category,
+            "owner_name": owner,
+            "owner_role": role,
+            "block_reason": block_reason_text or description,
+            "root_cause": description,
+            "target_resolution_date": target_iso,
+            "severity": severity,
+            "comment": append_action_comment(existing_comment, note),
+            "updated_by": saver_name,
+            "last_action_at": now_iso,
+            "updated_at": now_iso,
+            "last_comment_at": now_iso,
+        }
+    else:
+        return "Неизвестное действие."
+
+    err = update_constraint_record(constraint_id, payload)
+    if err is None:
+        _register_direct_admit_status_patch(constraint_id, action)
+        load_constraints.clear()
+    return err
+
+
+def _da_queue_select_id(row: pd.Series, idx: int) -> str:
+    cid = safe_str(row.get("constraint_id"))
+    if cid:
+        return cid
+    line_id = safe_str(row.get("line_id"))
+    dept = safe_str(row.get("responsible_department"))
+    check = safe_str(row.get("check_name"))
+    return f"{line_id}|{dept}|{check}|{idx}"
+
+
+def _da_queue_widget_key(select_id: str) -> str:
+    safe = "".join(ch if ch.isalnum() else "_" for ch in select_id)
+    return f"da_qsel_{safe}"
+
+
+def _da_queue_status_display(status_key: str) -> tuple[str, str]:
+    """Queue-pane display colors only (does not alter status logic)."""
+    label, _, _ = direct_admit_queue_status(status_key)
+    if status_key == "PASS":
+        return label, "#2F6B4F"
+    if status_key in ("HOLD", "FAIL"):
+        return label, "#9B3D3D"
+    return label, "#92610E"
+
+
+def _da_queue_select_item(select_id: str) -> None:
+    st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = select_id
+    st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
+    st.session_state.pop(DIRECT_ADMIT_CRITERIA_WARN_KEY, None)
+    _da_clear_decision_session()
+
+
+def _da_queue_card_html(
+    ordinal: int,
+    boq_code: str,
+    boq_name: str,
+    status_label: str,
+    status_color: str,
+    *,
+    is_selected: bool,
+    clickable: bool = False,
+) -> str:
+    code = html.escape(boq_code)
+    name = html.escape(boq_name)
+    title_attr = f' title="{html.escape(boq_name)}"' if boq_name else ""
+    status_value = html.escape(status_label)
+    card_cls = "da-queue-card da-queue-card-display"
+    if is_selected:
+        card_cls += " da-queue-card-selected"
+    if clickable:
+        card_cls += " da-queue-card-clickable"
+    vybran = (
+        f'<span class="da-queue-row1-right"><span class="da-queue-vybran">ВЫБРАН</span></span>'
+        if is_selected
+        else ""
+    )
+    return (
+        f'<div class="{card_cls}">'
+        f'<div class="da-queue-row1">'
+        f'<div class="da-queue-row1-main">'
+        f'<span class="da-queue-ordinal">{ordinal}.</span>'
+        f'<span class="da-queue-code">{code}</span>'
+        f"</div>{vybran}</div>"
+        f'<div class="da-queue-name"{title_attr}>{name}</div>'
+        f'<div class="da-queue-status-line">'
+        f'<span class="da-queue-status-label">Статус проверки: </span>'
+        f'<span class="da-queue-status-value" style="color:{status_color};">{status_value}</span>'
+        f"</div></div>"
+    )
+
+
+def render_direct_admit_queue_pane(
+    workbench_df: pd.DataFrame,
+    selected_cid: str,
+) -> None:
+    progress = compute_direct_admit_progress(workbench_df)
+    st.markdown("**1. Очередь допуска**")
+    st.caption(
+        f'{progress["total"]} всего · {progress["pending"]} ост · '
+        f'{progress["approved"]} доп · {progress["blocked"]} блок · '
+        f'{progress["clarify"]} уточн'
+    )
+
+    sorted_df = sort_workbench_for_queue(workbench_df)
+    with st.container(height=1200, border=False):
+        st.markdown('<div id="da-queue-scroll-host"></div>', unsafe_allow_html=True)
+        for pos, (_, row) in enumerate(sorted_df.iterrows()):
+            ordinal = pos + 1
+            select_id = _da_queue_select_id(row, pos)
+            if not select_id:
+                continue
+            status_key = norm_check_status_key(row.get("check_status"))
+            status_text, status_color = _da_queue_status_display(status_key)
+            boq_code = safe_str(row.get("boq_code")) or "—"
+            boq_name = safe_str(row.get("boq_name")) or "—"
+            is_selected = select_id == selected_cid
+
+            if is_selected:
+                st.markdown(
+                    _da_queue_card_html(
+                        ordinal,
+                        boq_code,
+                        boq_name,
+                        status_text,
+                        status_color,
+                        is_selected=True,
+                    ),
+                    unsafe_allow_html=True,
+                )
+            else:
+                with st.container(border=False):
+                    st.markdown(
+                        _da_queue_card_html(
+                            ordinal,
+                            boq_code,
+                            boq_name,
+                            status_text,
+                            status_color,
+                            is_selected=False,
+                            clickable=True,
+                        ),
+                        unsafe_allow_html=True,
+                    )
+                    st.button(
+                        "\u200b",
+                        key=_da_queue_widget_key(select_id),
+                        on_click=_da_queue_select_item,
+                        args=(select_id,),
+                        use_container_width=True,
+                    )
+
+
+def render_direct_admit_center_pane(
+    row: pd.Series | None,
+    department_label: str,
+) -> None:
+    if row is None:
+        st.markdown("**2. Решение по коду**")
+        st.info("Выберите код в очереди слева.")
+        return
+
+    st.markdown(_da_center_pane_styles(), unsafe_allow_html=True)
+
+    status_key = norm_check_status_key(row.get("check_status"))
+    queue_label, _, queue_text_color = direct_admit_queue_status(status_key)
+    boq_code = safe_str(row.get("boq_code")) or "—"
+    boq_name = safe_str(row.get("boq_name")) or "—"
+    cid = safe_str(row.get("constraint_id"))
+    dept_key = resolve_direct_admit_dept_key(department_label, row)
+    criteria = direct_admit_criteria_for_department(dept_key)
+
+    with st.container(height=1200, border=False):
+        st.markdown('<div id="da-center-scroll-host"></div>', unsafe_allow_html=True)
+        st.markdown("**2. Решение по коду**")
+
+        dept_pill = dept_ui(dept_key) if dept_key else field_display(row.get("discipline_display"))
+        header_pills = [
+            dept_pill,
+            field_display(row.get("discipline_display")),
+            field_display(row.get("title_display")),
+            field_display(row.get("month_key_display")),
+        ]
+        status_badge = _da_center_status_badge_html(status_key, queue_label, queue_text_color)
+        pills_html = _da_center_pills_html(header_pills)
+        st.markdown(
+            f'<div class="da-c2-header">'
+            f'<div class="da-c2-header-top">'
+            f'<span class="da-c2-code">{html.escape(boq_code)}</span>'
+            f"{status_badge}"
+            f"</div>"
+            f'<div class="da-c2-title">{html.escape(boq_name)}</div>'
+            f"{pills_html}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        check_name = field_display(row.get("check_name"))
+        if check_name != "—":
+            st.caption(f"Проверка: {check_name}")
+
+        qty = field_display(row.get("planned_qty_display"))
+        unit = field_display(row.get("unit_display"))
+        mtr_cost = direct_admit_mtr_cost_display(row)
+        hours_raw = field_display(row.get("required_hours_display"))
+        hours_val = f"{hours_raw} ч" if hours_raw != "—" else "—"
+        context_cells = [
+            ("Проект", field_display(row.get("project_code_display"))),
+            ("Титул", field_display(row.get("title_display"))),
+            ("Месяц", field_display(row.get("month_key_display"))),
+            ("Отдел", dept_pill),
+            ("Система", field_display(row.get("system_display"))),
+            ("IWP", field_display(row.get("iwp_display"))),
+        ]
+        econ_cells = [
+            ("Плановая стоимость СМР", field_display(row.get("plan_value_display"))),
+            ("Звено", field_display(row.get("crew_display"))),
+            ("Объём по СМР", qty),
+            ("Плановая стоимость МТР", mtr_cost),
+            (
+                "Кол-во в звене",
+                _da_center_optional_field(
+                    row,
+                    "crew_count_display",
+                    "crew_qty_display",
+                    "crew_count",
+                    "crew_qty",
+                ),
+            ),
+            ("Ед. изм.", unit),
+            ("Плановая стоимость труда", field_display(row.get("labor_cost_display"))),
+            ("Трудозатраты", hours_val),
+            (
+                "Норма примененная",
+                _da_center_optional_field(
+                    row,
+                    "applied_norm_display",
+                    "norm_display",
+                    "labor_norm_display",
+                    "applied_norm",
+                    "labor_norm",
+                ),
+            ),
+        ]
+        st.markdown(
+            f'<div class="da-c2-ab-outer">'
+            f'<div class="da-c2-ab-side">'
+            f'<div class="da-c2-section-title">A. Контекст</div>'
+            f'<div class="da-c2-panel da-c2-ab-panel">'
+            f"{_render_da_compact_grid_html(context_cells, columns=2)}"
+            f"</div></div>"
+            f'<div class="da-c2-ab-side">'
+            f'<div class="da-c2-section-title">B. Экономика</div>'
+            f'<div class="da-c2-panel da-c2-ab-panel">'
+            f"{_render_da_compact_grid_html(econ_cells, columns=3)}"
+            f"</div></div></div>",
+            unsafe_allow_html=True,
+        )
+
+        dept_criteria_label = dept_ui(dept_key) if dept_key else "Общие критерии"
+        saver_name = st.session_state.get("constraints_saver_name", "Пользователь Streamlit")
+        _render_direct_admit_block_c(cid, criteria, dept_criteria_label, row, saver_name)
+
+        if st.session_state.get(DIRECT_ADMIT_CRITERIA_WARN_KEY):
+            st.warning(
+                "Перед допуском отметьте критерии или выберите Уточнить/Блокировать."
+            )
+
+        _render_direct_admit_block_d(cid, criteria, dept_key)
+
+
+def render_direct_admit_governance_pane(
+    row: pd.Series | None,
+    pending_action: str,
+    saver_name: str,
+    workbench_df: pd.DataFrame,
+) -> None:
+    st.markdown("**3. Фиксация решения**")
+    if row is None:
+        st.info("Выберите код в очереди для просмотра истории.")
+        return
+
+    cid = safe_str(row.get("constraint_id"))
+    prefix = f"da_gov_{cid[:8]}"
+
+    if not pending_action:
+        render_direct_admit_fixation_history(row)
+        st.info("Сначала выберите решение в центре.")
+        return
+
+    if pending_action == "pass":
+        st.markdown("**Допуск**")
+        draft = st.session_state.get(DIRECT_ADMIT_DECISION_DRAFT_KEY) or {}
+        if draft.get("cid") == cid:
+            st.caption(f"Решение принято: {draft.get('decided_at_msk', now_moscow_decision_text())}")
+        comment = st.text_area(
+            "Комментарий (необязательно)",
+            value="",
+            key=f"{prefix}_pass_comment",
+            height=72,
+        )
+        admitted_by = st.text_input(
+            "Кто допустил",
+            value=saver_name,
+            key=f"{prefix}_pass_by",
+        )
+        if not (draft.get("cid") == cid):
+            st.caption(f"Время фиксации: {now_moscow_text()} (МСК)")
+        if st.button("Сохранить допуск", type="primary", key=f"{prefix}_save_pass"):
+            officer = admitted_by.strip()
+            if not officer:
+                st.error("Укажите ФИО лица, принимающего решение")
+            else:
+                save_comment = comment.strip()
+                if draft.get("cid") == cid:
+                    audit = format_direct_admit_audit_trail(draft)
+                    if audit not in save_comment:
+                        save_comment = (
+                            f"{audit}\n\n{save_comment}" if save_comment else audit
+                        )
+                err = save_direct_admission_decision(
+                    row,
+                    "pass",
+                    officer,
+                    comment=save_comment,
+                    owner_name=officer,
+                )
+                if err:
+                    st.error(err)
+                else:
+                    st.cache_data.clear()
+                    st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
+                    _da_clear_decision_session()
+                    st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = advance_direct_admit_selection(
+                        workbench_df,
+                        cid,
+                    )
+                    st.rerun()
+        if st.button("Отмена", key=f"{prefix}_cancel_pass"):
+            st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
+            _da_clear_decision_session()
+            st.rerun()
+        return
+
+    dept = safe_str(row.get("responsible_department"))
+    category_opts = category_options_for_department(dept, "Другое")
+    merged_types = list(
+        dict.fromkeys([*DIRECT_ADMIT_CONSTRAINT_TYPE_OPTIONS, *category_opts[:6]])
+    )
+    form_title = "Уточнение" if pending_action == "clarify" else "Блокировка"
+    st.markdown(f"**{form_title}**")
+    draft = st.session_state.get(DIRECT_ADMIT_DECISION_DRAFT_KEY) or {}
+    if draft.get("cid") == cid:
+        st.caption(f"Решение принято: {draft.get('decided_at_msk', now_moscow_decision_text())}")
+
+    constraint_type = st.selectbox(
+        "Тип ограничения",
+        merged_types,
+        key=f"{prefix}_ctype",
+    )
+    owner_role = st.selectbox(
+        "Роль",
+        DIRECT_ADMIT_ROLE_OPTIONS,
+        key=f"{prefix}_role",
+    )
+    owner_name = st.text_input(
+        "Владелец ограничения",
+        value=saver_name,
+        key=f"{prefix}_owner",
+    )
+    block_reason_input = ""
+    if pending_action == "block":
+        block_reason_input = st.text_input(
+            "Причина блокировки",
+            value="",
+            key=f"{prefix}_block_reason",
+            placeholder="Обязательно",
+        )
+    description = st.text_area(
+        "Описание" if pending_action == "block" else "Краткое описание",
+        value="",
+        key=f"{prefix}_desc",
+        height=68,
+        placeholder="Обязательно",
+    )
+    target_default = safe_date(row.get("target_resolution_date")) or date.today()
+    target_label = (
+        "Дата устранения"
+        if pending_action == "block"
+        else "Плановая дата ответа"
+    )
+    target_date = st.date_input(
+        target_label,
+        value=target_default,
+        key=f"{prefix}_target",
+    )
+    severity = st.selectbox(
+        "Критичность",
+        DIRECT_ADMIT_SEVERITY_OPTIONS,
+        format_func=lambda v: SEVERITY_RU.get(v, v),
+        index=1,
+        key=f"{prefix}_sev",
+    )
+
+    save_label = (
+        "Зафиксировать блокировку"
+        if pending_action == "block"
+        else "Зафиксировать уточнение"
+    )
+    btn_col, cancel_col = st.columns(2)
+    if btn_col.button(save_label, type="primary", key=f"{prefix}_save_gov"):
+        decision_officer = ""
+        if draft.get("cid") == cid:
+            decision_officer = safe_str(draft.get("officer_fio")).strip()
+        if not decision_officer:
+            decision_officer = safe_str(st.session_state.get(f"da_officer_{cid[:8]}")).strip()
+        if not decision_officer:
+            st.error("Укажите ФИО лица, принимающего решение")
+        else:
+            save_description = description.strip()
+            save_block_reason = block_reason_input.strip()
+            if draft.get("cid") == cid:
+                audit = format_direct_admit_audit_trail(draft)
+                if audit not in save_description:
+                    save_description = (
+                        f"{audit}\n\n{save_description}" if save_description else audit
+                    )
+            err = save_direct_admission_decision(
+                row,
+                pending_action,
+                decision_officer,
+                constraint_type=constraint_type,
+                owner_role=owner_role,
+                owner_name=owner_name.strip() or safe_str(draft.get("owner")),
+                description=save_description,
+                block_reason=save_block_reason,
+                target_date=target_date,
+                severity=severity,
+            )
+            if err:
+                st.warning(err)
+            else:
+                st.cache_data.clear()
+                st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
+                _da_clear_decision_session()
+                st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = advance_direct_admit_selection(
+                    workbench_df,
+                    cid,
+                )
+                st.rerun()
+    if cancel_col.button("Отмена", key=f"{prefix}_cancel"):
+        st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
+        _da_clear_decision_session()
+        st.rerun()
+
+
+def render_direct_admission_by_department_module(
+    queue_df: pd.DataFrame,
+    packages_df: pd.DataFrame,
+    department_label: str,
+) -> None:
+    """Three-pane direct admission: очередь → решение → фиксация."""
+    workbench_df = apply_direct_admit_status_patches(
+        build_workbench_dataframe(queue_df, packages_df)
+    )
+    if workbench_df.empty:
+        with st.container(border=True):
+            render_direct_admit_module_header(department_label, compute_direct_admit_progress(workbench_df))
+            st.info("Нет проверок для текущих фильтров. Уточните месяц, проект или отдел.")
+        return
+
+    progress = compute_direct_admit_progress(workbench_df)
+    selected_cid = resolve_direct_admit_selected_cid(workbench_df)
+    st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = selected_cid
+
+    selected_row: pd.Series | None = None
+    if selected_cid:
+        selected_rows = workbench_df[
+            workbench_df["constraint_id"].astype(str) == selected_cid
+        ]
+        if not selected_rows.empty:
+            selected_row = selected_rows.iloc[0]
+
+    pending_action = safe_str(st.session_state.get(DIRECT_ADMIT_PENDING_ACTION_KEY))
+    saver_name = st.session_state.get("constraints_saver_name", "Пользователь Streamlit")
+
+    with st.container(border=True):
+        render_direct_admit_module_header(department_label, progress)
+
+        layout_options = list(DIRECT_ADMIT_LAYOUT_PRESETS.keys())
+        if DIRECT_ADMIT_LAYOUT_KEY not in st.session_state:
+            st.session_state[DIRECT_ADMIT_LAYOUT_KEY] = "Баланс"
+        st.segmented_control(
+            "Макет панелей",
+            layout_options,
+            key=DIRECT_ADMIT_LAYOUT_KEY,
+            label_visibility="collapsed",
+        )
+
+        weights = direct_admit_layout_weights()
+        pane_left, pane_center, pane_right = st.columns(weights)
+
+        with pane_left:
+            with st.container(border=True):
+                render_direct_admit_queue_pane(workbench_df, selected_cid)
+
+        with pane_center:
+            with st.container(border=True):
+                render_direct_admit_center_pane(selected_row, department_label)
+
+        with pane_right:
+            with st.container(border=True):
+                render_direct_admit_governance_pane(
+                    selected_row, pending_action, saver_name, workbench_df
+                )
 
 
 def render_queue_detail_summary(row: pd.Series) -> None:
@@ -3004,14 +5362,6 @@ def render_admission_secondary_panels(
     with st.expander("Детали выбранной строки и проверки", expanded=False):
         render_admission_line_details(packages_df, scope_df)
 
-    with st.expander("Очередь допуска выбранного отдела", expanded=False):
-        detail_row = render_admission_queue(queue_df, packages_df, department_sel)
-        if detail_row is not None:
-            st.markdown("#### Детали проверки")
-            render_queue_detail_summary(detail_row)
-            with st.expander("Расширенное редактирование", expanded=False):
-                render_edit_card(detail_row)
-
     with st.expander("Техническая таблица допуска", expanded=False):
         technical_df = prepare_constraint_display_df(scope_df)
         show_cols = [c for c in TABLE_COLUMNS if c in technical_df.columns]
@@ -3140,6 +5490,7 @@ def main() -> None:
     )
 
     render_admission_plan_list_module(packages_df, scope_df)
+    render_direct_admission_by_department_module(queue_df, packages_df, department_sel)
     render_admission_secondary_panels(packages_df, scope_df, queue_df, department_sel)
 
 

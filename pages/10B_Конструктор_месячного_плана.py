@@ -69,7 +69,9 @@ BOQ_SCOPE_TABLE_DISPLAY_COLUMNS = [
     "Ед. изм.",
     "Всего",
     "Выполнено",
+    "Выполнено всего",
     "Остаток",
+    "Превышение BOQ",
     "% освоения",
     "Уже в плане",
     "Месяц планирования",
@@ -91,10 +93,21 @@ V2_V1_QUEUE_FACILITY_EXACT = {
     "1 очередь": ["16160-13", "16160-17"],
     "2 очередь": ["26160-13", "26160-17"],
 }
-V2_SCOPE_QTY_COLUMNS = {"Всего", "Выполнено", "Остаток", "Уже в плане", "Доступно"}
+V2_SCOPE_QTY_COLUMNS = {
+    "Всего",
+    "Выполнено",
+    "Выполнено всего",
+    "Остаток",
+    "Превышение BOQ",
+    "Уже в плане",
+    "Доступно",
+}
+
+V2_SCOPE_STATUS_OVERRUN = "Превышение BOQ"
 
 V2_SCOPE_STATUS_STYLES = {
     "Доступно": "background-color: #E8F3EA; color: #2F5E3A; border: 1px solid #C5DEC9;",
+    V2_SCOPE_STATUS_OVERRUN: "background-color: #FEE2E2; color: #991B1B; border: 1px solid #FECACA;",
     "Частично запланировано": "background-color: #E8EEF7; color: #2E4A6E; border: 1px solid #C8D7EA;",
     "Запланировано полностью": "background-color: #E2E8F0; color: #1E3A5F; border: 1px solid #CBD5E1;",
     "Выполнено": "background-color: #F1F5F9; color: #475569; border: 1px solid #E2E8F0;",
@@ -104,7 +117,7 @@ V2_SCOPE_STATUS_STYLES = {
 }
 
 V2_SCOPE_COLUMN_WIDTHS_PX = [
-    32, 85, 78, 72, 98, 112, 92, 102, 360, 48, 78, 82, 82, 52, 58, 108, 118, 82, 112,
+    32, 85, 78, 72, 98, 112, 92, 102, 360, 48, 78, 82, 82, 82, 82, 52, 58, 108, 118, 82, 112,
 ]
 
 V2_PROGRESS_COLOR_EXECUTED = "#2E5B9A"
@@ -113,6 +126,7 @@ V2_PROGRESS_COLOR_AVAILABLE = "#6BAA75"
 
 V2_SCOPE_STATUS_LEGEND = [
     ("Доступно", "#E8F3EA", "#2F5E3A"),
+    ("Превышение", "#FEE2E2", "#991B1B"),
     ("Частично", "#E8EEF7", "#2E4A6E"),
     ("Полностью", "#E2E8F0", "#1E3A5F"),
     ("Выполнено", "#F1F5F9", "#475569"),
@@ -135,6 +149,7 @@ V2_SCOPE_FILTER_SESSION_KEYS = [
 BOQ_SCOPE_STATUS_OPTIONS = [
     "Все",
     "Доступно",
+    V2_SCOPE_STATUS_OVERRUN,
     "Частично запланировано",
     "Запланировано полностью",
     "Выполнено",
@@ -211,7 +226,10 @@ V2_SCOPE_INTERNAL_COLUMNS = [
     "unit",
     "total_qty",
     "executed_qty",
+    "daily_executed_qty",
+    "executed_total_qty",
     "remaining_qty",
+    "overrun_qty",
     "already_planned_qty",
     "planned_month",
     "planned_at",
@@ -222,6 +240,7 @@ V2_SCOPE_INTERNAL_COLUMNS = [
     "total_value",
     "remaining_value",
     "executed_value",
+    "overrun_value",
     "percent_remaining",
     "remaining_qty_source",
     "manual_executed_before_system",
@@ -243,13 +262,17 @@ V2_SCOPE_INTERNAL_COLUMNS = [
 V2_SCOPE_NUMERIC_FIELDS = {
     "total_qty",
     "executed_qty",
+    "daily_executed_qty",
+    "executed_total_qty",
     "remaining_qty",
+    "overrun_qty",
     "already_planned_qty",
     "available_to_add_qty",
     "unit_price",
     "total_value",
     "remaining_value",
     "executed_value",
+    "overrun_value",
     "manual_executed_before_system",
     "manual_verified_remaining_qty",
     "norm_hours_per_unit",
@@ -1462,6 +1485,110 @@ def _v2_calculate_percent_executed_production(
     return _v2_calculate_percent_executed(total_qty, executed_qty)
 
 
+def _v2_value_per_unit_series(
+    total_qty: pd.Series,
+    total_value: pd.Series,
+    unit_price: pd.Series,
+) -> pd.Series:
+    tq = pd.to_numeric(total_qty, errors="coerce").fillna(0.0)
+    tv = pd.to_numeric(total_value, errors="coerce").fillna(0.0)
+    up = pd.to_numeric(unit_price, errors="coerce").fillna(0.0)
+    per_unit = up.astype(float).copy()
+    mask = tq > 0
+    per_unit.loc[mask] = (tv.loc[mask] / tq.loc[mask]).astype(float)
+    return per_unit
+
+
+def _v2_has_manual_verified_remaining(value: Any) -> bool:
+    return not _v2_is_missing_numeric(value)
+
+
+def _v2_verified_remaining_ignored_by_overrun(item: pd.Series) -> bool:
+    return _v2_safe_num(item.get("overrun_qty")) > 0 and _v2_has_manual_verified_remaining(
+        item.get("manual_verified_remaining_qty")
+    )
+
+
+def _v2_apply_boq_availability_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Физический остаток и доступность к планированию.
+
+    Приоритет:
+    1. executed_total_qty = daily_executed_qty + manual_executed_before_system
+    2. Если executed_total_qty > total_qty → overrun, remaining/available = 0,
+       manual_verified_remaining_qty и planning_remaining_qty из view не применяются.
+    3. Иначе manual_verified_remaining_qty может переопределить remaining/available
+       (available_to_add_qty не ниже 0).
+    """
+    if df.empty:
+        return df
+    out = df.copy()
+    total = pd.to_numeric(out["total_qty"], errors="coerce").fillna(0.0)
+    daily_executed = pd.to_numeric(out.get("executed_qty"), errors="coerce").fillna(0.0)
+    manual_before = pd.to_numeric(
+        out.get("manual_executed_before_system", pd.Series(0.0, index=out.index)),
+        errors="coerce",
+    ).fillna(0.0)
+    executed_total = daily_executed + manual_before
+    planned = pd.to_numeric(
+        out.get("already_planned_qty", pd.Series(0.0, index=out.index)),
+        errors="coerce",
+    ).fillna(0.0)
+
+    out["daily_executed_qty"] = daily_executed
+    out["executed_total_qty"] = executed_total
+    out["executed_qty"] = daily_executed
+
+    verified = pd.to_numeric(
+        out.get("manual_verified_remaining_qty", pd.Series(float("nan"), index=out.index)),
+        errors="coerce",
+    )
+    has_verified = verified.notna()
+
+    per_unit = _v2_value_per_unit_series(
+        total,
+        out.get("total_value", pd.Series(0.0, index=out.index)),
+        out.get("unit_price", pd.Series(0.0, index=out.index)),
+    )
+
+    out["overrun_qty"] = (executed_total - total).clip(lower=0.0)
+    is_overrun = out["overrun_qty"] > 0
+    out["remaining_qty"] = (total - executed_total).clip(lower=0.0)
+    out["available_to_add_qty"] = (total - executed_total - planned).clip(lower=0.0)
+
+    out.loc[is_overrun, "remaining_qty"] = 0.0
+    out.loc[is_overrun, "available_to_add_qty"] = 0.0
+
+    no_overrun = ~is_overrun
+    if has_verified.any():
+        verified_remaining = verified.clip(lower=0.0)
+        verified_mask = has_verified & no_overrun
+        out.loc[verified_mask, "remaining_qty"] = verified_remaining.loc[verified_mask]
+        out.loc[verified_mask, "available_to_add_qty"] = (
+            verified_remaining.loc[verified_mask] - planned.loc[verified_mask]
+        ).clip(lower=0.0)
+
+    out["verified_remaining_ignored"] = has_verified & is_overrun
+
+    out["remaining_value"] = out["remaining_qty"] * per_unit
+    out["overrun_value"] = out["overrun_qty"] * per_unit
+    out["available_to_add_value"] = out["available_to_add_qty"] * per_unit
+    out.loc[is_overrun, "remaining_value"] = 0.0
+    out.loc[is_overrun, "available_to_add_value"] = 0.0
+    total_value = pd.to_numeric(out.get("total_value", 0), errors="coerce").fillna(0.0)
+    out["executed_value"] = (total_value - out["remaining_value"]).clip(lower=0.0)
+    return out
+
+
+def _v2_resolve_scope_status_row(row: pd.Series) -> str:
+    if _v2_safe_num(row.get("overrun_qty")) > 0:
+        return V2_SCOPE_STATUS_OVERRUN
+    remaining = _v2_safe_num(row.get("remaining_qty"))
+    available = _v2_safe_num(row.get("available_to_add_qty"))
+    planned = _v2_safe_num(row.get("already_planned_qty"))
+    return _v2_resolve_available_status(remaining, available, planned)
+
+
 def _v2_pick_view_numeric_series(df: pd.DataFrame, column: str) -> pd.Series:
     """Числовая колонка view без fillna(0) — NaN означает «нет значения»."""
     if column not in df.columns:
@@ -1482,19 +1609,41 @@ def _v2_detail_boq_costs(item: pd.Series) -> dict[str, float]:
     total_value = _v2_safe_num(item.get("total_value"))
     remaining_value = _v2_safe_num(item.get("remaining_value"))
     executed_value = _v2_safe_num(item.get("executed_value"))
+    overrun_value = _v2_safe_num(item.get("overrun_value"))
+    available_value = _v2_safe_num(item.get("available_to_add_value"))
+    overrun_qty = _v2_safe_num(item.get("overrun_qty"))
+    available_qty = _v2_safe_num(item.get("available_to_add_qty"))
+
+    if overrun_qty > 0:
+        remaining_value = 0.0
+        available_value = 0.0
+        if overrun_value <= 0:
+            per_unit = _v2_value_per_unit_series(
+                pd.Series([item.get("total_qty")]),
+                pd.Series([total_value]),
+                pd.Series([item.get("unit_price", 0.0)]),
+            ).iloc[0]
+            overrun_value = overrun_qty * per_unit
+    elif available_qty <= 0:
+        available_value = 0.0
+
     if executed_value <= 0 and total_value > 0:
         executed_value = max(0.0, total_value - remaining_value)
     if total_value <= 0:
         unit_price = _v2_safe_num(item.get("unit_price"))
         total_qty = _v2_safe_num(item.get("total_qty"))
         total_value = total_qty * unit_price
-        if remaining_value <= 0:
+        if remaining_value <= 0 and overrun_qty <= 0:
             remaining_value = _v2_safe_num(item.get("remaining_qty")) * unit_price
         executed_value = max(0.0, total_value - remaining_value)
+        if available_qty > 0 and available_value <= 0:
+            available_value = available_qty * unit_price
     return {
         "total_value": total_value,
         "executed_value": executed_value,
         "remaining_value": remaining_value,
+        "overrun_value": overrun_value,
+        "available_value": available_value,
     }
 
 
@@ -1509,7 +1658,7 @@ def _v2_detail_volume_percents(item: pd.Series) -> tuple[float, float]:
                 costs["total_value"],
                 costs["executed_value"],
                 item.get("total_qty"),
-                item.get("executed_qty"),
+                item.get("executed_total_qty", item.get("executed_qty")),
             ),
             1,
         )
@@ -1529,12 +1678,27 @@ def _v2_render_boq_volume_acquisition_html(item: pd.Series) -> str:
     unit = str(item.get("unit") or "").strip()
 
     total_qty = _v2_safe_num(item.get("total_qty"))
-    executed_qty = _v2_safe_num(item.get("executed_qty"))
+    daily_executed_qty = _v2_safe_num(item.get("daily_executed_qty", item.get("executed_qty")))
+    manual_before_qty = _v2_safe_num(item.get("manual_executed_before_system"))
+    executed_total_qty = _v2_safe_num(
+        item.get("executed_total_qty", daily_executed_qty + manual_before_qty)
+    )
     remaining_qty = _v2_safe_num(item.get("remaining_qty"))
+    overrun_qty = _v2_safe_num(item.get("overrun_qty"))
     available_qty = max(0.0, _v2_safe_num(item.get("available_to_add_qty")))
+    is_overrun = overrun_qty > 0
+
+    per_unit = (
+        costs["total_value"] / total_qty
+        if total_qty > 0
+        else _v2_safe_num(item.get("unit_price"))
+    )
+    daily_executed_value = daily_executed_qty * per_unit
+    manual_before_value = manual_before_qty * per_unit
+    executed_total_value = min(executed_total_qty * per_unit, costs["total_value"]) if costs["total_value"] > 0 else executed_total_qty * per_unit
 
     if total_qty > 0:
-        exec_width = min(max(executed_qty / total_qty * 100.0, 0.0), 100.0)
+        exec_width = min(max(executed_total_qty / total_qty * 100.0, 0.0), 100.0)
         avail_width = min(max(available_qty / total_qty * 100.0, 0.0), 100.0)
         blocked_width = min(
             max((remaining_qty - available_qty) / total_qty * 100.0, 0.0),
@@ -1544,46 +1708,82 @@ def _v2_render_boq_volume_acquisition_html(item: pd.Series) -> str:
         exec_width = avail_width = blocked_width = 0.0
 
     exec_label = f"Выполнено {pct_executed_str}" if exec_width >= 10 else ""
-    blocked_label = f"Остаток {pct_remaining_str}" if blocked_width >= 10 else ""
+    blocked_label = f"Остаток {pct_remaining_str}" if blocked_width >= 10 and not is_overrun else ""
     avail_label = (
         f"Доступно {_v2_format_qty_display_str(available_qty)} {unit}".strip()
-        if avail_width >= 8
+        if avail_width >= 8 and not is_overrun
         else ""
     )
+
+    overrun_cell = ""
+    if is_overrun:
+        overrun_cell = f"""
+  <div class="v2-boq-volume-cell overrun">
+    <span class="v2-boq-volume-label">Превышение BOQ</span>
+    <div class="v2-boq-volume-values">
+      <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(overrun_qty)}</span>
+      <span class="v2-boq-volume-cost overrun">{_format_rub(costs["overrun_value"])}</span>
+    </div>
+  </div>"""
+
+    overrun_warning = ""
+    if is_overrun:
+        overrun_warning = (
+            '<div class="v2-plan-add-warn">'
+            "Факт превышает BOQ. Требуется проверка Daily Progress / BOQ / допработ."
+            "</div>"
+        )
+    verified_ignored_warning = ""
+    if _v2_verified_remaining_ignored_by_overrun(item):
+        verified_ignored_warning = (
+            '<div class="v2-plan-add-warn">'
+            "Ручной подтверждённый остаток не применён, так как факт выполнения уже превышает BOQ."
+            "</div>"
+        )
 
     return f"""
 <div class="v2-boq-detail-section-title">Объём и освоение</div>
 <div class="v2-boq-volume-row">
   <div class="v2-boq-volume-cell">
-    <span class="v2-boq-volume-label">Всего</span>
+    <span class="v2-boq-volume-label">Всего по BOQ</span>
     <div class="v2-boq-volume-values">
-      <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(item.get("total_qty"))}</span>
+      <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(total_qty)}</span>
       <span class="v2-boq-volume-cost">{_format_rub(costs["total_value"])}</span>
     </div>
   </div>
   <div class="v2-boq-volume-cell">
-    <span class="v2-boq-volume-label">Выполнено</span>
+    <span class="v2-boq-volume-label">Выполнено по Daily Progress</span>
     <div class="v2-boq-volume-values">
-      <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(item.get("executed_qty"))}</span>
-      <span class="v2-boq-volume-cost executed">{_format_rub(costs["executed_value"])}</span>
+      <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(daily_executed_qty)}</span>
+      <span class="v2-boq-volume-cost executed">{_format_rub(daily_executed_value)}</span>
+    </div>
+  </div>
+  <div class="v2-boq-volume-cell">
+    <span class="v2-boq-volume-label">Выполнено до 03.11</span>
+    <div class="v2-boq-volume-values">
+      <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(manual_before_qty)}</span>
+      <span class="v2-boq-volume-cost">{_format_rub(manual_before_value)}</span>
+    </div>
+  </div>
+  <div class="v2-boq-volume-cell">
+    <span class="v2-boq-volume-label">Выполнено всего</span>
+    <div class="v2-boq-volume-values">
+      <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(executed_total_qty)}</span>
+      <span class="v2-boq-volume-cost executed">{_format_rub(executed_total_value)}</span>
     </div>
   </div>
   <div class="v2-boq-volume-cell">
     <span class="v2-boq-volume-label">Остаток</span>
     <div class="v2-boq-volume-values">
-      <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(item.get("remaining_qty"))}</span>
+      <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(remaining_qty)}</span>
       <span class="v2-boq-volume-cost">{_format_rub(costs["remaining_value"])}</span>
     </div>
-  </div>
-  <div class="v2-boq-volume-cell">
-    <span class="v2-boq-volume-label">% освоения</span>
-    <span class="v2-boq-volume-pct">{pct_executed_str}</span>
-  </div>
+  </div>{overrun_cell}
   <div class="v2-boq-volume-cell highlight">
     <span class="v2-boq-volume-label">Доступно к планированию</span>
     <div class="v2-boq-volume-values">
       <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(available_qty)}</span>
-      <span class="v2-boq-volume-cost">{unit or "—"}</span>
+      <span class="v2-boq-volume-cost">{_format_rub(costs["available_value"])}</span>
     </div>
   </div>
 </div>
@@ -1592,6 +1792,8 @@ def _v2_render_boq_volume_acquisition_html(item: pd.Series) -> str:
   <div class="v2-boq-progress-segment remaining" style="width:{blocked_width:.4f}%;">{blocked_label}</div>
   <div class="v2-boq-progress-segment available" style="width:{avail_width:.4f}%;">{avail_label}</div>
 </div>
+{overrun_warning}
+{verified_ignored_warning}
 """
 
 
@@ -1882,18 +2084,12 @@ def apply_v2_session_draft_reservation(df: pd.DataFrame, month_key: str) -> pd.D
     meta_map = build_v2_session_planned_meta_map(month_key)
     out = df.copy()
     session_planned: list[float] = []
-    available: list[float] = []
-    statuses: list[str] = []
     planned_months: list[str] = []
     planned_ats: list[str] = []
     for _, row in out.iterrows():
         key = _v2_boq_draft_key_from_row(row, month_key)
         session_qty = planned_map.get(key, 0.0)
-        remaining = _v2_safe_num(row.get("remaining_qty"))
-        avail = remaining - session_qty
         session_planned.append(session_qty)
-        available.append(avail)
-        statuses.append(_v2_resolve_available_status(remaining, avail, session_qty))
         if session_qty > 0:
             meta = meta_map.get(key, {})
             planned_months.append(str(meta.get("planned_month") or month_key).strip())
@@ -1902,10 +2098,10 @@ def apply_v2_session_draft_reservation(df: pd.DataFrame, month_key: str) -> pd.D
             planned_months.append("")
             planned_ats.append("")
     out["already_planned_qty"] = session_planned
-    out["available_to_add_qty"] = available
-    out["status"] = statuses
     out["planned_month"] = planned_months
     out["planned_at"] = planned_ats
+    out = _v2_apply_boq_availability_metrics(out)
+    out["status"] = out.apply(_v2_resolve_scope_status_row, axis=1)
     return out
 
 
@@ -3743,11 +3939,22 @@ def _render_add_to_month_plan_expander(item: pd.Series) -> None:
     planning_month = str(st.session_state.get("v2_scope_planning_month") or "").strip()
     available_qty = _v2_safe_num(item.get("available_to_add_qty"))
     session_reserved = _v2_safe_num(item.get("already_planned_qty"))
+    is_overrun = (
+        str(item.get("status") or "") == V2_SCOPE_STATUS_OVERRUN
+        or _v2_safe_num(item.get("overrun_qty")) > 0
+    )
 
     with st.expander(
         "Добавить код / объём работ в текущий месяц планирования",
         expanded=False,
     ):
+        if is_overrun:
+            st.warning(
+                "Факт превышает BOQ. Требуется проверка Daily Progress / BOQ / допработ. "
+                "Добавление в месячный план недоступно."
+            )
+            return
+
         if not planning_month:
             st.warning("Выберите месяц планирования в фильтрах scope.")
             return
@@ -4632,35 +4839,26 @@ def calculate_v2_basic_scope_metrics(
 
     view_remaining_qty = pd.to_numeric(out.get("remaining_qty"), errors="coerce")
     from_view_qty = view_remaining_qty.notna()
-    fallback_remaining_qty = out["total_qty"] - out["executed_qty"]
-    out["remaining_qty"] = view_remaining_qty.where(from_view_qty, fallback_remaining_qty)
+    out["_view_planning_remaining_qty"] = view_remaining_qty
     out["_remaining_qty_origin"] = from_view_qty.map({True: "view", False: "fallback"})
 
-    view_remaining_value = pd.to_numeric(out.get("remaining_value"), errors="coerce")
-    from_view_value = view_remaining_value.notna()
-    fallback_remaining_value = out["remaining_qty"] * out["unit_price"]
-    out["remaining_value"] = view_remaining_value.where(from_view_value, fallback_remaining_value)
-
-    out["executed_value"] = (out["total_value"] - out["remaining_value"]).clip(lower=0.0)
+    # planning_remaining_qty из view — только для диагностики; расчёт availability ниже.
+    out["already_planned_qty"] = 0.0
+    out["planned_month"] = ""
+    out["planned_at"] = ""
+    out = _v2_apply_boq_availability_metrics(out)
 
     out["percent_executed"] = out.apply(
         lambda row: _v2_calculate_percent_executed_production(
             row["total_value"],
             row["executed_value"],
             row["total_qty"],
-            row["executed_qty"],
+            row.get("executed_total_qty", row["executed_qty"]),
         ),
         axis=1,
     )
     out["percent_remaining"] = (100.0 - out["percent_executed"]).clip(lower=0.0)
-
-    out["already_planned_qty"] = 0.0
-    out["planned_month"] = ""
-    out["planned_at"] = ""
-    out["available_to_add_qty"] = out["remaining_qty"]
-    out["status"] = out["remaining_qty"].apply(
-        lambda qty: "Выполнено" if _v2_safe_num(qty) <= 0 else "Доступно"
-    )
+    out["status"] = out.apply(_v2_resolve_scope_status_row, axis=1)
 
     if "remaining_qty_source" not in out.columns:
         out["remaining_qty_source"] = ""
@@ -4763,8 +4961,10 @@ def map_v2_scope_to_ui_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
             "Наименование работ": scoped_df["boq_name"].astype(str),
             "Ед. изм.": scoped_df["unit"].astype(str).replace({"": "—"}),
             "Всего": scoped_df["total_qty"],
-            "Выполнено": scoped_df["executed_qty"],
+            "Выполнено": scoped_df["daily_executed_qty"],
+            "Выполнено всего": scoped_df["executed_total_qty"],
             "Остаток": scoped_df["remaining_qty"],
+            "Превышение BOQ": scoped_df["overrun_qty"],
             "% освоения": scoped_df["percent_executed"].apply(_v2_format_percent_display_str),
             "Уже в плане": scoped_df["already_planned_qty"],
             "Месяц планирования": _v2_display_text_column(scoped_df["planned_month"]),
@@ -5129,11 +5329,15 @@ def _v2_save_persisted_scope_filters() -> None:
 def _v2_reset_scope_filters() -> None:
     for key, value in _v2_default_scope_filter_values().items():
         st.session_state[key] = value
+    st.session_state["v2_scope_persist_filters"] = False
     st.session_state.pop("v2_scope_filters_saved", None)
 
 
 def render_scope_filters(scoped_df: pd.DataFrame) -> dict[str, str]:
     """Компактная панель фильтров среза."""
+    if st.session_state.pop("v2_scope_filters_reset_requested", False):
+        _v2_reset_scope_filters()
+
     project_options = _v2_project_filter_options(scoped_df)
     queue_options = V2_QUEUE_FILTER_OPTIONS
     title_options = _v2_filter_options(scoped_df, "facility")
@@ -5184,7 +5388,7 @@ def render_scope_filters(scoped_df: pd.DataFrame) -> dict[str, str]:
         with row2[4]:
             st.markdown('<div class="v2-scope-reset-btn">', unsafe_allow_html=True)
             if st.button("Сбросить фильтры", key="v2_scope_reset_filters", use_container_width=True):
-                _v2_reset_scope_filters()
+                st.session_state["v2_scope_filters_reset_requested"] = True
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
@@ -5336,6 +5540,11 @@ def _scope_decision_message(
     remaining_qty: float,
 ) -> tuple[str, str]:
     """Управленческий вывод: (текст, tone: positive | warning | muted)."""
+    if status == V2_SCOPE_STATUS_OVERRUN:
+        return (
+            "Факт превышает BOQ. Требуется проверка Daily Progress / BOQ / допработ.",
+            "warning",
+        )
     if status == "Требует проверки":
         return "Требуется проверка корректировок и исходных данных", "warning"
     if status == "Перепланировано" or remaining_qty < 0:

@@ -25,11 +25,14 @@ from docs.v2_technical_architecture_handbook import render_v2_technical_architec
 
 from services.constraints_service import create_constraints_for_plan_lines
 from services.monthly_scope_adjustments import (
+    adjustments_support_not_required_columns,
     delete_adjustment,
     fetch_adjustments_history_for_boq,
+    fetch_all_adjustments_history,
     load_adjustments,
     load_scope,
     save_adjustment,
+    save_not_required_exclusion,
 )
 
 # --- Константы UI (заглушки, без бизнес-логики) ---
@@ -41,7 +44,10 @@ SCOPE_MODULE_SUBTITLE = (
     "Контроль остатка работ, освоения и доступности к месячному планированию."
 )
 
+V2_PLANNING_MONTH_ALL = "Все месяца"
+
 PLANNING_MONTH_OPTIONS = [
+    V2_PLANNING_MONTH_ALL,
     "январь-2026",
     "февраль-2026",
     "март-2026",
@@ -56,8 +62,20 @@ PLANNING_MONTH_OPTIONS = [
     "декабрь-2026",
 ]
 
+
+def _v2_is_all_months_filter(month_key: str) -> bool:
+    return str(month_key or "").strip() == V2_PLANNING_MONTH_ALL
+
+
+def _v2_resolve_planning_month_key(month_key: str) -> str:
+    """Конкретный month_key или пустая строка для режима «Все месяца»."""
+    resolved = str(month_key or "").strip()
+    if _v2_is_all_months_filter(resolved):
+        return ""
+    return resolved
+
 BOQ_SCOPE_TABLE_DISPLAY_COLUMNS = [
-    "Выбор",
+    "Статус",
     "Проект",
     "Очередь",
     "Титул",
@@ -70,17 +88,33 @@ BOQ_SCOPE_TABLE_DISPLAY_COLUMNS = [
     "Всего",
     "Выполнено",
     "Выполнено всего",
+    "Стоимость выполнено, ₽",
     "Остаток",
+    "Стоимость остатка, ₽",
     "Превышение BOQ",
     "% освоения",
     "Уже в плане",
     "Месяц планирования",
     "Дата планирования",
     "Доступно",
-    "Статус",
+    "Стоимость доступно, ₽",
+    "Исключено из выполнения",
+    "Рабочий объём",
+    "Причина исключения",
 ]
 
 V2_PRJ_BHK_CODE_MARKERS = ("PRJ-001-БХК", "PRJ-001-BHK", "PRJ_001_БХК", "PRJ_001_BHK")
+V2_ADJUSTMENT_AUDIT_DB_FIELDS = {
+    "responsible_person": "updated_by",
+    "adjustment_reason": "reason",
+    "saved_at": "updated_at",
+    "created_at": "created_at",
+}
+
+V2_ADJUSTMENT_REASON_PLACEHOLDER = (
+    "Например: фактически выполнено до запуска Daily Progress / "
+    "уточнение остатка / корректировка после проверки ПТО"
+)
 V2_MANUAL_ADJUSTMENT_REASON_OPTIONS = [
     "Выполнено до запуска Daily Progress",
     "Факт подтверждён актом/исполнительной документацией",
@@ -93,6 +127,12 @@ V2_V1_QUEUE_FACILITY_EXACT = {
     "1 очередь": ["16160-13", "16160-17"],
     "2 очередь": ["26160-13", "26160-17"],
 }
+V2_SCOPE_COST_COLUMNS = {
+    "Стоимость выполнено, ₽",
+    "Стоимость остатка, ₽",
+    "Стоимость доступно, ₽",
+}
+
 V2_SCOPE_QTY_COLUMNS = {
     "Всего",
     "Выполнено",
@@ -101,37 +141,107 @@ V2_SCOPE_QTY_COLUMNS = {
     "Превышение BOQ",
     "Уже в плане",
     "Доступно",
+    "Исключено из выполнения",
+    "Рабочий объём",
 }
+
+V2_NOT_REQUIRED_REASON_OPTIONS = [
+    "Ошибка проектного объёма",
+    "Уточнение трассы / фактической потребности",
+    "Работы не требуются по факту",
+    "Исключено решением ПТО / руководителя",
+    "Другое",
+]
+V2_SCOPE_STATUS_NOT_REQUIRED = "Остаток не требуется"
 
 V2_SCOPE_STATUS_OVERRUN = "Превышение BOQ"
 
 V2_SCOPE_STATUS_STYLES = {
-    "Доступно": "background-color: #E8F3EA; color: #2F5E3A; border: 1px solid #C5DEC9;",
-    V2_SCOPE_STATUS_OVERRUN: "background-color: #FEE2E2; color: #991B1B; border: 1px solid #FECACA;",
-    "Частично запланировано": "background-color: #E8EEF7; color: #2E4A6E; border: 1px solid #C8D7EA;",
-    "Запланировано полностью": "background-color: #E2E8F0; color: #1E3A5F; border: 1px solid #CBD5E1;",
-    "Выполнено": "background-color: #F1F5F9; color: #475569; border: 1px solid #E2E8F0;",
-    "Перепланировано": "background-color: #F9EDE6; color: #8B4A32; border: 1px solid #E8C9B8;",
-    "Требует проверки": "background-color: #FEF6E7; color: #92600A; border: 1px solid #F3DEAA;",
-    "Нет остатка": "background-color: #F8FAFC; color: #64748B; border: 1px solid #E2E8F0;",
+    "Доступно": (
+        "background-color: #EDF5EF; color: #245A32; border: 1px solid #D4E6D8; "
+        "border-radius: 4px; font-weight: 600;"
+    ),
+    V2_SCOPE_STATUS_OVERRUN: (
+        "background-color: #FAECEC; color: #8B2E2E; border: 1px solid #E8CECE; "
+        "border-radius: 4px; font-weight: 600;"
+    ),
+    V2_SCOPE_STATUS_NOT_REQUIRED: (
+        "background-color: #EDEAF3; color: #43365A; border: 1px solid #D8D2E4; "
+        "border-radius: 4px; font-weight: 600;"
+    ),
+    "Частично запланировано": (
+        "background-color: #EEF2F8; color: #2E4A62; border: 1px solid #D5DFEA; "
+        "border-radius: 4px; font-weight: 600;"
+    ),
+    "Запланировано полностью": (
+        "background-color: #F5EFE3; color: #6B4E2E; border: 1px solid #E6D9C4; "
+        "border-radius: 4px; font-weight: 600;"
+    ),
+    "Выполнено": (
+        "background-color: #E8EEF6; color: #1E4A73; border: 1px solid #CED9E8; "
+        "border-radius: 4px; font-weight: 600;"
+    ),
+    "Перепланировано": (
+        "background-color: #F3EBE6; color: #7A4A38; border: 1px solid #E5D5CC; "
+        "border-radius: 4px; font-weight: 600;"
+    ),
+    "Требует проверки": (
+        "background-color: #F0F2F5; color: #4B5563; border: 1px solid #DDE1E6; "
+        "border-radius: 4px; font-weight: 600;"
+    ),
+    "Нет остатка": (
+        "background-color: #F3F4F6; color: #5B6470; border: 1px solid #E2E5E9; "
+        "border-radius: 4px; font-weight: 600;"
+    ),
 }
 
 V2_SCOPE_COLUMN_WIDTHS_PX = [
-    32, 85, 78, 72, 98, 112, 92, 102, 360, 48, 78, 82, 82, 82, 82, 52, 58, 108, 118, 82, 112,
+    140, 90, 80, 110, 100, 200, 200, 140, 360, 48, 78, 82, 82, 96, 82, 96, 82, 52, 58,
+    108, 118, 82, 96, 82, 82, 160,
 ]
+
+V2_SCOPE_TABLE_COLUMN_WIDTHS: dict[str, int] = {
+    "Статус": 140,
+    "Проект": 90,
+    "Очередь": 80,
+    "Титул": 110,
+    "Дисциплина": 100,
+    "Система": 200,
+    "IWP": 200,
+    "Код": 140,
+    "Наименование работ": 360,
+    "Ед. изм.": 56,
+    "Всего": 78,
+    "Выполнено": 82,
+    "Выполнено всего": 88,
+    "Стоимость выполнено, ₽": 120,
+    "Остаток": 82,
+    "Стоимость остатка, ₽": 120,
+    "Превышение BOQ": 88,
+    "% освоения": 72,
+    "Уже в плане": 72,
+    "Месяц планирования": 108,
+    "Дата планирования": 118,
+    "Доступно": 82,
+    "Стоимость доступно, ₽": 120,
+    "Исключено из выполнения": 88,
+    "Рабочий объём": 88,
+    "Причина исключения": 160,
+}
 
 V2_PROGRESS_COLOR_EXECUTED = "#2E5B9A"
 V2_PROGRESS_COLOR_REMAINING = "#C97A5C"
 V2_PROGRESS_COLOR_AVAILABLE = "#6BAA75"
 
 V2_SCOPE_STATUS_LEGEND = [
-    ("Доступно", "#E8F3EA", "#2F5E3A"),
-    ("Превышение", "#FEE2E2", "#991B1B"),
-    ("Частично", "#E8EEF7", "#2E4A6E"),
-    ("Полностью", "#E2E8F0", "#1E3A5F"),
-    ("Выполнено", "#F1F5F9", "#475569"),
-    ("Перепланировано", "#F9EDE6", "#8B4A32"),
-    ("Проверка", "#FEF6E7", "#92600A"),
+    ("Доступно", "#EDF5EF", "#245A32"),
+    ("Превышение", "#FAECEC", "#8B2E2E"),
+    ("Не требуется", "#EDEAF3", "#43365A"),
+    ("Частично", "#EEF2F8", "#2E4A62"),
+    ("Полностью", "#F5EFE3", "#6B4E2E"),
+    ("Выполнено", "#E8EEF6", "#1E4A73"),
+    ("Перепланировано", "#F3EBE6", "#7A4A38"),
+    ("Проверка", "#F0F2F5", "#4B5563"),
 ]
 
 V2_SCOPE_FILTER_SESSION_KEYS = [
@@ -150,6 +260,7 @@ BOQ_SCOPE_STATUS_OPTIONS = [
     "Все",
     "Доступно",
     V2_SCOPE_STATUS_OVERRUN,
+    V2_SCOPE_STATUS_NOT_REQUIRED,
     "Частично запланировано",
     "Запланировано полностью",
     "Выполнено",
@@ -175,6 +286,7 @@ V2_PLAN_LINES_TABLE = "monthly_plan_lines_v2"
 V2_PLAN_ITEMS_KEY = "v2_month_plan_items"
 V2_PLAN_SCOPE_KEY = "v2_month_plan_scope"
 V2_PLAN_DIRTY_KEY = "v2_month_plan_dirty"
+V2_CURRENT_PLANNER_NAME_KEY = "v2_current_planner_name"
 V2_PLAN_SELECTED_KEYS = "v2_plan_selected_row_keys"
 V2_PLAN_EDIT_ROW_KEY = "v2_plan_edit_row_key"
 V2_DRAFT_ITEMS_KEY = V2_PLAN_ITEMS_KEY
@@ -228,6 +340,8 @@ V2_SCOPE_INTERNAL_COLUMNS = [
     "executed_qty",
     "daily_executed_qty",
     "executed_total_qty",
+    "effective_required_qty",
+    "not_required_qty",
     "remaining_qty",
     "overrun_qty",
     "already_planned_qty",
@@ -257,6 +371,10 @@ V2_SCOPE_INTERNAL_COLUMNS = [
     "p80_hours_per_unit",
     "weighted_avg_hours_per_unit",
     "norm_status",
+    "not_required_reason",
+    "not_required_responsible_person",
+    "not_required_comment",
+    "not_required_updated_at",
 ]
 
 V2_SCOPE_NUMERIC_FIELDS = {
@@ -264,6 +382,8 @@ V2_SCOPE_NUMERIC_FIELDS = {
     "executed_qty",
     "daily_executed_qty",
     "executed_total_qty",
+    "effective_required_qty",
+    "not_required_qty",
     "remaining_qty",
     "overrun_qty",
     "already_planned_qty",
@@ -352,7 +472,9 @@ MONTH_PLAN_COLUMNS = [
 
 V2_MONTH_PLAN_DISPLAY_COLUMNS = [
     "Проект",
-    "Дата/время",
+    "Планировщик",
+    "Дата планирования",
+    "Время планирования МСК",
     "Очередь",
     "Титул",
     "Дисциплина",
@@ -610,6 +732,11 @@ def inject_page_styles() -> None:
         .v2-month-plan-table [data-testid="stDataFrame"] th {
             padding: 0.28rem 0.45rem !important;
             white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .v2-scope-boq-table [data-testid="stDataFrame"] {
+            overflow-x: auto;
         }
         .v2-month-plan-table [data-testid="stDataFrame"] {
             border: 1px solid #e2e8f0;
@@ -1499,6 +1626,57 @@ def _v2_value_per_unit_series(
     return per_unit
 
 
+def _v2_safe_df_col(
+    df: pd.DataFrame,
+    col_name: str,
+    default: float | pd.Series = 0.0,
+) -> pd.Series:
+    """Безопасное чтение числовой колонки без KeyError."""
+    if col_name in df.columns:
+        return pd.to_numeric(df[col_name], errors="coerce").fillna(0.0)
+    if isinstance(default, pd.Series):
+        return pd.to_numeric(default, errors="coerce").fillna(0.0)
+    return pd.Series([float(default)] * len(df), index=df.index, dtype=float)
+
+
+def _v2_resolve_scoped_unit_price_series(df: pd.DataFrame) -> pd.Series:
+    """Ставка за единицу из известных колонок scoped row."""
+    unit = pd.Series([0.0] * len(df), index=df.index, dtype=float)
+    for col in ("unit_price", "unit_rate", "price_per_unit", "v2_unit_price"):
+        if col in df.columns:
+            unit = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+            break
+    return _v2_value_per_unit_series(
+        _v2_safe_df_col(df, "total_qty"),
+        _v2_safe_df_col(df, "total_value"),
+        unit,
+    )
+
+
+def _v2_scope_remaining_value_series(scoped_df: pd.DataFrame) -> pd.Series:
+    if "remaining_value" in scoped_df.columns:
+        return _v2_safe_df_col(scoped_df, "remaining_value")
+    qty = _v2_safe_df_col(scoped_df, "remaining_qty")
+    return qty * _v2_resolve_scoped_unit_price_series(scoped_df)
+
+
+def _v2_scope_executed_value_series(scoped_df: pd.DataFrame) -> pd.Series:
+    if "executed_value" in scoped_df.columns:
+        return _v2_safe_df_col(scoped_df, "executed_value")
+    total = _v2_safe_df_col(scoped_df, "total_value")
+    remaining = _v2_scope_remaining_value_series(scoped_df)
+    return (total - remaining).clip(lower=0.0)
+
+
+def _v2_scope_available_value_series(scoped_df: pd.DataFrame) -> pd.Series:
+    if "available_to_add_value" in scoped_df.columns:
+        return _v2_safe_df_col(scoped_df, "available_to_add_value")
+    if "available_value" in scoped_df.columns:
+        return _v2_safe_df_col(scoped_df, "available_value")
+    qty = _v2_safe_df_col(scoped_df, "available_to_add_qty")
+    return qty * _v2_resolve_scoped_unit_price_series(scoped_df)
+
+
 def _v2_has_manual_verified_remaining(value: Any) -> bool:
     return not _v2_is_missing_numeric(value)
 
@@ -1509,16 +1687,82 @@ def _v2_verified_remaining_ignored_by_overrun(item: pd.Series) -> bool:
     )
 
 
+def _v2_merge_not_required_from_adjustments(df: pd.DataFrame) -> pd.DataFrame:
+    """Подмешать исключения остатка из monthly_scope_manual_adjustments."""
+    out = df.copy()
+    out["not_required_qty"] = 0.0
+    out["not_required_reason"] = ""
+    out["not_required_responsible_person"] = ""
+    out["not_required_comment"] = ""
+    out["not_required_updated_at"] = ""
+
+    adj = load_adjustments()
+    if adj.empty or "not_required_qty" not in adj.columns:
+        return out
+
+    lookup: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    for _, row in adj.iterrows():
+        lookup[_v2_adjustment_record_key(row.to_dict())] = row.to_dict()
+
+    for idx, row in out.iterrows():
+        key = _v2_adjustment_record_key(
+            {
+                "project_code": row.get("project_code"),
+                "facility_building": row.get("facility"),
+                "construction_discipline": row.get("discipline"),
+                "boq_code": row.get("boq_code"),
+            }
+        )
+        rec = lookup.get(key)
+        if not rec:
+            continue
+        out.at[idx, "not_required_qty"] = _v2_safe_num(rec.get("not_required_qty"))
+        out.at[idx, "not_required_reason"] = str(rec.get("not_required_reason") or "").strip()
+        out.at[idx, "not_required_responsible_person"] = str(
+            rec.get("not_required_responsible_person") or ""
+        ).strip()
+        out.at[idx, "not_required_comment"] = str(rec.get("not_required_comment") or "").strip()
+        out.at[idx, "not_required_updated_at"] = str(rec.get("not_required_updated_at") or "").strip()
+    return out
+
+
+def _v2_raw_remaining_before_exclusion(item: pd.Series) -> float:
+    total = _v2_safe_num(item.get("total_qty"))
+    executed_total = _v2_safe_num(
+        item.get(
+            "executed_total_qty",
+            _v2_safe_num(item.get("executed_qty"))
+            + _v2_safe_num(item.get("manual_executed_before_system")),
+        )
+    )
+    return max(total - executed_total, 0.0)
+
+
+V2_QTY_COMPARE_EPSILON = 1e-6
+
+
+def _v2_qty_exceeds_limit(entered_qty: float, limit_qty: float) -> bool:
+    """Сравнение объёмов с учётом float precision (UI 17.8 vs ввод 17.80)."""
+    entered = round(float(entered_qty), 3)
+    limit = round(float(limit_qty), 3)
+    return entered > limit + V2_QTY_COMPARE_EPSILON
+
+
+def _v2_format_qty_validation_str(value: Any) -> str:
+    """Формат объёма в сообщениях валидации (2 знака после запятой)."""
+    return f"{_v2_safe_num(value):.2f}"
+
+
 def _v2_apply_boq_availability_metrics(df: pd.DataFrame) -> pd.DataFrame:
     """
     Физический остаток и доступность к планированию.
 
     Приоритет:
     1. executed_total_qty = daily_executed_qty + manual_executed_before_system
-    2. Если executed_total_qty > total_qty → overrun, remaining/available = 0,
-       manual_verified_remaining_qty и planning_remaining_qty из view не применяются.
-    3. Иначе manual_verified_remaining_qty может переопределить remaining/available
-       (available_to_add_qty не ниже 0).
+    2. effective_required_qty = total_qty - not_required_qty
+    3. overrun относительно effective_required_qty
+    4. manual_verified_remaining_qty — только без overrun
+    5. not_required + выполнено >= effective → статус «Остаток не требуется»
     """
     if df.empty:
         return df
@@ -1529,15 +1773,22 @@ def _v2_apply_boq_availability_metrics(df: pd.DataFrame) -> pd.DataFrame:
         out.get("manual_executed_before_system", pd.Series(0.0, index=out.index)),
         errors="coerce",
     ).fillna(0.0)
+    not_required = pd.to_numeric(
+        out.get("not_required_qty", pd.Series(0.0, index=out.index)),
+        errors="coerce",
+    ).fillna(0.0).clip(lower=0.0)
     executed_total = daily_executed + manual_before
     planned = pd.to_numeric(
         out.get("already_planned_qty", pd.Series(0.0, index=out.index)),
         errors="coerce",
     ).fillna(0.0)
+    effective_required = (total - not_required).clip(lower=0.0)
 
     out["daily_executed_qty"] = daily_executed
     out["executed_total_qty"] = executed_total
     out["executed_qty"] = daily_executed
+    out["not_required_qty"] = not_required
+    out["effective_required_qty"] = effective_required
 
     verified = pd.to_numeric(
         out.get("manual_verified_remaining_qty", pd.Series(float("nan"), index=out.index)),
@@ -1551,10 +1802,10 @@ def _v2_apply_boq_availability_metrics(df: pd.DataFrame) -> pd.DataFrame:
         out.get("unit_price", pd.Series(0.0, index=out.index)),
     )
 
-    out["overrun_qty"] = (executed_total - total).clip(lower=0.0)
+    out["overrun_qty"] = (executed_total - effective_required).clip(lower=0.0)
     is_overrun = out["overrun_qty"] > 0
-    out["remaining_qty"] = (total - executed_total).clip(lower=0.0)
-    out["available_to_add_qty"] = (total - executed_total - planned).clip(lower=0.0)
+    out["remaining_qty"] = (effective_required - executed_total).clip(lower=0.0)
+    out["available_to_add_qty"] = (effective_required - executed_total - planned).clip(lower=0.0)
 
     out.loc[is_overrun, "remaining_qty"] = 0.0
     out.loc[is_overrun, "available_to_add_qty"] = 0.0
@@ -1583,9 +1834,19 @@ def _v2_apply_boq_availability_metrics(df: pd.DataFrame) -> pd.DataFrame:
 def _v2_resolve_scope_status_row(row: pd.Series) -> str:
     if _v2_safe_num(row.get("overrun_qty")) > 0:
         return V2_SCOPE_STATUS_OVERRUN
+    not_required = _v2_safe_num(row.get("not_required_qty"))
+    effective_required = _v2_safe_num(row.get("effective_required_qty"))
+    executed_total = _v2_safe_num(row.get("executed_total_qty"))
     remaining = _v2_safe_num(row.get("remaining_qty"))
     available = _v2_safe_num(row.get("available_to_add_qty"))
     planned = _v2_safe_num(row.get("already_planned_qty"))
+    if (
+        not_required > 0
+        and remaining <= 0
+        and executed_total >= effective_required
+        and effective_required > 0
+    ):
+        return V2_SCOPE_STATUS_NOT_REQUIRED
     return _v2_resolve_available_status(remaining, available, planned)
 
 
@@ -1678,6 +1939,10 @@ def _v2_render_boq_volume_acquisition_html(item: pd.Series) -> str:
     unit = str(item.get("unit") or "").strip()
 
     total_qty = _v2_safe_num(item.get("total_qty"))
+    not_required_qty = _v2_safe_num(item.get("not_required_qty"))
+    effective_required_qty = _v2_safe_num(
+        item.get("effective_required_qty", max(total_qty - not_required_qty, 0.0))
+    )
     daily_executed_qty = _v2_safe_num(item.get("daily_executed_qty", item.get("executed_qty")))
     manual_before_qty = _v2_safe_num(item.get("manual_executed_before_system"))
     executed_total_qty = _v2_safe_num(
@@ -1696,8 +1961,19 @@ def _v2_render_boq_volume_acquisition_html(item: pd.Series) -> str:
     daily_executed_value = daily_executed_qty * per_unit
     manual_before_value = manual_before_qty * per_unit
     executed_total_value = min(executed_total_qty * per_unit, costs["total_value"]) if costs["total_value"] > 0 else executed_total_qty * per_unit
+    not_required_reason = _v2_format_optional_text(item.get("not_required_reason"))
+    not_required_person = _v2_format_optional_text(item.get("not_required_responsible_person"))
+    not_required_at = format_v2_added_at_moscow(item.get("not_required_updated_at")) or "—"
 
-    if total_qty > 0:
+    progress_base = effective_required_qty if effective_required_qty > 0 else total_qty
+    if progress_base > 0:
+        exec_width = min(max(executed_total_qty / progress_base * 100.0, 0.0), 100.0)
+        avail_width = min(max(available_qty / progress_base * 100.0, 0.0), 100.0)
+        blocked_width = min(
+            max((remaining_qty - available_qty) / progress_base * 100.0, 0.0),
+            max(0.0, 100.0 - exec_width - avail_width),
+        )
+    elif total_qty > 0:
         exec_width = min(max(executed_total_qty / total_qty * 100.0, 0.0), 100.0)
         avail_width = min(max(available_qty / total_qty * 100.0, 0.0), 100.0)
         blocked_width = min(
@@ -1745,10 +2021,24 @@ def _v2_render_boq_volume_acquisition_html(item: pd.Series) -> str:
 <div class="v2-boq-detail-section-title">Объём и освоение</div>
 <div class="v2-boq-volume-row">
   <div class="v2-boq-volume-cell">
-    <span class="v2-boq-volume-label">Всего по BOQ</span>
+    <span class="v2-boq-volume-label">Проектный объём</span>
     <div class="v2-boq-volume-values">
       <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(total_qty)}</span>
       <span class="v2-boq-volume-cost">{_format_rub(costs["total_value"])}</span>
+    </div>
+  </div>
+  <div class="v2-boq-volume-cell">
+    <span class="v2-boq-volume-label">Исключено из выполнения</span>
+    <div class="v2-boq-volume-values">
+      <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(not_required_qty)}</span>
+      <span class="v2-boq-volume-cost">{not_required_reason}</span>
+    </div>
+  </div>
+  <div class="v2-boq-volume-cell">
+    <span class="v2-boq-volume-label">Рабочий объём к выполнению</span>
+    <div class="v2-boq-volume-values">
+      <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(effective_required_qty)}</span>
+      <span class="v2-boq-volume-cost">{unit or "—"}</span>
     </div>
   </div>
   <div class="v2-boq-volume-cell">
@@ -1773,7 +2063,7 @@ def _v2_render_boq_volume_acquisition_html(item: pd.Series) -> str:
     </div>
   </div>
   <div class="v2-boq-volume-cell">
-    <span class="v2-boq-volume-label">Остаток</span>
+    <span class="v2-boq-volume-label">Остаток к выполнению</span>
     <div class="v2-boq-volume-values">
       <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(remaining_qty)}</span>
       <span class="v2-boq-volume-cost">{_format_rub(costs["remaining_value"])}</span>
@@ -1785,6 +2075,16 @@ def _v2_render_boq_volume_acquisition_html(item: pd.Series) -> str:
       <span class="v2-boq-volume-qty">{_v2_format_qty_display_str(available_qty)}</span>
       <span class="v2-boq-volume-cost">{_format_rub(costs["available_value"])}</span>
     </div>
+  </div>
+</div>
+<div class="v2-boq-volume-row">
+  <div class="v2-boq-volume-cell">
+    <span class="v2-boq-volume-label">Кто внёс исключение</span>
+    <span class="v2-boq-volume-pct">{not_required_person}</span>
+  </div>
+  <div class="v2-boq-volume-cell">
+    <span class="v2-boq-volume-label">Когда внёс</span>
+    <span class="v2-boq-volume-pct">{not_required_at}</span>
   </div>
 </div>
 <div class="v2-boq-progress-track">
@@ -1909,6 +2209,22 @@ def format_v2_added_at_moscow(added_at: Any) -> str:
         return moscow.strftime("%d.%m.%Y %H:%M")
     except (TypeError, ValueError, OSError):
         return ""
+
+
+def _v2_format_planned_date_moscow(planned_at: Any) -> str:
+    """Дата планирования (МСК) для таблицы месячного плана."""
+    formatted = format_v2_added_at_moscow(planned_at)
+    if not formatted:
+        return "—"
+    return formatted.split(" ", 1)[0]
+
+
+def _v2_format_planned_time_moscow(planned_at: Any) -> str:
+    """Время планирования (МСК) для таблицы месячного плана."""
+    formatted = format_v2_added_at_moscow(planned_at)
+    if not formatted or " " not in formatted:
+        return "—"
+    return formatted.split(" ", 1)[1]
 
 
 def _v2_manual_adjustment_row_fields(item: pd.Series) -> dict[str, Any]:
@@ -2373,7 +2689,9 @@ def append_v2_month_plan_draft_item(
     manual_norm: float,
     comment: str,
     preview: dict[str, Any],
+    planned_by: str,
 ) -> dict[str, Any]:
+    planned_at = datetime.now(timezone.utc).isoformat()
     draft_item: dict[str, Any] = {
         "plan_line_id": None,
         "status": V2_PLAN_STATUS_NOT_SENT,
@@ -2404,7 +2722,9 @@ def append_v2_month_plan_draft_item(
         "labor_rate_per_hour": DEFAULT_LABOR_RATE_PER_HOUR,
         "labor_cost": preview["labor_cost"],
         "comment": comment.strip(),
-        "added_at": datetime.now(timezone.utc).isoformat(),
+        "planned_by": str(planned_by or "").strip(),
+        "planned_at": planned_at,
+        "added_at": planned_at,
         "line_source_ui": "Новый код",
         "read_only": False,
     }
@@ -2452,6 +2772,30 @@ def _v2_plan_item_queue(item: dict[str, Any]) -> str:
 
 
 # --- Monthly plan v2 persistence (monthly_plan_lines_v2) ---
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_v2_plan_lines_support_planner_columns() -> bool:
+    """Проверка наличия planned_by / planned_at в monthly_plan_lines_v2."""
+    try:
+        supabase.table(V2_PLAN_LINES_TABLE).select("planned_by,planned_at").limit(0).execute()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _v2_strip_planner_fields_from_plan_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    out = dict(payload)
+    out.pop("planned_by", None)
+    out.pop("planned_at", None)
+    return out
+
+
+def _v2_plan_db_payload_from_item(item: dict[str, Any]) -> dict[str, Any]:
+    payload = map_v2_session_item_to_plan_db_row(item)
+    if _cached_v2_plan_lines_support_planner_columns():
+        return payload
+    return _v2_strip_planner_fields_from_plan_payload(payload)
 
 
 def load_v2_month_plan_lines(project_code: str, month_key: str) -> list[dict[str, Any]]:
@@ -2505,9 +2849,10 @@ def map_v2_plan_db_row_to_session_item(row: dict[str, Any]) -> dict[str, Any]:
     crew_day_capacity = crew_size * PRODUCTIVE_HOURS_PER_PERSON_SHIFT
     duration_shifts = labor_hours / crew_day_capacity if crew_day_capacity > 0 else 0.0
     norm_hpu = labor_hours / planned_qty if planned_qty > 0 else 0.0
-    added_at = str(row.get("created_at") or row.get("updated_at") or "").strip()
-    if not added_at:
-        added_at = datetime.now(timezone.utc).isoformat()
+    planned_at = str(row.get("planned_at") or row.get("created_at") or row.get("updated_at") or "").strip()
+    if not planned_at:
+        planned_at = datetime.now(timezone.utc).isoformat()
+    planned_by = str(row.get("planned_by") or "").strip()
     return {
         "plan_line_id": plan_line_id or None,
         "status": status,
@@ -2540,7 +2885,9 @@ def map_v2_plan_db_row_to_session_item(row: dict[str, Any]) -> dict[str, Any]:
         "labor_rate_per_hour": DEFAULT_LABOR_RATE_PER_HOUR,
         "labor_cost": _v2_safe_num(row.get("labor_cost")),
         "comment": "",
-        "added_at": added_at,
+        "planned_by": planned_by,
+        "planned_at": planned_at,
+        "added_at": planned_at,
         "line_source_ui": "Месячный план",
         "read_only": status == V2_PLAN_STATUS_SENT,
         "sent_to_constraints_at": row.get("sent_to_constraints_at"),
@@ -2563,7 +2910,7 @@ def map_v2_session_item_to_plan_db_row(item: dict[str, Any]) -> dict[str, Any]:
     crew_size = int(_v2_safe_num(item.get("crew_size"), default=1.0))
     system = str(item.get("system") or "").strip()
     iwp = str(item.get("iwp") or "").strip()
-    return {
+    payload: dict[str, Any] = {
         "project_code": item.get("project_code"),
         "month_key": item.get("month_key"),
         "facility": item.get("facility"),
@@ -2582,6 +2929,13 @@ def map_v2_session_item_to_plan_db_row(item: dict[str, Any]) -> dict[str, Any]:
         "plan_value": plan_value if plan_value > 0 else None,
         "status": str(item.get("status") or V2_PLAN_STATUS_NOT_SENT),
     }
+    planned_by = str(item.get("planned_by") or "").strip()
+    planned_at = str(item.get("planned_at") or item.get("added_at") or "").strip()
+    if planned_by:
+        payload["planned_by"] = planned_by
+    if planned_at:
+        payload["planned_at"] = planned_at
+    return payload
 
 
 def save_v2_month_plan(
@@ -2614,7 +2968,7 @@ def save_v2_month_plan(
         if status == V2_PLAN_STATUS_SENT:
             continue
 
-        payload = map_v2_session_item_to_plan_db_row(item)
+        payload = _v2_plan_db_payload_from_item(item)
         plan_line_id = str(item.get("plan_line_id") or "").strip()
 
         if plan_line_id:
@@ -2705,7 +3059,9 @@ def get_v2_supabase_write_client() -> Client | None:
 
 
 def _v2_resolve_draft_scope() -> tuple[str, str] | None:
-    month_key = str(st.session_state.get("v2_scope_planning_month") or "").strip()
+    month_key = _v2_resolve_planning_month_key(
+        str(st.session_state.get("v2_scope_planning_month") or "").strip()
+    )
     project_code = str(st.session_state.get("v2_scope_project") or "").strip()
     if not month_key or not project_code or project_code == "Все":
         return None
@@ -2785,7 +3141,9 @@ def _v2_row_to_saved_draft_meta(row: dict[str, Any]) -> dict[str, Any] | None:
 
 def resolve_v2_saved_draft_lookup() -> tuple[dict[str, Any], str, str] | None:
     """Найти SAVED_DRAFT для текущего месяца; project_code из фильтра или из header."""
-    month_key = str(st.session_state.get("v2_scope_planning_month") or "").strip()
+    month_key = _v2_resolve_planning_month_key(
+        str(st.session_state.get("v2_scope_planning_month") or "").strip()
+    )
     if not month_key:
         return None
 
@@ -2888,7 +3246,7 @@ def _v2_map_session_item_to_db_line(draft_id: str, item: dict[str, Any]) -> dict
     if norm_hpu <= 0 and planned_qty > 0:
         norm_hpu = required_hours / planned_qty
     comment = str(item.get("comment") or "").strip()
-    return {
+    payload: dict[str, Any] = {
         "draft_id": draft_id,
         "project_code": item.get("project_code"),
         "month_key": item.get("month_key"),
@@ -2909,6 +3267,14 @@ def _v2_map_session_item_to_db_line(draft_id: str, item: dict[str, Any]) -> dict
         "line_status": "DRAFT",
         "comment": comment or None,
     }
+    if _cached_v2_plan_lines_support_planner_columns():
+        planned_by = str(item.get("planned_by") or "").strip()
+        planned_at = str(item.get("planned_at") or item.get("added_at") or "").strip()
+        if planned_by:
+            payload["planned_by"] = planned_by
+        if planned_at:
+            payload["planned_at"] = planned_at
+    return payload
 
 
 def build_v2_draft_line_payloads(draft_id: str, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2979,7 +3345,10 @@ def map_v2_db_line_to_session_item(line: dict[str, Any], header_updated_at: str)
     crew_day_capacity = crew_size * PRODUCTIVE_HOURS_PER_PERSON_SHIFT
     duration_shifts = required_hours / crew_day_capacity if crew_day_capacity > 0 else 0.0
     manual_norm = selected_hpu if norm_scenario == NORM_SCENARIO_MANUAL else None
-    added_at = str(header_updated_at or "").strip() or datetime.now(timezone.utc).isoformat()
+    planned_at = str(line.get("planned_at") or header_updated_at or "").strip()
+    if not planned_at:
+        planned_at = datetime.now(timezone.utc).isoformat()
+    planned_by = str(line.get("planned_by") or "").strip()
     return {
         "line_uid": str(uuid4()),
         "project_code": str(line.get("project_code") or "").strip(),
@@ -3008,7 +3377,9 @@ def map_v2_db_line_to_session_item(line: dict[str, Any], header_updated_at: str)
         ),
         "labor_cost": _v2_safe_num(line.get("labor_cost")),
         "comment": str(line.get("comment") or "").strip(),
-        "added_at": added_at,
+        "planned_by": planned_by,
+        "planned_at": planned_at,
+        "added_at": planned_at,
         "line_source_ui": "Загружено из Supabase",
         "read_only": False,
     }
@@ -3194,10 +3565,13 @@ def map_v2_session_draft_to_display_df(items: list[dict[str, Any]]) -> pd.DataFr
     for item in sorted_items:
         facility = str(item.get("facility") or "").strip() or "—"
         discipline = str(item.get("discipline") or "").strip() or "—"
+        planned_at = item.get("planned_at") or item.get("added_at")
         rows.append(
             {
                 "Проект": str(item.get("project_code") or "—"),
-                "Дата/время": format_v2_added_at_moscow(item.get("added_at")) or "—",
+                "Планировщик": _v2_plan_display_optional_text(item.get("planned_by")),
+                "Дата планирования": _v2_format_planned_date_moscow(planned_at),
+                "Время планирования МСК": _v2_format_planned_time_moscow(planned_at),
                 "Очередь": _v2_plan_item_queue(item) or "—",
                 "Титул": facility,
                 "Дисциплина": discipline,
@@ -3794,6 +4168,67 @@ def load_v2_manual_adjustments_history(row: pd.Series) -> pd.DataFrame:
     )
 
 
+@st.cache_data(ttl=120, show_spinner=False)
+def _cached_load_v2_all_manual_adjustments() -> pd.DataFrame:
+    """Все ручные корректировки за всё время."""
+    return fetch_all_adjustments_history()
+
+
+def load_v2_all_manual_adjustments() -> pd.DataFrame:
+    return _cached_load_v2_all_manual_adjustments()
+
+
+def _v2_adjustment_record_key(record: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        str(record.get("project_code") or "").strip().upper(),
+        str(record.get("facility_building") or "").strip().upper(),
+        str(record.get("construction_discipline") or "").strip().upper(),
+        str(record.get("boq_code") or "").strip().upper(),
+    )
+
+
+def _v2_selected_adjustment_key(item: pd.Series) -> tuple[str, str, str, str]:
+    keys = _v2_adjustment_save_row(item)
+    return _v2_adjustment_record_key(keys.to_dict())
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_v2_scope_boq_name_lookup() -> dict[tuple[str, str, str, str], str]:
+    scope_df = load_scope()
+    if scope_df.empty:
+        return {}
+    lookup: dict[tuple[str, str, str, str], str] = {}
+    for _, row in scope_df.iterrows():
+        key = _v2_adjustment_record_key(row.to_dict())
+        if not key[3]:
+            continue
+        name = str(row.get("boq_name") or "").strip()
+        if name:
+            lookup[key] = name
+    return lookup
+
+
+def _v2_sort_adjustment_history_all(
+    history: pd.DataFrame,
+    selected_key: tuple[str, str, str, str],
+) -> pd.DataFrame:
+    if history.empty:
+        return history
+    df = history.copy()
+    df["_is_selected"] = df.apply(
+        lambda row: _v2_adjustment_record_key(row.to_dict()) == selected_key,
+        axis=1,
+    )
+    updated_at = pd.to_datetime(df.get("updated_at"), errors="coerce", utc=True)
+    created_at = pd.to_datetime(df.get("created_at"), errors="coerce", utc=True)
+    df["_sort_at"] = updated_at.fillna(created_at)
+    return (
+        df.sort_values(by=["_is_selected", "_sort_at"], ascending=[False, False], na_position="last")
+        .drop(columns=["_is_selected", "_sort_at"])
+        .reset_index(drop=True)
+    )
+
+
 def _v2_adjustment_user_label(record: dict[str, Any]) -> str:
     for col in ("updated_by", "created_by", "user_email", "user"):
         value = record.get(col)
@@ -3806,54 +4241,124 @@ def _v2_adjustment_user_label(record: dict[str, Any]) -> str:
     return "Не указан"
 
 
-def _v2_adjustment_history_display_df(history: pd.DataFrame) -> pd.DataFrame:
+def _v2_adjustment_audit_field_mapping_caption() -> None:
+    st.caption(
+        "Поля аудита в Supabase (`monthly_scope_manual_adjustments`): "
+        f"ФИО → `{V2_ADJUSTMENT_AUDIT_DB_FIELDS['responsible_person']}`, "
+        f"причина → `{V2_ADJUSTMENT_AUDIT_DB_FIELDS['adjustment_reason']}`, "
+        f"время сохранения → `{V2_ADJUSTMENT_AUDIT_DB_FIELDS['saved_at']}` (МСК в UI). "
+        "Отдельная SQL migration не требуется."
+    )
+
+
+V2_ADJUSTMENT_AUDIT_DISPLAY_COLUMNS = [
+    "Текущий код",
+    "BOQ-код",
+    "Наименование",
+    "Титул",
+    "Дисциплина",
+    "Ранее выполнено до системы",
+    "Ручной подтверждённый остаток",
+    "Исключено из выполнения",
+    "Причина исключения",
+    "ФИО (исключение)",
+    "ФИО ответственного",
+    "Причина корректировки",
+    "Дата создания",
+    "Дата обновления",
+    "Исключение обновлено",
+]
+
+
+def _v2_adjustment_audit_history_df(history: pd.DataFrame, item: pd.Series) -> pd.DataFrame:
+    """Таблица аудита всех ручных корректировок с отметкой выбранного BOQ."""
     if history.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=V2_ADJUSTMENT_AUDIT_DISPLAY_COLUMNS)
+
+    selected_key = _v2_selected_adjustment_key(item)
+    selected_boq_name = str(item.get("boq_name") or "").strip()
+    name_lookup = _cached_v2_scope_boq_name_lookup()
     rows: list[dict[str, str]] = []
-    for rank, (_, record) in enumerate(history.head(5).iterrows()):
+    for _, record in history.iterrows():
         rec = record.to_dict()
-        manual_exec = _v2_safe_num(rec.get("manual_executed_before_system"))
+        record_key = _v2_adjustment_record_key(rec)
+        is_selected = record_key == selected_key
+        verified_raw = rec.get("manual_verified_remaining_qty")
+        verified_display = (
+            _v2_format_qty_display_str(verified_raw)
+            if not _v2_is_missing_numeric(verified_raw)
+            else "—"
+        )
+        boq_name = name_lookup.get(record_key) or (selected_boq_name if is_selected else "—")
         rows.append(
             {
-                "Дата": _v2_format_adjustment_datetime(rec.get("updated_at")),
-                "Пользователь": _v2_adjustment_user_label(rec),
-                "Ранее выполнено до DP": _v2_format_qty_display_str(manual_exec),
-                "Причина": _v2_format_optional_text(rec.get("reason")),
-                "Комментарий": _v2_format_optional_text(rec.get("comment")),
-                "Статус": "Активна" if rank == 0 else "—",
-                "Действие": "Текущая" if rank == 0 else "—",
+                "Текущий код": "Да" if is_selected else "",
+                "BOQ-код": str(rec.get("boq_code") or "—"),
+                "Наименование": boq_name or "—",
+                "Титул": str(rec.get("facility_building") or "—"),
+                "Дисциплина": str(rec.get("construction_discipline") or "—"),
+                "Ранее выполнено до системы": _v2_format_qty_display_str(
+                    rec.get("manual_executed_before_system")
+                ),
+                "Ручной подтверждённый остаток": verified_display,
+                "Исключено из выполнения": _v2_format_qty_display_str(rec.get("not_required_qty")),
+                "Причина исключения": _v2_format_optional_text(rec.get("not_required_reason")),
+                "ФИО (исключение)": _v2_format_optional_text(
+                    rec.get("not_required_responsible_person")
+                ),
+                "ФИО ответственного": _v2_adjustment_user_label(rec),
+                "Причина корректировки": _v2_format_optional_text(rec.get("reason")),
+                "Дата создания": format_v2_added_at_moscow(rec.get("created_at")) or "—",
+                "Дата обновления": format_v2_added_at_moscow(rec.get("updated_at")) or "—",
+                "Исключение обновлено": format_v2_added_at_moscow(rec.get("not_required_updated_at"))
+                or "—",
             }
         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows)[V2_ADJUSTMENT_AUDIT_DISPLAY_COLUMNS]
 
 
-def delete_v2_manual_adjustment(row: pd.Series) -> None:
-    """Удалить корректировку выбранного BOQ из monthly_scope_manual_adjustments."""
-    if not _v2_adjustment_keys_complete(row):
-        raise ValueError("Невозможно удалить корректировку: неполный ключ BOQ.")
-    delete_adjustment(_v2_adjustment_save_row(row))
+def _v2_style_adjustment_audit_table(display_df: pd.DataFrame) -> Any:
+    """Подсветка строк выбранного BOQ в таблице аудита."""
+
+    def _row_style(row: pd.Series) -> list[str]:
+        if str(row.get("Текущий код", "")).strip() == "Да":
+            return ["background-color: #EFF6FF; font-weight: 600;"] * len(row)
+        return [""] * len(row)
+
+    return display_df.style.apply(_row_style, axis=1)
 
 
-def _v2_clear_scope_caches_after_adjustment_change() -> None:
-    load_scope.clear()
-    load_adjustments.clear()
-    _cached_fetch_v2_scope_view.clear()
-    _cached_fetch_v2_manual_adjustments_history.clear()
+def _v2_render_adjustment_audit_history(item: pd.Series) -> None:
+    """Expander полной истории всех ручных корректировок остатка."""
+    with st.expander("История всех ручных корректировок остатка", expanded=False):
+        st.caption(
+            "Показаны все ручные корректировки. "
+            "Выбранный BOQ поднят наверх и отмечен в колонке «Текущий код»."
+        )
+        history = _v2_sort_adjustment_history_all(
+            load_v2_all_manual_adjustments(),
+            _v2_selected_adjustment_key(item),
+        )
+        display_df = _v2_adjustment_audit_history_df(history, item)
+        if display_df.empty:
+            st.caption("Сохранённых ручных корректировок пока нет.")
+            return
+        st.dataframe(
+            _v2_style_adjustment_audit_table(display_df),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.caption(
+            f"Всего записей в `monthly_scope_manual_adjustments`: {len(display_df)}."
+        )
 
 
-def _v2_render_adjustment_journal(item: pd.Series) -> None:
-    """Компактный журнал корректировок + muted danger-zone отката."""
+def _v2_render_adjustment_rollback(item: pd.Series) -> None:
+    """Muted danger-zone отката текущей корректировки."""
     boq_code = str(item.get("boq_code") or "boq").strip()
-    st.markdown('<p class="v2-boq-adj-journal-title">Журнал корректировок</p>', unsafe_allow_html=True)
     history = load_v2_manual_adjustments_history(item)
     if history.empty:
-        st.caption("Корректировок пока нет")
         return
-
-    display_df = _v2_adjustment_history_display_df(history)
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
-    if len(history) > 5:
-        st.caption("Показаны последние 5")
 
     st.markdown(
         '<div class="v2-boq-adj-rollback">'
@@ -3885,6 +4390,28 @@ def _v2_render_adjustment_journal(item: pd.Series) -> None:
             st.error(f"Ошибка удаления корректировки: {exc}")
 
 
+def _v2_render_adjustment_journal(item: pd.Series) -> None:
+    """Журнал корректировок: полная история + откат."""
+    _v2_render_adjustment_audit_history(item)
+    _v2_render_adjustment_rollback(item)
+
+
+def delete_v2_manual_adjustment(row: pd.Series) -> None:
+    """Удалить корректировку выбранного BOQ из monthly_scope_manual_adjustments."""
+    if not _v2_adjustment_keys_complete(row):
+        raise ValueError("Невозможно удалить корректировку: неполный ключ BOQ.")
+    delete_adjustment(_v2_adjustment_save_row(row))
+
+
+def _v2_clear_scope_caches_after_adjustment_change() -> None:
+    load_scope.clear()
+    load_adjustments.clear()
+    _cached_fetch_v2_scope_view.clear()
+    _cached_fetch_v2_manual_adjustments_history.clear()
+    _cached_load_v2_all_manual_adjustments.clear()
+    _cached_v2_scope_boq_name_lookup.clear()
+
+
 def _v2_clear_scope_caches_after_adjustment_save() -> None:
     _v2_clear_scope_caches_after_adjustment_change()
 
@@ -3910,8 +4437,27 @@ def _render_residual_adjustment_expander(item: pd.Series) -> None:
             step=0.01,
             key=f"v2_adj_exec_{boq_code}",
         )
+        responsible_person = st.text_input(
+            "ФИО ответственного за корректировку",
+            value="",
+            key=f"v2_adj_responsible_{boq_code}",
+        )
+        adjustment_reason = st.text_input(
+            "Причина корректировки",
+            value="",
+            placeholder=V2_ADJUSTMENT_REASON_PLACEHOLDER,
+            key=f"v2_adj_reason_{boq_code}",
+        )
+        _v2_adjustment_audit_field_mapping_caption()
+
         if st.button("Сохранить корректировку", key=f"v2_adj_save_{boq_code}"):
-            if inp_exec < 0:
+            responsible_text = str(responsible_person or "").strip()
+            reason_text = str(adjustment_reason or "").strip()
+            if not responsible_text:
+                st.error("Укажите ФИО ответственного за корректировку.")
+            elif not reason_text:
+                st.error("Укажите причину корректировки.")
+            elif inp_exec < 0:
                 st.error("Ранее выполненный объём не может быть отрицательным.")
             elif inp_exec > total_qty:
                 st.error("Ранее выполненный объём не может превышать общий объём BOQ.")
@@ -3921,28 +4467,128 @@ def _render_residual_adjustment_expander(item: pd.Series) -> None:
                         _v2_adjustment_save_row(item),
                         inp_exec,
                         None,
-                        "Выполнено до запуска Daily Progress",
+                        reason_text,
                         "v2 manual adjustment",
+                        updated_by=responsible_text,
+                    )
+                    saved_at_msk = format_v2_added_at_moscow(
+                        datetime.now(timezone.utc).isoformat()
                     )
                     _v2_clear_scope_caches_after_adjustment_save()
-                    st.success("Корректировка сохранена")
+                    st.success(
+                        f"Корректировка сохранена: {responsible_text}, {saved_at_msk or '—'}"
+                    )
                     st.rerun()
                 except Exception as exc:  # noqa: BLE001
                     st.error(f"Ошибка сохранения корректировки: {exc}")
 
+        st.divider()
+        _render_not_required_exclusion_section(item)
         _v2_render_adjustment_journal(item)
+
+
+def _render_not_required_exclusion_section(item: pd.Series) -> None:
+    """Секция исключения остатка из выполнения."""
+    boq_code = str(item.get("boq_code") or "boq").strip()
+    total_qty = _v2_safe_num(item.get("total_qty"))
+    max_exclude_qty = _v2_raw_remaining_before_exclusion(item)
+    default_exclude = _v2_safe_num(item.get("not_required_qty"))
+    default_reason = str(item.get("not_required_reason") or "").strip()
+    if default_reason and default_reason not in V2_NOT_REQUIRED_REASON_OPTIONS:
+        default_reason = "Другое"
+
+    st.markdown("**Исключение остатка из выполнения**")
+    st.caption(
+        "Для BOQ, где часть проектного объёма не требуется к выполнению "
+        "(ошибка проекта, уточнение трассы и т.п.)."
+    )
+    if not adjustments_support_not_required_columns():
+        st.warning(
+            "Колонки not_required_* в Supabase ещё не созданы. "
+            "Выполните `sql/monthly_scope_not_required_exclusion.sql`, затем перезапустите приложение."
+        )
+        return
+
+    inp_exclude = st.number_input(
+        "Объём, не требующий выполнения",
+        min_value=0.0,
+        value=float(default_exclude),
+        step=0.01,
+        key=f"v2_not_req_qty_{boq_code}",
+    )
+    exclude_reason = st.selectbox(
+        "Причина исключения",
+        V2_NOT_REQUIRED_REASON_OPTIONS,
+        index=V2_NOT_REQUIRED_REASON_OPTIONS.index(default_reason)
+        if default_reason in V2_NOT_REQUIRED_REASON_OPTIONS
+        else 0,
+        key=f"v2_not_req_reason_{boq_code}",
+    )
+    exclude_responsible = st.text_input(
+        "ФИО ответственного",
+        value=str(item.get("not_required_responsible_person") or "").strip(),
+        key=f"v2_not_req_responsible_{boq_code}",
+    )
+    exclude_comment = st.text_area(
+        "Основание / комментарий",
+        value=str(item.get("not_required_comment") or "").strip(),
+        key=f"v2_not_req_comment_{boq_code}",
+        height=72,
+    )
+    st.caption(
+        f"Максимум к исключению по текущему остатку: "
+        f"{_v2_format_qty_display_str(max_exclude_qty)}. "
+        "Поля Supabase: not_required_qty, not_required_reason, "
+        "not_required_responsible_person, not_required_comment, not_required_updated_at."
+    )
+
+    if st.button("Сохранить исключение остатка", key=f"v2_not_req_save_{boq_code}"):
+        responsible_text = str(exclude_responsible or "").strip()
+        reason_text = str(exclude_reason or "").strip()
+        exclude_qty = float(inp_exclude)
+        if exclude_qty <= 0:
+            st.error("Объём исключения должен быть больше 0.")
+        elif not responsible_text:
+            st.error("Укажите ФИО ответственного.")
+        elif not reason_text:
+            st.error("Укажите причину исключения.")
+        elif _v2_qty_exceeds_limit(exclude_qty, max_exclude_qty):
+            st.error(
+                f"Исключаемый объём не может превышать текущий остаток "
+                f"({_v2_format_qty_validation_str(max_exclude_qty)})."
+            )
+        elif _v2_qty_exceeds_limit(exclude_qty, total_qty):
+            st.error("Исключаемый объём не может превышать проектный объём BOQ.")
+        else:
+            try:
+                save_not_required_exclusion(
+                    _v2_adjustment_save_row(item),
+                    exclude_qty,
+                    reason_text,
+                    responsible_text,
+                    str(exclude_comment or "").strip(),
+                )
+                saved_at_msk = format_v2_added_at_moscow(datetime.now(timezone.utc).isoformat())
+                _v2_clear_scope_caches_after_adjustment_save()
+                st.success(f"Исключение сохранено: {responsible_text}, {saved_at_msk or '—'}")
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Ошибка сохранения исключения: {exc}")
 
 
 def _render_add_to_month_plan_expander(item: pd.Series) -> None:
     """Expander добавления объёма в текущий месяц планирования (session draft)."""
     boq_code = str(item.get("boq_code") or "boq").strip()
-    planning_month = str(st.session_state.get("v2_scope_planning_month") or "").strip()
+    planning_month = _v2_resolve_planning_month_key(
+        str(st.session_state.get("v2_scope_planning_month") or "").strip()
+    )
     available_qty = _v2_safe_num(item.get("available_to_add_qty"))
     session_reserved = _v2_safe_num(item.get("already_planned_qty"))
     is_overrun = (
         str(item.get("status") or "") == V2_SCOPE_STATUS_OVERRUN
         or _v2_safe_num(item.get("overrun_qty")) > 0
     )
+    is_not_required = str(item.get("status") or "") == V2_SCOPE_STATUS_NOT_REQUIRED
 
     with st.expander(
         "Добавить код / объём работ в текущий месяц планирования",
@@ -3954,9 +4600,15 @@ def _render_add_to_month_plan_expander(item: pd.Series) -> None:
                 "Добавление в месячный план недоступно."
             )
             return
+        if is_not_required:
+            st.info("Остаток не требуется к выполнению. Добавление в месячный план недоступно.")
+            return
 
         if not planning_month:
-            st.warning("Выберите месяц планирования в фильтрах scope.")
+            st.warning(
+                "Выберите конкретный месяц планирования в фильтрах scope "
+                "(не «Все месяца»)."
+            )
             return
 
         st.markdown(
@@ -3974,6 +4626,14 @@ def _render_add_to_month_plan_expander(item: pd.Series) -> None:
                 f"В текущей сессии уже запланировано: "
                 f"{_v2_format_qty_display_str(session_reserved)} {item.get('unit', '')}"
             )
+
+        if V2_CURRENT_PLANNER_NAME_KEY not in st.session_state:
+            st.session_state[V2_CURRENT_PLANNER_NAME_KEY] = ""
+        st.text_input(
+            "ФИО планировщика",
+            key=V2_CURRENT_PLANNER_NAME_KEY,
+            placeholder="Обязательное поле",
+        )
 
         st.markdown('<div class="v2-plan-add-zone">', unsafe_allow_html=True)
         input_left, input_right = st.columns([1.1, 1])
@@ -4056,6 +4716,8 @@ def _render_add_to_month_plan_expander(item: pd.Series) -> None:
         manual_ok = norm_scenario != NORM_SCENARIO_MANUAL or float(manual_norm) > 0
         qty_ok = plan_qty_f > 0 and plan_qty_f <= available_qty
         has_available = available_qty > 0
+        planner_name = str(st.session_state.get(V2_CURRENT_PLANNER_NAME_KEY) or "").strip()
+        planner_ok = bool(planner_name)
 
         if plan_qty_f > available_qty and plan_qty_f > 0:
             st.warning("Объём превышает доступный остаток.")
@@ -4067,6 +4729,7 @@ def _render_add_to_month_plan_expander(item: pd.Series) -> None:
             or not qty_ok
             or not crew_valid
             or not manual_ok
+            or not planner_ok
             or preview["needs_manual_norm"]
         )
 
@@ -4078,18 +4741,22 @@ def _render_add_to_month_plan_expander(item: pd.Series) -> None:
                 disabled=add_disabled,
                 key=f"v2_plan_add_{boq_code}",
             ):
-                append_v2_month_plan_draft_item(
-                    item,
-                    planning_month,
-                    plan_qty_f,
-                    str(crew).strip(),
-                    norm_scenario,
-                    float(manual_norm),
-                    comment,
-                    preview,
-                )
-                st.success("Строка добавлена в месячный план")
-                st.rerun()
+                if not planner_ok:
+                    st.error("Укажите ФИО планировщика")
+                else:
+                    append_v2_month_plan_draft_item(
+                        item,
+                        planning_month,
+                        plan_qty_f,
+                        str(crew).strip(),
+                        norm_scenario,
+                        float(manual_norm),
+                        comment,
+                        preview,
+                        planner_name,
+                    )
+                    st.success("Строка добавлена в месячный план")
+                    st.rerun()
 
         st.markdown(
             '<p class="v2-boq-action-footnote">'
@@ -4133,10 +4800,11 @@ def _v2_format_scope_table_display(display_df: pd.DataFrame) -> pd.DataFrame:
     for col in V2_SCOPE_QTY_COLUMNS:
         if col in out.columns:
             out[col] = out[col].apply(_v2_format_qty_display_str)
-    selected_code = st.session_state.get("v2_scope_selected_boq_code")
-    out["Выбор"] = out["Код"].astype(str).apply(
-        lambda code: "✓" if code == str(selected_code or "") else ""
-    )
+    for col in V2_SCOPE_COST_COLUMNS:
+        if col in out.columns:
+            out[col] = out[col].apply(
+                lambda value: _format_rub(_v2_safe_num(value)) if _v2_safe_num(value) > 0 else "—"
+            )
     return out
 
 
@@ -4846,13 +5514,14 @@ def calculate_v2_basic_scope_metrics(
     out["already_planned_qty"] = 0.0
     out["planned_month"] = ""
     out["planned_at"] = ""
+    out = _v2_merge_not_required_from_adjustments(out)
     out = _v2_apply_boq_availability_metrics(out)
 
     out["percent_executed"] = out.apply(
         lambda row: _v2_calculate_percent_executed_production(
             row["total_value"],
             row["executed_value"],
-            row["total_qty"],
+            row.get("effective_required_qty", row["total_qty"]),
             row.get("executed_total_qty", row["executed_qty"]),
         ),
         axis=1,
@@ -4871,6 +5540,12 @@ def calculate_v2_basic_scope_metrics(
         "manual_adjustment_comment": "",
         "manual_adjustment_updated_at": "",
         "manual_adjustment_source": "Не применялась",
+        "not_required_qty": 0.0,
+        "not_required_reason": "",
+        "not_required_responsible_person": "",
+        "not_required_comment": "",
+        "not_required_updated_at": "",
+        "effective_required_qty": 0.0,
         "norm_hours_per_unit": "-",
         "norm_type": "Не подключено",
         "productivity_history": "Не подключено",
@@ -4878,7 +5553,12 @@ def calculate_v2_basic_scope_metrics(
     for col, default in v1_defaults.items():
         if col not in out.columns:
             out[col] = default
-        elif col in {"manual_executed_before_system", "manual_adjustment_qty"}:
+        elif col in {
+            "manual_executed_before_system",
+            "manual_adjustment_qty",
+            "not_required_qty",
+            "effective_required_qty",
+        }:
             out[col] = pd.to_numeric(out[col], errors="coerce").fillna(0.0)
         elif col != "manual_adjustment_source":
             out[col] = out[col].replace("", default).fillna(default)
@@ -4963,7 +5643,9 @@ def map_v2_scope_to_ui_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
             "Всего": scoped_df["total_qty"],
             "Выполнено": scoped_df["daily_executed_qty"],
             "Выполнено всего": scoped_df["executed_total_qty"],
+            "Стоимость выполнено, ₽": _v2_scope_executed_value_series(scoped_df),
             "Остаток": scoped_df["remaining_qty"],
+            "Стоимость остатка, ₽": _v2_scope_remaining_value_series(scoped_df),
             "Превышение BOQ": scoped_df["overrun_qty"],
             "% освоения": scoped_df["percent_executed"].apply(_v2_format_percent_display_str),
             "Уже в плане": scoped_df["already_planned_qty"],
@@ -4974,8 +5656,11 @@ def map_v2_scope_to_ui_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
                 else "—"
             ),
             "Доступно": scoped_df["available_to_add_qty"],
+            "Стоимость доступно, ₽": _v2_scope_available_value_series(scoped_df),
+            "Исключено из выполнения": scoped_df["not_required_qty"],
+            "Рабочий объём": scoped_df["effective_required_qty"],
+            "Причина исключения": scoped_df["not_required_reason"].astype(str).replace({"": "—", "nan": "—"}),
             "Статус": scoped_df["status"].astype(str),
-            "Выбор": False,
         }
     )
     return ui[BOQ_SCOPE_TABLE_DISPLAY_COLUMNS]
@@ -5098,7 +5783,6 @@ def build_demo_boq_scope_df() -> pd.DataFrame:
         },
     ]
     df = pd.DataFrame(rows)
-    df["Выбор"] = False
     return df
 
 
@@ -5109,7 +5793,7 @@ def prepare_scope_table_df(scope_df: pd.DataFrame) -> pd.DataFrame:
     out = scope_df.copy()
     for col in BOQ_SCOPE_TABLE_DISPLAY_COLUMNS:
         if col not in out.columns:
-            if col in V2_SCOPE_QTY_COLUMNS:
+            if col in V2_SCOPE_QTY_COLUMNS or col in V2_SCOPE_COST_COLUMNS:
                 out[col] = 0.0
             elif col == "% освоения":
                 out[col] = "0%"
@@ -5296,7 +5980,7 @@ def _v2_sync_filter_option(key: str, options: list[str]) -> None:
 
 def _v2_default_scope_filter_values() -> dict[str, str]:
     return {
-        "v2_scope_planning_month": "июнь-2026",
+        "v2_scope_planning_month": V2_PLANNING_MONTH_ALL,
         "v2_scope_project": "Все",
         "v2_scope_queue": "Все",
         "v2_scope_title": "Все",
@@ -5344,6 +6028,7 @@ def render_scope_filters(scoped_df: pd.DataFrame) -> dict[str, str]:
     discipline_options = _v2_filter_options(scoped_df, "discipline")
     status_options = _v2_filter_options(scoped_df, "status")
 
+    _v2_sync_filter_option("v2_scope_planning_month", PLANNING_MONTH_OPTIONS)
     _v2_sync_filter_option("v2_scope_project", project_options)
     _v2_sync_filter_option("v2_scope_queue", queue_options)
     _v2_sync_filter_option("v2_scope_title", title_options)
@@ -5359,7 +6044,6 @@ def render_scope_filters(scoped_df: pd.DataFrame) -> dict[str, str]:
             st.selectbox(
                 "Месяц",
                 PLANNING_MONTH_OPTIONS,
-                index=PLANNING_MONTH_OPTIONS.index("июнь-2026"),
                 key="v2_scope_planning_month",
             )
         with row1[1]:
@@ -5435,11 +6119,9 @@ def style_v2_scope_table(display_df: pd.DataFrame, selected_code: str | None = N
     styler = display_df.style.map(_status_style, subset=["Статус"]).apply(
         _selection_row_style, axis=1
     )
-    if "Выбор" in display_df.columns:
-        styler = styler.set_properties(
-            subset=["Выбор"],
-            **{"text-align": "center", "font-weight": "700", "color": "#2F5D7C", "font-size": "1rem"},
-        )
+    for col in V2_SCOPE_COST_COLUMNS:
+        if col in display_df.columns:
+            styler = styler.set_properties(subset=[col], **{"text-align": "right", "white-space": "nowrap"})
     col_styles = [
         {
             "selector": f"thead th:nth-child({idx + 1}), tbody td:nth-child({idx + 1})",
@@ -5458,13 +6140,15 @@ def style_v2_scope_table(display_df: pd.DataFrame, selected_code: str | None = N
                 "props": [
                     ("min-width", "320px"),
                     ("max-width", "420px"),
-                    ("white-space", "normal"),
+                    ("white-space", "nowrap"),
                 ],
             }
         )
     for col_name, min_w, max_w in (
-        ("Система", "120px", "180px"),
-        ("IWP", "100px", "160px"),
+        ("Система", "160px", "220px"),
+        ("IWP", "160px", "220px"),
+        ("Код", "120px", "160px"),
+        ("Причина исключения", "140px", "200px"),
     ):
         if col_name in display_df.columns:
             idx = list(display_df.columns).index(col_name)
@@ -5478,6 +6162,18 @@ def style_v2_scope_table(display_df: pd.DataFrame, selected_code: str | None = N
                 }
             )
     return styler.set_table_styles(col_styles, overwrite=False)
+
+
+def _v2_build_scope_table_column_config(display_df: pd.DataFrame) -> dict[str, Any]:
+    """Ширины колонок «Рабочий список BOQ» через st.column_config."""
+    config: dict[str, Any] = {}
+    for col in display_df.columns:
+        width = V2_SCOPE_TABLE_COLUMN_WIDTHS.get(col)
+        if width is not None:
+            config[col] = st.column_config.TextColumn(col, width=width, disabled=True)
+        else:
+            config[col] = st.column_config.TextColumn(col, disabled=True)
+    return config
 
 
 def render_scope_table(ui_df: pd.DataFrame) -> pd.DataFrame:
@@ -5501,6 +6197,7 @@ def render_scope_table(ui_df: pd.DataFrame) -> pd.DataFrame:
         height=min(36 * len(display_df) + 38, 420),
         on_select="rerun",
         selection_mode="single-row",
+        column_config=_v2_build_scope_table_column_config(display_df),
         key="v2_scope_table_view",
     )
     st.markdown("</div>", unsafe_allow_html=True)
@@ -5522,7 +6219,7 @@ def render_scope_table(ui_df: pd.DataFrame) -> pd.DataFrame:
 def _v2_status_badge_html(status: str) -> str:
     style = V2_SCOPE_STATUS_STYLES.get(
         status,
-        "background-color: #F1F5F9; color: #64748B;",
+        V2_SCOPE_STATUS_STYLES.get("Нет остатка", "background-color: #F3F4F6; color: #5B6470;"),
     )
     return f'<span class="v2-boq-status-badge" style="{style}">{status}</span>'
 
@@ -5545,6 +6242,8 @@ def _scope_decision_message(
             "Факт превышает BOQ. Требуется проверка Daily Progress / BOQ / допработ.",
             "warning",
         )
+    if status == V2_SCOPE_STATUS_NOT_REQUIRED:
+        return "Остаток исключён из выполнения. Планирование недоступно.", "muted"
     if status == "Требует проверки":
         return "Требуется проверка корректировок и исходных данных", "warning"
     if status == "Перепланировано" or remaining_qty < 0:
@@ -5877,7 +6576,10 @@ def render_module_boq_scope() -> None:
         valid_df,
         source_columns=load_meta.get("columns"),
     )
-    planning_month = str(st.session_state.get("v2_scope_planning_month") or "").strip()
+    _v2_sync_filter_option("v2_scope_planning_month", PLANNING_MONTH_OPTIONS)
+    planning_month = _v2_resolve_planning_month_key(
+        str(st.session_state.get("v2_scope_planning_month") or "").strip()
+    )
     if planning_month:
         scoped_df = apply_v2_session_draft_reservation(scoped_df, planning_month)
     load_meta["excluded_invalid"] = excluded_invalid
@@ -5945,7 +6647,10 @@ def render_module_month_plan() -> None:
 
     scope = _v2_resolve_draft_scope()
     if not scope:
-        st.caption("Выберите конкретный проект (не «Все») и месяц в фильтрах Scope.")
+        st.caption(
+            "Выберите конкретный проект (не «Все») и месяц (не «Все месяца») "
+            "в фильтрах Scope."
+        )
         return
 
     project_code, month_key = scope

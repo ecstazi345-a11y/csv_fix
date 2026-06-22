@@ -1,5 +1,6 @@
 import html
 import os
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -74,6 +75,27 @@ FILTER_SESSION_KEYS = {
     "overdue_only": "admission_filter_overdue_only",
 }
 
+ADMISSION_FILTER_MEMORY_ENABLED_KEY = "admission_filter_memory_enabled"
+ADMISSION_FILTERS_LOCKED_KEY = "admission_filters_locked"
+ADMISSION_FILTERS_LOCKED_SNAPSHOT_KEY = "admission_filters_locked_snapshot"
+ADMISSION_FILTERS_PERSISTED_KEY = "admission_filters_persisted"
+ADMISSION_FILTERS_RESET_REQUESTED_KEY = "admission_filters_reset_requested"
+ADMISSION_FILTERS_LOCK_REQUESTED_KEY = "admission_filters_lock_requested"
+
+ADMISSION_FILTER_DEFAULTS: dict[str, Any] = {
+    FILTER_SESSION_KEYS["month"]: "Все",
+    FILTER_SESSION_KEYS["project"]: "Все",
+    FILTER_SESSION_KEYS["queue"]: "Все",
+    FILTER_SESSION_KEYS["title"]: "Все",
+    FILTER_SESSION_KEYS["discipline"]: "Все",
+    FILTER_SESSION_KEYS["check_status"]: "Все",
+    FILTER_SESSION_KEYS["search_boq"]: "",
+    FILTER_SESSION_KEYS["search_iwp"]: "",
+    FILTER_SESSION_KEYS["search_system"]: "",
+    FILTER_SESSION_KEYS["department"]: "Все",
+    FILTER_SESSION_KEYS["overdue_only"]: False,
+}
+
 CONSTRAINT_EDIT_SELECT_KEY = "constraints_edit_select"
 TABLE_SELECTED_ID_KEY = "constraints_table_selected_id"
 TABLE_SELECTION_KEY = "constraints_table_select"
@@ -98,6 +120,67 @@ DIRECT_ADMIT_LAYOUT_PRESETS: dict[str, list[float]] = {
     "Широкая фиксация": [24, 38, 38],
 }
 
+DIRECT_ADMIT_PANE_HEIGHT_PX = 1450
+DIRECT_ADMIT_GOV_BLOCKS_SCROLL_HEIGHT_PX = 920
+
+DIRECT_ADMIT_FIXATION_ORIGIN_OPTIONS = [
+    "Внутреннее",
+    "Внешнее",
+    "Смешанное",
+]
+
+DIRECT_ADMIT_FIXATION_CATEGORY_OPTIONS = [
+    "РД",
+    "МТР",
+    "Фронт работ",
+    "ОТиТБ",
+    "Качество",
+    "ПНР",
+    "Коммерческий блок",
+    "Заказчик / ГП",
+    "Исполнительная документация",
+    "Другое",
+]
+
+DIRECT_ADMIT_FIXATION_SEVERITY_LABELS = [
+    "Низкая",
+    "Средняя",
+    "Высокая",
+    "Критическая",
+]
+
+DIRECT_ADMIT_FIXATION_IMPACT_OPTIONS = [
+    "Блокирует работы",
+    "Частично ограничивает",
+    "Создаёт риск",
+    "Требует уточнения",
+]
+
+DIRECT_ADMIT_FIXATION_OWNER_SIDE_OPTIONS = [
+    "Заказчик",
+    "Генподрядчик",
+    "Субподрядчик",
+    "PM подрядчик",
+    "Технический надзор",
+    "Авторский надзор",
+    "Проектировщик",
+    "Вендор / поставщик оборудования",
+    "МТО / снабжение",
+    "ПТО",
+    "Производство / участок",
+    "QA/QC",
+    "ОТиТБ / HSE",
+    "ПНР",
+    "Коммерческий блок / договорной отдел",
+    "Сметный отдел",
+    "Логистика",
+    "Склад / входной контроль",
+    "Смежный подрядчик",
+    "Эксплуатация / будущий пользователь",
+    "Государственный надзор / разрешительные органы",
+    "Другое",
+]
+
 DIRECT_ADMIT_QUEUE_STATUS = {
     "pending": ("Требует допуска", "#64748b", "#2E5B9A"),
     "approved": ("Допущено", "#64748b", "#2F6B4F"),
@@ -106,15 +189,26 @@ DIRECT_ADMIT_QUEUE_STATUS = {
 }
 
 DIRECT_ADMIT_CONSTRAINT_TYPE_OPTIONS = [
-    "РД",
-    "МТР",
-    "Front",
-    "Исполнительная",
-    "Разрешение",
-    "Люди",
-    "Техника",
+    "Рабочая документация",
+    "Материально-техническое обеспечение",
+    "Фронт работ",
+    "Охрана труда и промышленная безопасность",
+    "Контроль качества",
+    "Пусконаладочные работы",
+    "Коммерческие / договорные вопросы",
+    "Проектное управление",
     "Другое",
 ]
+
+DIRECT_ADMIT_CONSTRAINT_TYPE_LEGACY_RU: dict[str, str] = {
+    "РД": "Рабочая документация",
+    "МТР": "Материально-техническое обеспечение",
+    "Front": "Фронт работ",
+    "Исполнительная": "Рабочая документация",
+    "Разрешение": "Коммерческие / договорные вопросы",
+    "Люди": "Проектное управление",
+    "Техника": "Фронт работ",
+}
 
 DIRECT_ADMIT_ROLE_OPTIONS = [
     "Участок",
@@ -175,22 +269,20 @@ DIRECT_ADMIT_CRITERIA_BY_DEPT: dict[str, list[str]] = {
         "Другое ограничение",
     ],
     "ПТО": [
-        "РД выдана",
-        "РД актуальна",
-        "Статус IFC подтверждён",
-        "Пакет/IWP сформирован",
-        "BOQ ↔ РД согласованы",
-        "Узлы / детали проработаны",
-        "TQ/RFI не блокируют",
-        "Коллизии со смежниками сняты",
-        "Последовательность работ определена",
-        "Исполнительная стратегия понятна",
+        "Актуальная РД выдана в производство работ",
+        "Пакет работ IWP сформирован и доступен",
+        "Расхождения и неточности в проектной документации проверены",
+        "Сопроводительная документация на МТР для входного контроля получена",
+        "Ведомость объёмов сверена с актуальной РД",
+        "Технические запросы и согласования по данному коду не блокируют выполнение работ",
+        "Узлы, детали и проектные решения достаточны для выполнения работ",
+        "Исполнительная документация и требования к оформлению работ понятны",
         "Другое ограничение",
     ],
     "МТО": [
         "Критический МТР обеспечен",
         "Комплектность МТР подтверждена",
-        "Long lead позиции доступны",
+        "Длительно поставляемые позиции обеспечены",
         "МТР доставлены в зону",
         "Входной контроль пройден",
         "Паспорта/сертификаты доступны",
@@ -202,28 +294,28 @@ DIRECT_ADMIT_CRITERIA_BY_DEPT: dict[str, list[str]] = {
     ],
     "QAQC": [
         "Критерии качества понятны",
-        "ITP/требования инспекции доступны",
-        "Hold/Witness points определены",
+        "План инспекций и требования к приёмке доступны",
+        "Точки контроля и освидетельствования определены",
         "Возможность предъявления обеспечена",
         "Предыдущий этап принят",
-        "Блокирующих NCR нет",
+        "Блокирующих записей о несоответствии нет",
         "Инспекция доступна",
-        "Готовность test package подтверждена",
+        "Готовность пакета испытаний подтверждена",
         "Документация качества готова",
-        "Критический QA hold отсутствует",
+        "Критическое удержание по качеству отсутствует",
         "Другое ограничение",
     ],
     "ОТиТБ": [
         "Наряд-допуск действителен",
-        "Риски/JSA согласованы",
+        "Риски и оценка безопасности работ согласованы",
         "Рабочая зона безопасна",
         "Огневой допуск активен",
         "Подъёмные операции согласованы",
-        "Изоляция/LOTO подтверждена",
-        "HSE замечания отсутствуют",
+        "Блокировка и маркировка оборудования подтверждена",
+        "Замечания по ОТиТБ отсутствуют",
         "Аварийная готовность обеспечена",
         "Обязательный надзор назначен",
-        "Блокирующих HSE замечаний нет",
+        "Блокирующих замечаний по ОТиТБ нет",
         "Другое ограничение",
     ],
     "Коммерческий отдел": [
@@ -232,22 +324,22 @@ DIRECT_ADMIT_CRITERIA_BY_DEPT: dict[str, list[str]] = {
         "Ограничение формально зафиксировано",
         "Неурегулированных изменений нет",
         "Зависимость от заказчика снята",
-        "Платёжный blocker отсутствует",
+        "Платёжных ограничений нет",
         "Все согласования получены",
         "Контрактный риск допустим",
-        "Delay event зафиксирован",
+        "Событие задержки зафиксировано",
         "Блокирующей переписки нет",
         "Другое ограничение",
     ],
     "ПНР": [
-        "Mechanical completion подтверждён",
-        "Punch list допустим",
+        "Механическая готовность подтверждена",
+        "Перечень доработок допустим",
         "Электропитание подано",
         "Автоматика готова",
         "Утилиты доступны",
-        "Vendor support подтверждён",
+        "Поддержка поставщика оборудования подтверждена",
         "Среда испытаний доступна",
-        "Pre-commissioning завершён",
+        "Предпусконаладочные работы завершены",
         "Документация готова",
         "Последовательность запуска утверждена",
         "Другое ограничение",
@@ -324,7 +416,14 @@ V2_PLAN_LINE_BASE_COLUMNS = [
     "sent_to_constraints_at",
 ]
 
-V2_PLAN_LINE_OPTIONAL_COLUMNS = ["queue", "title", "system", "iwp"]
+V2_PLAN_LINE_OPTIONAL_COLUMNS = [
+    "queue",
+    "title",
+    "system",
+    "iwp",
+    "planned_by",
+    "planned_at",
+]
 
 CHECK_STATUS_PRIORITY = {
     "FAIL": 0,
@@ -357,6 +456,7 @@ PACKAGE_TABLE_COLUMNS_RU = {
 }
 
 ADMISSION_MAIN_TABLE_COLUMNS = [
+    "package_status_ui",
     "project_code",
     "queue_display",
     "title_display",
@@ -371,8 +471,10 @@ ADMISSION_MAIN_TABLE_COLUMNS = [
     "plan_value_display",
     "labor_cost_display",
     "crew_display",
-    "package_status_ui",
     "who_holds_display",
+    "planned_by_display",
+    "planned_date_display",
+    "planned_time_msk_display",
     "sent_to_constraints_display",
 ]
 
@@ -393,6 +495,9 @@ ADMISSION_MAIN_TABLE_COLUMNS_RU = {
     "crew_display": "Звено",
     "package_status_ui": "Статус допуска",
     "who_holds_display": "Удерживает",
+    "planned_by_display": "Кто запланировал",
+    "planned_date_display": "Дата планирования",
+    "planned_time_msk_display": "Время планирования МСК",
     "sent_to_constraints_display": "Передано в допуск, МСК",
 }
 
@@ -593,6 +698,7 @@ BOQ_MULTI_CONSTRAINT_INFO = (
 )
 
 TABLE_COLUMNS = [
+    "check_status",
     "project_code",
     "month_key",
     "boq_code",
@@ -600,7 +706,6 @@ TABLE_COLUMNS = [
     "responsible_department",
     "gate_layer",
     "check_name",
-    "check_status",
     "severity",
     "resolution_status",
     "owner_name",
@@ -736,6 +841,16 @@ def format_datetime_ru(value: Any) -> str:
         return pd.to_datetime(value).strftime("%d.%m.%Y %H:%M")
     except Exception:  # noqa: BLE001
         return "—"
+
+
+def format_date_ru(value: date | None) -> str:
+    if value is None:
+        return "—"
+    return value.strftime("%d.%m.%Y")
+
+
+def format_date_any_ru(value: Any) -> str:
+    return format_date_ru(safe_date(value))
 
 
 def get_write_client() -> Optional[Client]:
@@ -991,6 +1106,22 @@ def format_datetime_moscow(value: Any) -> str:
         return "—"
 
 
+def format_planned_date_moscow(value: Any) -> str:
+    """Дата планирования (МСК) для таблицы допуска."""
+    formatted = format_datetime_moscow(value)
+    if formatted == "—":
+        return "—"
+    return formatted.split(" ", 1)[0]
+
+
+def format_planned_time_moscow(value: Any) -> str:
+    """Время планирования (МСК) для таблицы допуска."""
+    formatted = format_datetime_moscow(value)
+    if formatted == "—" or " " not in formatted:
+        return "—"
+    return f"{formatted.split(' ', 1)[1]} МСК"
+
+
 def now_moscow_text() -> str:
     return datetime.now(ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M MSK")
 
@@ -1117,6 +1248,8 @@ def enrich_packages_with_v2_lines(
         if v2_row and v2_row.get("plan_value") is not None:
             plan_value = safe_num(v2_row.get("plan_value"))
         sent_at = v2_row.get("sent_to_constraints_at") if v2_row else None
+        planned_by = safe_str(v2_row.get("planned_by")) if v2_row else ""
+        planned_at = v2_row.get("planned_at") if v2_row else None
 
         row = pkg.to_dict()
         row["queue_display"] = field_display(queue) if queue else "—"
@@ -1135,6 +1268,9 @@ def enrich_packages_with_v2_lines(
         row["sent_to_constraints_display"] = (
             format_datetime_moscow(sent_at) if has_meaningful_value(sent_at) else "—"
         )
+        row["planned_by_display"] = field_display(planned_by) if planned_by else "—"
+        row["planned_date_display"] = format_planned_date_moscow(planned_at)
+        row["planned_time_msk_display"] = format_planned_time_moscow(planned_at)
         row["package_status_ui"] = PACKAGE_STATUS_RU.get(
             safe_str(row.get("package_status")),
             safe_str(row.get("package_status")),
@@ -1196,6 +1332,16 @@ def apply_queue_filters(
     return result
 
 
+def filter_decision_registry_df(
+    scope_df: pd.DataFrame,
+    department: str,
+    check_status: str,
+    overdue_only: bool,
+) -> pd.DataFrame:
+    """Реестр решений: scope_df уже отфильтрован по пакетам страницы + фильтры очереди."""
+    return apply_queue_filters(scope_df, department, check_status, overdue_only)
+
+
 def apply_package_filters(
     packages_df: pd.DataFrame,
     month: str,
@@ -1254,17 +1400,78 @@ def filter_constraints_by_package_keys(
 
 
 def reset_admission_filters() -> None:
-    st.session_state[FILTER_SESSION_KEYS["month"]] = "Все"
-    st.session_state[FILTER_SESSION_KEYS["project"]] = "Все"
-    st.session_state[FILTER_SESSION_KEYS["queue"]] = "Все"
-    st.session_state[FILTER_SESSION_KEYS["title"]] = "Все"
-    st.session_state[FILTER_SESSION_KEYS["discipline"]] = "Все"
-    st.session_state[FILTER_SESSION_KEYS["check_status"]] = "Все"
-    st.session_state[FILTER_SESSION_KEYS["search_boq"]] = ""
-    st.session_state[FILTER_SESSION_KEYS["search_iwp"]] = ""
-    st.session_state[FILTER_SESSION_KEYS["search_system"]] = ""
-    st.session_state[FILTER_SESSION_KEYS["department"]] = "Все"
-    st.session_state[FILTER_SESSION_KEYS["overdue_only"]] = False
+    for session_key, default in ADMISSION_FILTER_DEFAULTS.items():
+        st.session_state[session_key] = default
+
+
+def admission_filter_values_from_session() -> dict[str, Any]:
+    return {
+        session_key: st.session_state.get(session_key, ADMISSION_FILTER_DEFAULTS[session_key])
+        for session_key in ADMISSION_FILTER_DEFAULTS
+    }
+
+
+def persist_admission_filters() -> None:
+    st.session_state[ADMISSION_FILTERS_PERSISTED_KEY] = admission_filter_values_from_session()
+
+
+def lock_admission_filters() -> None:
+    snapshot = admission_filter_values_from_session()
+    st.session_state[ADMISSION_FILTERS_LOCKED_SNAPSHOT_KEY] = snapshot
+    st.session_state[ADMISSION_FILTERS_LOCKED_KEY] = True
+    st.session_state[ADMISSION_FILTERS_LOCK_REQUESTED_KEY] = True
+    persist_admission_filters()
+
+
+def admission_filter_memory_active() -> bool:
+    return bool(st.session_state.get(ADMISSION_FILTER_MEMORY_ENABLED_KEY)) or bool(
+        st.session_state.get(ADMISSION_FILTERS_LOCKED_KEY)
+    )
+
+
+def request_admission_filters_reset() -> None:
+    st.session_state[ADMISSION_FILTERS_RESET_REQUESTED_KEY] = True
+
+
+def admission_filter_status_text() -> str:
+    if st.session_state.get(ADMISSION_FILTERS_LOCKED_KEY):
+        return "Рабочий срез зафиксирован, изменения фильтров продолжают сохраняться"
+    if st.session_state.get(ADMISSION_FILTER_MEMORY_ENABLED_KEY):
+        return "Фильтры сохраняются"
+    return "Фильтры не сохраняются"
+
+
+def apply_admission_filter_memory_before_widgets() -> None:
+    """Восстановление / сброс фильтров до создания widget-ключей."""
+    if st.session_state.pop(ADMISSION_FILTERS_RESET_REQUESTED_KEY, False):
+        reset_admission_filters()
+        st.session_state[ADMISSION_FILTER_MEMORY_ENABLED_KEY] = False
+        st.session_state[ADMISSION_FILTERS_LOCKED_KEY] = False
+        st.session_state.pop(ADMISSION_FILTERS_LOCKED_SNAPSHOT_KEY, None)
+        st.session_state.pop(ADMISSION_FILTERS_PERSISTED_KEY, None)
+        st.session_state.pop(ADMISSION_FILTERS_LOCK_REQUESTED_KEY, None)
+        return
+
+    if st.session_state.pop(ADMISSION_FILTERS_LOCK_REQUESTED_KEY, False):
+        st.session_state[ADMISSION_FILTER_MEMORY_ENABLED_KEY] = True
+
+    if ADMISSION_FILTER_MEMORY_ENABLED_KEY not in st.session_state:
+        st.session_state[ADMISSION_FILTER_MEMORY_ENABLED_KEY] = False
+    if ADMISSION_FILTERS_LOCKED_KEY not in st.session_state:
+        st.session_state[ADMISSION_FILTERS_LOCKED_KEY] = False
+
+    if st.session_state.get(ADMISSION_FILTER_MEMORY_ENABLED_KEY):
+        persisted = st.session_state.get(ADMISSION_FILTERS_PERSISTED_KEY) or {}
+        for session_key, value in persisted.items():
+            # Восстанавливаем только отсутствующие ключи: иначе persisted
+            # перезапишет новое widget value до отрисовки selectbox.
+            if session_key not in st.session_state:
+                st.session_state[session_key] = value
+
+
+def sync_admission_filter_memory_after_widgets() -> None:
+    if admission_filter_memory_active():
+        persist_admission_filters()
 
 
 def inject_admission_page_styles() -> None:
@@ -1542,8 +1749,27 @@ def inject_admission_page_styles() -> None:
             margin-bottom: 0.4rem;
         }
         #da-queue-scroll-host { display: none; }
+        #da-gov-scroll-host { display: none; }
+        [data-testid="stHorizontalBlock"]:has(.da-direct-admit-pane-marker) {
+            align-items: stretch !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.da-direct-admit-pane-marker) > div[data-testid="stColumn"] {
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.da-direct-admit-pane-marker) > div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
+            flex: 1 1 auto !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.da-direct-admit-pane-marker) [data-testid="stVerticalBlockBorderWrapper"]:has(.da-direct-admit-pane-marker) {
+            flex: 1 1 auto !important;
+            min-height: 1450px !important;
+            height: 1450px !important;
+            box-sizing: border-box !important;
+        }
         [data-testid="stVerticalBlockBorderWrapper"]:has(#da-queue-scroll-host) {
-            max-height: 1200px !important;
+            max-height: 1450px !important;
             overflow-y: auto !important;
             overflow-x: hidden !important;
             scrollbar-width: auto;
@@ -1565,6 +1791,73 @@ def inject_admission_page_styles() -> None:
         [data-testid="stVerticalBlockBorderWrapper"]:has(#da-queue-scroll-host)::-webkit-scrollbar-thumb:hover {
             background: #64748b;
         }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-gov-scroll-host) {
+            max-height: 1450px !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            scrollbar-width: auto;
+            scrollbar-color: #94a3b8 #eef2f7;
+            padding-right: 0.15rem;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-gov-scroll-host)::-webkit-scrollbar {
+            width: 11px;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-gov-scroll-host)::-webkit-scrollbar-track {
+            background: #eef2f7;
+            border-radius: 6px;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-gov-scroll-host)::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+            border-radius: 6px;
+            border: 2px solid #eef2f7;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-gov-scroll-host)::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-gov-scroll-host) [data-testid="stExpander"] {
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 6px !important;
+            background: #ffffff !important;
+            margin-bottom: 0.32rem !important;
+            box-shadow: none !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-gov-scroll-host) [data-testid="stExpander"] details summary {
+            font-size: 0.82rem !important;
+            font-weight: 700 !important;
+            color: #334155 !important;
+            padding: 0.28rem 0.45rem !important;
+            min-height: 0 !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-gov-scroll-host) [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
+            padding: 0.12rem 0.42rem 0.32rem 0.42rem !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-gov-scroll-host) .da-fix-panel {
+            border: 1px solid #eef2f7;
+            border-radius: 5px;
+            background: #fafbfc;
+            padding: 0.22rem 0.28rem;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(#da-gov-scroll-host) [data-testid="stExpander"] [data-testid="stVerticalBlock"] {
+            gap: 0.35rem !important;
+        }
+        [data-testid="stVerticalBlock"]:has(#da-gov-decision-host) [data-testid="stExpander"] {
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 6px !important;
+            background: #ffffff !important;
+            margin-bottom: 0.32rem !important;
+            box-shadow: none !important;
+        }
+        [data-testid="stVerticalBlock"]:has(#da-gov-decision-host) [data-testid="stExpander"] details summary {
+            font-size: 0.82rem !important;
+            font-weight: 700 !important;
+            color: #334155 !important;
+            padding: 0.28rem 0.45rem !important;
+            min-height: 0 !important;
+        }
+        [data-testid="stVerticalBlock"]:has(#da-gov-decision-host) [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
+            padding: 0.12rem 0.42rem 0.32rem 0.42rem !important;
+        }
+        #da-gov-decision-host { display: none; }
         .da-queue-card {
             border: 1px solid #e2e8f0;
             border-radius: 5px;
@@ -2423,6 +2716,27 @@ def style_check_status_bg(val: Any) -> str:
     return CHECK_STATUS_BG_RU.get(str(val), "")
 
 
+def style_check_status_text(val: Any) -> str:
+    text = str(val).strip()
+    if not text or text == "—":
+        return "color: #64748b;"
+    lower = text.lower()
+    if "пройдено" in lower or "допущено" in lower or "закрыто" in lower:
+        return "color: #2F6B4F; font-weight: 600;"
+    if "риск" in lower or "уточнен" in lower or "в работе" in lower:
+        return "color: #92610E; font-weight: 600;"
+    if (
+        "удержание" in lower
+        or "блокир" in lower
+        or "не пройдено" in lower
+        or lower == "открыто"
+    ):
+        return "color: #9B3D3D; font-weight: 600;"
+    if "ожидает" in lower or "не проверен" in lower:
+        return "color: #64748b;"
+    return "color: #475569;"
+
+
 def style_overdue_bg(val: Any) -> str:
     try:
         if int(float(val)) > 0:
@@ -2597,6 +2911,17 @@ def _apply_cell_style(styler, func, column: str):
 def style_table(df_in: pd.DataFrame):
     styler = df_in.style
     styler = _apply_cell_style(styler, style_check_status_bg, TABLE_COLUMNS_RU["check_status"])
+    styler = _apply_cell_style(styler, style_overdue_bg, TABLE_COLUMNS_RU["days_overdue"])
+    severity_col = TABLE_COLUMNS_RU.get("severity", "Критичность")
+    styler = _apply_cell_style(styler, style_severity_text, severity_col)
+    return styler
+
+
+def style_decision_registry_table(df_in: pd.DataFrame):
+    styler = df_in.style
+    status_col = TABLE_COLUMNS_RU.get("check_status", "Статус проверки")
+    if status_col in styler.data.columns:
+        styler = _apply_cell_style(styler, style_check_status_text, status_col)
     styler = _apply_cell_style(styler, style_overdue_bg, TABLE_COLUMNS_RU["days_overdue"])
     severity_col = TABLE_COLUMNS_RU.get("severity", "Критичность")
     styler = _apply_cell_style(styler, style_severity_text, severity_col)
@@ -3053,6 +3378,57 @@ def _da_crit_status_label(status: str) -> str:
         status,
         DIRECT_ADMIT_CRIT_STATUS_UI[DIRECT_ADMIT_CRIT_STATUS_UNCHECKED],
     )[0]
+
+
+def direct_admit_constraint_type_label(value: str) -> str:
+    text = safe_str(value)
+    if not text:
+        return "—"
+    return DIRECT_ADMIT_CONSTRAINT_TYPE_LEGACY_RU.get(text, text)
+
+
+def _da_crit_attention_lines(cid: str, criteria: list[str]) -> list[str]:
+    """Строки для блока 4: БЛОКЕР / РИСК / ЧАСТИЧНО из session_state критериев."""
+    status_prefix = {
+        DIRECT_ADMIT_CRIT_STATUS_BLOCKER: "БЛОКЕР",
+        DIRECT_ADMIT_CRIT_STATUS_RISK: "РИСК",
+        DIRECT_ADMIT_CRIT_STATUS_PARTIAL: "ЧАСТИЧНО",
+    }
+    status_order = {
+        DIRECT_ADMIT_CRIT_STATUS_BLOCKER: 0,
+        DIRECT_ADMIT_CRIT_STATUS_RISK: 1,
+        DIRECT_ADMIT_CRIT_STATUS_PARTIAL: 2,
+    }
+    items: list[tuple[int, int, str]] = []
+    for idx, crit_label in enumerate(criteria):
+        status, pct = _da_crit_read_row(cid, idx)
+        prefix = status_prefix.get(status)
+        if not prefix:
+            continue
+        if status == DIRECT_ADMIT_CRIT_STATUS_PARTIAL and pct is not None:
+            line = f"{prefix}: {crit_label} — {pct}%"
+        else:
+            line = f"{prefix}: {crit_label}"
+        items.append((status_order[status], idx, line))
+    items.sort(key=lambda item: (item[0], item[1]))
+    return [line for _, _, line in items]
+
+
+def _render_fixation_criteria_attention_section(cid: str, criteria: list[str]) -> None:
+    st.markdown("**Критерии, требующие внимания**")
+    lines = _da_crit_attention_lines(cid, criteria)
+    if not lines:
+        st.caption("Блокирующие и рискованные критерии не выявлены.")
+        return
+    lines_html = "".join(
+        f'<div style="font-size:0.78rem;color:#334155;margin:0.1rem 0;line-height:1.35;">'
+        f"{html.escape(line)}</div>"
+        for line in lines
+    )
+    st.markdown(
+        f'<div class="da-fix-panel" style="padding:0.35rem 0.45rem;">{lines_html}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _da_crit_status_css_suffix(status: str) -> str:
@@ -3806,7 +4182,6 @@ def render_direct_admit_module_header(
         dept_chip_name = "Все отделы"
         dept_role = "Выберите отдел допуска в фильтрах, чтобы работать от имени конкретного отдела."
 
-    st.markdown("### Непосредственный допуск по отделам")
     st.markdown(
         f'<div class="da-dept-chip-card"><div class="da-dept-chip-label">ВЫБРАН ОТДЕЛ ДОПУСКА</div>'
         f'<div class="da-dept-chip-name">{html.escape(dept_chip_name)}</div></div>',
@@ -3827,21 +4202,646 @@ def render_direct_admit_module_header(
     )
 
 
+def _render_fixation_context_section(row: pd.Series, prefix: str) -> None:
+    dept_pill = field_display(row.get("responsible_department_ui"))
+    if dept_pill == "—":
+        dept_pill = dept_ui(row.get("responsible_department"))
+
+    status_key = norm_check_status_key(row.get("check_status"))
+    status_label, _, _ = direct_admit_queue_status(status_key)
+    status_display = field_display(row.get("check_status_ui"))
+    if status_display == "—":
+        status_display = status_label
+
+    severity_raw = safe_str(row.get("severity"))
+    severity_display = "—"
+    if severity_raw:
+        severity_display = SEVERITY_RU.get(
+            norm_tech_value(severity_raw, SEVERITY_OPTIONS, SEVERITY_RU, "MEDIUM"),
+            severity_raw,
+        )
+    sev_saved = safe_str(st.session_state.get(f"{prefix}_sev"))
+    if sev_saved:
+        severity_display = SEVERITY_RU.get(sev_saved, sev_saved)
+
+    impact_display = safe_str(st.session_state.get(f"{prefix}_mvp_impact")) or "—"
+
+    cells = [
+        ("BOQ-код", field_display(row.get("boq_code"))),
+        ("Наименование работ", field_display(row.get("boq_name"))),
+        ("Отдел допуска", dept_pill),
+        ("Статус допуска", status_display),
+        ("Критичность", severity_display),
+        ("Влияние", impact_display),
+    ]
+    st.markdown(
+        f'<div class="da-fix-panel">{_render_da_compact_grid_html(cells, columns=2)}</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption("Полный контекст см. в блоке **2. Решение по коду**")
+
+
+def _sync_fixation_blocks_to_governance_keys(
+    prefix: str,
+    saver_name: str,
+    draft: dict[str, Any],
+    cid: str,
+    row: pd.Series,
+) -> None:
+    """UI-only: подставляет block 2/3 в скрытые ключи block 5 для save."""
+    owner_side = safe_str(st.session_state.get(f"{prefix}_mvp_owner_side")).strip()
+    owner_detail = safe_str(st.session_state.get(f"{prefix}_mvp_owner_detail")).strip()
+
+    role_key = f"{prefix}_role"
+    if owner_side:
+        st.session_state[role_key] = owner_side
+    elif role_key not in st.session_state or not safe_str(st.session_state.get(role_key)).strip():
+        if draft.get("cid") == cid and safe_str(draft.get("owner_role")).strip():
+            st.session_state[role_key] = draft["owner_role"]
+        else:
+            st.session_state[role_key] = "Другое"
+
+    owner_key = f"{prefix}_owner"
+    if owner_detail:
+        st.session_state[owner_key] = owner_detail
+    elif owner_key not in st.session_state or not safe_str(st.session_state.get(owner_key)).strip():
+        fallback = ""
+        if draft.get("cid") == cid:
+            fallback = safe_str(draft.get("owner")).strip()
+        if not fallback:
+            fallback = safe_str(row.get("owner_name")).strip()
+        if not fallback:
+            fallback = saver_name
+        st.session_state[owner_key] = fallback
+
+    desc_key = f"{prefix}_desc"
+    impediment = safe_str(st.session_state.get(f"{prefix}_mvp_impediment")).strip()
+    if impediment and not safe_str(st.session_state.get(desc_key)).strip():
+        st.session_state[desc_key] = impediment
+
+
+_DIRECT_ADMIT_JOURNAL_LINE_RE = re.compile(
+    r"^\[(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2})\]\s*(.+)$"
+)
+_DIRECT_ADMIT_AUDIT_SUMMARY_PREFIXES = (
+    "Тип решения:",
+    "Причина:",
+    "Действие:",
+    "Ответственный:",
+    "Срок:",
+    "ФИО принявшего решение:",
+    "Дата и время:",
+    "Решение:",
+)
+
+
+def _direct_admit_governance_decision_label(status_key: str) -> str:
+    if status_key == "PASS":
+        return "Допуск"
+    if status_key == "WARNING":
+        return "Требует доработки"
+    if status_key in ("HOLD", "FAIL"):
+        return "Блокировка"
+    return "—"
+
+
+def _direct_admit_audit_reason(row: pd.Series) -> str:
+    for col in ("block_reason", "root_cause"):
+        text = safe_str(row.get(col)).strip()
+        if text:
+            return text
+    return ""
+
+
+def _direct_admit_classify_journal_action(text: str) -> str:
+    lower = text.lower()
+    if "допущено" in lower:
+        return "Допуск"
+    if "уточнение" in lower or "доработ" in lower:
+        return "Требует доработки"
+    if "заблокировано" in lower or "блокир" in lower:
+        return "Блокировка"
+    return "Действие"
+
+
+def _direct_admit_comment_journal(comment_raw: str) -> list[dict[str, str]]:
+    comment = safe_str(comment_raw).strip()
+    if not comment:
+        return []
+    events: list[dict[str, str]] = []
+    for line in comment.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        match = _DIRECT_ADMIT_JOURNAL_LINE_RE.match(stripped)
+        if not match:
+            continue
+        body = match.group(2).strip()
+        events.append(
+            {
+                "datetime_msk": f"{match.group(1)} МСК",
+                "author": "—",
+                "action": _direct_admit_classify_journal_action(body),
+                "comment": body,
+            }
+        )
+    return events
+
+
+def _direct_admit_comment_free_text(
+    comment_raw: str,
+    reason: str,
+    journal_events: list[dict[str, str]],
+) -> str:
+    comment = safe_str(comment_raw).strip()
+    if not comment:
+        return ""
+    event_bodies = {event["comment"] for event in journal_events}
+    remaining: list[str] = []
+    for line in comment.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _DIRECT_ADMIT_JOURNAL_LINE_RE.match(stripped):
+            continue
+        if any(stripped.startswith(prefix) for prefix in _DIRECT_ADMIT_AUDIT_SUMMARY_PREFIXES):
+            continue
+        if stripped in event_bodies:
+            continue
+        if reason and stripped == reason:
+            continue
+        remaining.append(stripped)
+    return "\n".join(remaining).strip()
+
+
+def _render_fixation_audit_journal_table(
+    journal_events: list[dict[str, str]],
+    trailing_note: str = "",
+) -> None:
+    rows_html: list[str] = []
+    for event in reversed(journal_events):
+        rows_html.append(
+            "<tr>"
+            f'<td style="padding:0.25rem 0.35rem;vertical-align:top;white-space:nowrap;">'
+            f"{html.escape(event['datetime_msk'])}</td>"
+            f'<td style="padding:0.25rem 0.35rem;vertical-align:top;">'
+            f"{html.escape(event['author'])}</td>"
+            f'<td style="padding:0.25rem 0.35rem;vertical-align:top;">'
+            f"{html.escape(event['action'])}</td>"
+            f'<td style="padding:0.25rem 0.35rem;vertical-align:top;white-space:pre-wrap;">'
+            f"{html.escape(event['comment'])}</td>"
+            "</tr>"
+        )
+    table_html = (
+        '<table style="width:100%;border-collapse:collapse;font-size:0.78rem;color:#334155;">'
+        "<thead><tr>"
+        '<th style="text-align:left;padding:0.25rem 0.35rem;color:#64748b;font-weight:600;">'
+        "Дата / время</th>"
+        '<th style="text-align:left;padding:0.25rem 0.35rem;color:#64748b;font-weight:600;">'
+        "Автор</th>"
+        '<th style="text-align:left;padding:0.25rem 0.35rem;color:#64748b;font-weight:600;">'
+        "Действие</th>"
+        '<th style="text-align:left;padding:0.25rem 0.35rem;color:#64748b;font-weight:600;">'
+        "Комментарий</th>"
+        "</tr></thead>"
+        f"<tbody>{''.join(rows_html)}</tbody></table>"
+    )
+    st.markdown(
+        f'<div class="da-fix-panel" style="padding:0.35rem 0.45rem;overflow-x:auto;">'
+        f"{table_html}</div>",
+        unsafe_allow_html=True,
+    )
+    if trailing_note:
+        st.markdown(
+            f'<div class="da-fix-panel" style="padding:0.35rem 0.45rem;font-size:0.78rem;'
+            f'color:#334155;line-height:1.35;white-space:pre-wrap;margin-top:0.35rem;">'
+            f"{html.escape(trailing_note)}</div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _render_fixation_classification_pass_info() -> None:
+    st.info(
+        "Ограничения отсутствуют.\n\n"
+        "Код готов к включению в месячный план."
+    )
+
+
+def _render_fixation_plan_pass_info() -> None:
+    st.info("Дополнительные мероприятия не требуются.")
+
+
+def _render_fixation_classification_section(prefix: str) -> None:
+    st.caption(
+        "Классификация и владелец (session_state). "
+        "Категория и критичность для сохранения — в блоке 5."
+    )
+    st.selectbox(
+        "Происхождение ограничения",
+        DIRECT_ADMIT_FIXATION_ORIGIN_OPTIONS,
+        key=f"{prefix}_mvp_origin",
+    )
+    st.selectbox(
+        "Сторона-владелец ограничения",
+        DIRECT_ADMIT_FIXATION_OWNER_SIDE_OPTIONS,
+        index=None,
+        placeholder="Выберите сторону-владельца",
+        key=f"{prefix}_mvp_owner_side",
+    )
+    st.text_input(
+        "Конкретный владелец / подразделение / ФИО",
+        placeholder="Например: Тихонин Николай / ПТО ГП / отдел МТО",
+        key=f"{prefix}_mvp_owner_detail",
+    )
+    st.selectbox(
+        "Влияние",
+        DIRECT_ADMIT_FIXATION_IMPACT_OPTIONS,
+        key=f"{prefix}_mvp_impact",
+    )
+
+
+def _render_fixation_plan_section(
+    prefix: str,
+    row: pd.Series,
+) -> None:
+    st.caption(
+        "Рабочий план снятия ограничения (session_state). "
+        "Официальный срок фиксации — в блоке **5. Какое решение официально фиксируем**."
+    )
+    control_key = f"{prefix}_mvp_next_control"
+    if control_key not in st.session_state:
+        st.session_state[control_key] = date.today()
+    st.text_area(
+        "Что мешает выполнить работу",
+        key=f"{prefix}_mvp_impediment",
+        height=68,
+        placeholder="Кратко опишите препятствие",
+    )
+    st.text_area(
+        "Что необходимо сделать",
+        key=f"{prefix}_mvp_action",
+        height=68,
+        placeholder="Конкретные шаги для снятия ограничения",
+    )
+    st.date_input(
+        "Следующий контроль",
+        key=control_key,
+    )
+    st.caption(f"Выбрано: {format_date_any_ru(st.session_state.get(control_key))}")
+
+
+def _render_fixation_audit_content(
+    row: pd.Series,
+    cid: str = "",
+    criteria: list[str] | None = None,
+) -> None:
+    status_key = norm_check_status_key(row.get("check_status"))
+    queue_label, _, _ = direct_admit_queue_status(status_key)
+    decision_label = _direct_admit_governance_decision_label(status_key)
+    updated_by = audit_last_updated_by(row) or safe_str(row.get("resolved_by"))
+    updated_by_display = field_display(updated_by)
+    updated_at_display = format_datetime_moscow(audit_last_updated_at(row))
+    owner_display = field_display(row.get("owner_name"))
+    target_text = format_date_any_ru(row.get("target_resolution_date"))
+    reason_raw = _direct_admit_audit_reason(row)
+    reason_display = field_display(reason_raw)
+
+    comment_raw = safe_str(row.get("comment"))
+    journal_events = _direct_admit_comment_journal(comment_raw)
+    if journal_events and updated_by_display != "—":
+        journal_events[-1]["author"] = updated_by_display
+
+    if journal_events:
+        last_action_display = journal_events[-1]["comment"]
+    elif decision_label != "—":
+        last_action_display = decision_label
+    else:
+        last_action_display = "—"
+
+    st.markdown("**A. Текущее состояние**")
+    state_cells = [
+        ("Статус допуска", queue_label),
+        ("Последнее действие", last_action_display),
+        ("Решение", decision_label),
+        ("Инициатор / кто зафиксировал", updated_by_display),
+        ("Дата / время (МСК)", updated_at_display),
+        ("Владелец ограничения", owner_display),
+        ("Срок ответа / снятия", target_text),
+        ("Причина", reason_display),
+    ]
+    st.markdown(
+        f'<div class="da-fix-panel">{_render_da_compact_grid_html(state_cells, columns=2)}</div>',
+        unsafe_allow_html=True,
+    )
+
+    if cid and criteria is not None:
+        _render_fixation_criteria_attention_section(cid, criteria)
+
+    st.markdown("**B. Журнал действий**")
+    free_text = _direct_admit_comment_free_text(comment_raw, reason_raw, journal_events)
+    if journal_events:
+        _render_fixation_audit_journal_table(journal_events, free_text)
+    elif free_text:
+        st.markdown(
+            f'<div class="da-fix-panel" style="padding:0.35rem 0.45rem;font-size:0.78rem;'
+            f'color:#334155;line-height:1.35;white-space:pre-wrap;">'
+            f"{html.escape(free_text)}</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.caption("Записей в журнале пока нет.")
+
+    st.markdown("**C. История по BOQ-коду**")
+    st.caption(
+        "Полная межмесячная история по BOQ-коду будет доступна после подключения журнала ограничений."
+    )
+
+
+def _render_fixation_decision_section(
+    row: pd.Series,
+    prefix: str,
+    cid: str,
+    pending_action: str,
+    saver_name: str,
+    workbench_df: pd.DataFrame,
+) -> None:
+    if not pending_action:
+        st.info(
+            "Выберите решение в центре: Допустить, Требует доработки или Заблокировать."
+        )
+        return
+
+    draft = st.session_state.get(DIRECT_ADMIT_DECISION_DRAFT_KEY) or {}
+
+    if pending_action == "pass":
+        st.markdown(
+            "Код допускается к включению в месячный план.\n\n"
+            "Данное решение будет официально зафиксировано в контуре допуска."
+        )
+    elif pending_action == "clarify":
+        st.markdown(
+            "Код не может быть допущен без дополнительной проработки.\n\n"
+            "Данное решение будет официально зафиксировано в контуре допуска."
+        )
+    elif pending_action == "block":
+        st.markdown(
+            "Код не может быть допущен до устранения ограничения.\n\n"
+            "Данное решение будет официально зафиксировано в контуре допуска."
+        )
+
+    if draft.get("cid") == cid:
+        st.caption(f"Решение принято: {draft.get('decided_at_msk', now_moscow_decision_text())}")
+
+    if pending_action == "pass":
+        pass_by_key = f"{prefix}_pass_by"
+        pass_comment_key = f"{prefix}_pass_comment"
+        if pass_by_key not in st.session_state:
+            st.session_state[pass_by_key] = saver_name
+        if pass_comment_key not in st.session_state:
+            st.session_state[pass_comment_key] = ""
+        st.markdown("**Допуск**")
+        comment = st.text_area(
+            "Комментарий (необязательно)",
+            key=pass_comment_key,
+            height=72,
+        )
+        admitted_by = st.text_input(
+            "Кто допустил",
+            key=pass_by_key,
+        )
+        if not (draft.get("cid") == cid):
+            st.caption(f"Время фиксации: {now_moscow_text()} (МСК)")
+        if st.button("Сохранить допуск", type="primary", key=f"{prefix}_save_pass"):
+            officer = admitted_by.strip()
+            if not officer:
+                st.error("Укажите ФИО лица, принимающего решение")
+            else:
+                save_comment = comment.strip()
+                if draft.get("cid") == cid:
+                    audit = format_direct_admit_audit_trail(draft)
+                    if audit not in save_comment:
+                        save_comment = (
+                            f"{audit}\n\n{save_comment}" if save_comment else audit
+                        )
+                err = save_direct_admission_decision(
+                    row,
+                    "pass",
+                    officer,
+                    comment=save_comment,
+                    owner_name=officer,
+                )
+                if err:
+                    st.error(err)
+                else:
+                    st.cache_data.clear()
+                    st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
+                    _da_clear_decision_session()
+                    st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = advance_direct_admit_selection(
+                        workbench_df,
+                        cid,
+                    )
+                    st.rerun()
+        if st.button("Отмена", key=f"{prefix}_cancel_pass"):
+            st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
+            _da_clear_decision_session()
+            st.rerun()
+        return
+
+    dept = safe_str(row.get("responsible_department"))
+    category_opts = category_options_for_department(dept, "Другое")
+    merged_types = list(
+        dict.fromkeys([*DIRECT_ADMIT_CONSTRAINT_TYPE_OPTIONS, *category_opts[:6]])
+    )
+
+    _sync_fixation_blocks_to_governance_keys(prefix, saver_name, draft, cid, row)
+
+    if pending_action == "clarify":
+        target_label = "Срок ответа / снятия"
+        save_label = "Зафиксировать уточнение"
+    else:
+        target_label = "Срок ответа / снятия"
+        save_label = "Зафиксировать блокировку"
+
+    target_key = f"{prefix}_target"
+    desc_key = f"{prefix}_desc"
+    block_reason_key = f"{prefix}_block_reason"
+    if target_key not in st.session_state:
+        st.session_state[target_key] = (
+            safe_date(row.get("target_resolution_date")) or date.today()
+        )
+    if desc_key not in st.session_state:
+        st.session_state[desc_key] = ""
+    if pending_action == "block" and block_reason_key not in st.session_state:
+        st.session_state[block_reason_key] = ""
+
+    owner_side_hint = safe_str(st.session_state.get(f"{prefix}_mvp_owner_side"))
+    owner_detail_hint = safe_str(st.session_state.get(f"{prefix}_mvp_owner_detail"))
+    if owner_side_hint or owner_detail_hint:
+        owner_parts = [p for p in (owner_side_hint, owner_detail_hint) if p]
+        st.caption(f"Владелец для сохранения: {' · '.join(owner_parts)}")
+
+    constraint_type = st.selectbox(
+        "Категория для фиксации в реестре допуска",
+        merged_types,
+        key=f"{prefix}_ctype",
+        format_func=direct_admit_constraint_type_label,
+    )
+    st.caption(
+        "Выберите обобщённую категорию, под которой решение будет сохранено в контуре допуска."
+    )
+    if pending_action == "block":
+        st.text_area(
+            "Причина блокировки",
+            key=block_reason_key,
+            height=140,
+            placeholder="Обязательно",
+        )
+    st.text_area(
+        "Описание для фиксации",
+        key=desc_key,
+        height=220,
+        placeholder="Обязательно",
+    )
+    st.date_input(
+        target_label,
+        key=target_key,
+    )
+    st.caption(f"Выбрано: {format_date_any_ru(st.session_state.get(f'{prefix}_target'))}")
+    severity = st.selectbox(
+        "Критичность",
+        DIRECT_ADMIT_SEVERITY_OPTIONS,
+        format_func=lambda v: SEVERITY_RU.get(v, v),
+        index=1,
+        key=f"{prefix}_sev",
+    )
+
+    btn_col, cancel_col = st.columns(2)
+    if btn_col.button(save_label, type="primary", key=f"{prefix}_save_gov"):
+        _sync_fixation_blocks_to_governance_keys(prefix, saver_name, draft, cid, row)
+        decision_officer = ""
+        if draft.get("cid") == cid:
+            decision_officer = safe_str(draft.get("officer_fio")).strip()
+        if not decision_officer:
+            decision_officer = safe_str(st.session_state.get(f"da_officer_{cid[:8]}")).strip()
+        if not decision_officer:
+            st.error("Укажите ФИО лица, принимающего решение")
+        else:
+            save_description = safe_str(st.session_state.get(f"{prefix}_desc")).strip()
+            save_block_reason = safe_str(st.session_state.get(f"{prefix}_block_reason")).strip()
+            if draft.get("cid") == cid:
+                audit = format_direct_admit_audit_trail(draft)
+                if audit not in save_description:
+                    save_description = (
+                        f"{audit}\n\n{save_description}" if save_description else audit
+                    )
+            err = save_direct_admission_decision(
+                row,
+                pending_action,
+                decision_officer,
+                constraint_type=constraint_type,
+                owner_role=safe_str(st.session_state.get(f"{prefix}_role")),
+                owner_name=(
+                    safe_str(st.session_state.get(f"{prefix}_owner")).strip()
+                    or safe_str(draft.get("owner"))
+                ),
+                description=save_description,
+                block_reason=save_block_reason,
+                target_date=st.session_state.get(f"{prefix}_target"),
+                severity=severity,
+            )
+            if err:
+                st.warning(err)
+            else:
+                st.cache_data.clear()
+                st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
+                _da_clear_decision_session()
+                st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = advance_direct_admit_selection(
+                    workbench_df,
+                    cid,
+                )
+                st.rerun()
+    if cancel_col.button("Отмена", key=f"{prefix}_cancel"):
+        st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
+        _da_clear_decision_session()
+        st.rerun()
+
+
+def _render_fixation_mvp_blocks_1_4(
+    row: pd.Series,
+    prefix: str,
+    pending_action: str,
+) -> None:
+    with st.expander("1. Контекст кода", expanded=True):
+        _render_fixation_context_section(row, prefix)
+
+    with st.expander("2. Кто владеет проблемой и откуда она пришла", expanded=True):
+        if pending_action == "pass":
+            _render_fixation_classification_pass_info()
+        else:
+            _render_fixation_classification_section(prefix)
+
+    with st.expander("3. Что нужно сделать для снятия ограничения", expanded=True):
+        if pending_action == "pass":
+            _render_fixation_plan_pass_info()
+        else:
+            _render_fixation_plan_section(prefix, row)
+
+    with st.expander("4. Аудит и история", expanded=True):
+        audit_cid = safe_str(row.get("constraint_id"))
+        audit_criteria = direct_admit_criteria_for_department(
+            safe_str(row.get("responsible_department"))
+        )
+        _render_fixation_audit_content(row, audit_cid, audit_criteria)
+
+
+def _render_fixation_mvp_block_5(
+    row: pd.Series,
+    prefix: str,
+    cid: str,
+    pending_action: str,
+    saver_name: str,
+    workbench_df: pd.DataFrame,
+) -> None:
+    st.markdown(
+        '<div id="da-gov-decision-host" class="da-fixation-decision-body"></div>',
+        unsafe_allow_html=True,
+    )
+    with st.expander("5. Какое решение официально фиксируем", expanded=True):
+        _render_fixation_decision_section(
+            row, prefix, cid, pending_action, saver_name, workbench_df
+        )
+
+
+def _render_fixation_mvp_sections(
+    row: pd.Series,
+    prefix: str,
+    saver_name: str,
+    pending_action: str,
+    workbench_df: pd.DataFrame,
+    cid: str,
+) -> None:
+    st.markdown(_da_center_pane_styles(), unsafe_allow_html=True)
+
+    with st.container(height=DIRECT_ADMIT_GOV_BLOCKS_SCROLL_HEIGHT_PX, border=False):
+        st.markdown(
+            '<div id="da-gov-scroll-host" class="da-fixation-scroll-body"></div>',
+            unsafe_allow_html=True,
+        )
+        _render_fixation_mvp_blocks_1_4(row, prefix, pending_action)
+
+    _render_fixation_mvp_block_5(
+        row, prefix, cid, pending_action, saver_name, workbench_df
+    )
+
+
 def render_direct_admit_fixation_history(row: pd.Series) -> None:
-    history = field_display(last_decision_display(row))
-    comment = field_display(row.get("comment"))
-    block_reason = field_display(row.get("block_reason"))
-    owner = field_display(row.get("owner_name"))
-    owner_role = field_display(row.get("owner_role"))
-    target = safe_date(row.get("target_resolution_date"))
-    target_text = target.isoformat() if target else "—"
     with st.container(border=True):
         st.markdown("**История и фиксация**")
-        st.markdown(f"**Последнее действие:** {history}")
-        st.markdown(f"**Владелец:** {owner} · **Роль:** {owner_role}")
-        st.markdown(f"**Причина блокировки:** {block_reason}")
-        st.markdown(f"**Комментарий:** {comment}")
-        st.markdown(f"**Срок ответа:** {target_text}")
+        audit_cid = safe_str(row.get("constraint_id"))
+        audit_criteria = direct_admit_criteria_for_department(
+            safe_str(row.get("responsible_department"))
+        )
+        _render_fixation_audit_content(row, audit_cid, audit_criteria)
 
 
 def direct_admit_check_status_for_action(action: str) -> str:
@@ -4082,7 +5082,7 @@ def render_direct_admit_queue_pane(
     )
 
     sorted_df = sort_workbench_for_queue(workbench_df)
-    with st.container(height=1200, border=False):
+    with st.container(height=DIRECT_ADMIT_PANE_HEIGHT_PX, border=False):
         st.markdown('<div id="da-queue-scroll-host"></div>', unsafe_allow_html=True)
         for pos, (_, row) in enumerate(sorted_df.iterrows()):
             ordinal = pos + 1
@@ -4136,10 +5136,13 @@ def render_direct_admit_center_pane(
 ) -> None:
     if row is None:
         st.markdown("**2. Решение по коду**")
-        st.info("Выберите код в очереди слева.")
+        with st.container(height=DIRECT_ADMIT_PANE_HEIGHT_PX, border=False):
+            st.markdown('<div id="da-center-scroll-host"></div>', unsafe_allow_html=True)
+            st.info("Выберите код в очереди слева.")
         return
 
     st.markdown(_da_center_pane_styles(), unsafe_allow_html=True)
+    st.markdown("**2. Решение по коду**")
 
     status_key = norm_check_status_key(row.get("check_status"))
     queue_label, _, queue_text_color = direct_admit_queue_status(status_key)
@@ -4149,9 +5152,8 @@ def render_direct_admit_center_pane(
     dept_key = resolve_direct_admit_dept_key(department_label, row)
     criteria = direct_admit_criteria_for_department(dept_key)
 
-    with st.container(height=1200, border=False):
+    with st.container(height=DIRECT_ADMIT_PANE_HEIGHT_PX, border=False):
         st.markdown('<div id="da-center-scroll-host"></div>', unsafe_allow_html=True)
-        st.markdown("**2. Решение по коду**")
 
         dept_pill = dept_ui(dept_key) if dept_key else field_display(row.get("discipline_display"))
         header_pills = [
@@ -4261,175 +5263,9 @@ def render_direct_admit_governance_pane(
     cid = safe_str(row.get("constraint_id"))
     prefix = f"da_gov_{cid[:8]}"
 
-    if not pending_action:
-        render_direct_admit_fixation_history(row)
-        st.info("Сначала выберите решение в центре.")
-        return
-
-    if pending_action == "pass":
-        st.markdown("**Допуск**")
-        draft = st.session_state.get(DIRECT_ADMIT_DECISION_DRAFT_KEY) or {}
-        if draft.get("cid") == cid:
-            st.caption(f"Решение принято: {draft.get('decided_at_msk', now_moscow_decision_text())}")
-        comment = st.text_area(
-            "Комментарий (необязательно)",
-            value="",
-            key=f"{prefix}_pass_comment",
-            height=72,
-        )
-        admitted_by = st.text_input(
-            "Кто допустил",
-            value=saver_name,
-            key=f"{prefix}_pass_by",
-        )
-        if not (draft.get("cid") == cid):
-            st.caption(f"Время фиксации: {now_moscow_text()} (МСК)")
-        if st.button("Сохранить допуск", type="primary", key=f"{prefix}_save_pass"):
-            officer = admitted_by.strip()
-            if not officer:
-                st.error("Укажите ФИО лица, принимающего решение")
-            else:
-                save_comment = comment.strip()
-                if draft.get("cid") == cid:
-                    audit = format_direct_admit_audit_trail(draft)
-                    if audit not in save_comment:
-                        save_comment = (
-                            f"{audit}\n\n{save_comment}" if save_comment else audit
-                        )
-                err = save_direct_admission_decision(
-                    row,
-                    "pass",
-                    officer,
-                    comment=save_comment,
-                    owner_name=officer,
-                )
-                if err:
-                    st.error(err)
-                else:
-                    st.cache_data.clear()
-                    st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
-                    _da_clear_decision_session()
-                    st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = advance_direct_admit_selection(
-                        workbench_df,
-                        cid,
-                    )
-                    st.rerun()
-        if st.button("Отмена", key=f"{prefix}_cancel_pass"):
-            st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
-            _da_clear_decision_session()
-            st.rerun()
-        return
-
-    dept = safe_str(row.get("responsible_department"))
-    category_opts = category_options_for_department(dept, "Другое")
-    merged_types = list(
-        dict.fromkeys([*DIRECT_ADMIT_CONSTRAINT_TYPE_OPTIONS, *category_opts[:6]])
+    _render_fixation_mvp_sections(
+        row, prefix, saver_name, pending_action, workbench_df, cid
     )
-    form_title = "Уточнение" if pending_action == "clarify" else "Блокировка"
-    st.markdown(f"**{form_title}**")
-    draft = st.session_state.get(DIRECT_ADMIT_DECISION_DRAFT_KEY) or {}
-    if draft.get("cid") == cid:
-        st.caption(f"Решение принято: {draft.get('decided_at_msk', now_moscow_decision_text())}")
-
-    constraint_type = st.selectbox(
-        "Тип ограничения",
-        merged_types,
-        key=f"{prefix}_ctype",
-    )
-    owner_role = st.selectbox(
-        "Роль",
-        DIRECT_ADMIT_ROLE_OPTIONS,
-        key=f"{prefix}_role",
-    )
-    owner_name = st.text_input(
-        "Владелец ограничения",
-        value=saver_name,
-        key=f"{prefix}_owner",
-    )
-    block_reason_input = ""
-    if pending_action == "block":
-        block_reason_input = st.text_input(
-            "Причина блокировки",
-            value="",
-            key=f"{prefix}_block_reason",
-            placeholder="Обязательно",
-        )
-    description = st.text_area(
-        "Описание" if pending_action == "block" else "Краткое описание",
-        value="",
-        key=f"{prefix}_desc",
-        height=68,
-        placeholder="Обязательно",
-    )
-    target_default = safe_date(row.get("target_resolution_date")) or date.today()
-    target_label = (
-        "Дата устранения"
-        if pending_action == "block"
-        else "Плановая дата ответа"
-    )
-    target_date = st.date_input(
-        target_label,
-        value=target_default,
-        key=f"{prefix}_target",
-    )
-    severity = st.selectbox(
-        "Критичность",
-        DIRECT_ADMIT_SEVERITY_OPTIONS,
-        format_func=lambda v: SEVERITY_RU.get(v, v),
-        index=1,
-        key=f"{prefix}_sev",
-    )
-
-    save_label = (
-        "Зафиксировать блокировку"
-        if pending_action == "block"
-        else "Зафиксировать уточнение"
-    )
-    btn_col, cancel_col = st.columns(2)
-    if btn_col.button(save_label, type="primary", key=f"{prefix}_save_gov"):
-        decision_officer = ""
-        if draft.get("cid") == cid:
-            decision_officer = safe_str(draft.get("officer_fio")).strip()
-        if not decision_officer:
-            decision_officer = safe_str(st.session_state.get(f"da_officer_{cid[:8]}")).strip()
-        if not decision_officer:
-            st.error("Укажите ФИО лица, принимающего решение")
-        else:
-            save_description = description.strip()
-            save_block_reason = block_reason_input.strip()
-            if draft.get("cid") == cid:
-                audit = format_direct_admit_audit_trail(draft)
-                if audit not in save_description:
-                    save_description = (
-                        f"{audit}\n\n{save_description}" if save_description else audit
-                    )
-            err = save_direct_admission_decision(
-                row,
-                pending_action,
-                decision_officer,
-                constraint_type=constraint_type,
-                owner_role=owner_role,
-                owner_name=owner_name.strip() or safe_str(draft.get("owner")),
-                description=save_description,
-                block_reason=save_block_reason,
-                target_date=target_date,
-                severity=severity,
-            )
-            if err:
-                st.warning(err)
-            else:
-                st.cache_data.clear()
-                st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
-                _da_clear_decision_session()
-                st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = advance_direct_admit_selection(
-                    workbench_df,
-                    cid,
-                )
-                st.rerun()
-    if cancel_col.button("Отмена", key=f"{prefix}_cancel"):
-        st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
-        _da_clear_decision_session()
-        st.rerun()
 
 
 def render_direct_admission_by_department_module(
@@ -4438,59 +5274,74 @@ def render_direct_admission_by_department_module(
     department_label: str,
 ) -> None:
     """Three-pane direct admission: очередь → решение → фиксация."""
-    workbench_df = apply_direct_admit_status_patches(
-        build_workbench_dataframe(queue_df, packages_df)
-    )
-    if workbench_df.empty:
-        with st.container(border=True):
-            render_direct_admit_module_header(department_label, compute_direct_admit_progress(workbench_df))
-            st.info("Нет проверок для текущих фильтров. Уточните месяц, проект или отдел.")
-        return
-
-    progress = compute_direct_admit_progress(workbench_df)
-    selected_cid = resolve_direct_admit_selected_cid(workbench_df)
-    st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = selected_cid
-
-    selected_row: pd.Series | None = None
-    if selected_cid:
-        selected_rows = workbench_df[
-            workbench_df["constraint_id"].astype(str) == selected_cid
-        ]
-        if not selected_rows.empty:
-            selected_row = selected_rows.iloc[0]
-
-    pending_action = safe_str(st.session_state.get(DIRECT_ADMIT_PENDING_ACTION_KEY))
-    saver_name = st.session_state.get("constraints_saver_name", "Пользователь Streamlit")
-
-    with st.container(border=True):
-        render_direct_admit_module_header(department_label, progress)
-
-        layout_options = list(DIRECT_ADMIT_LAYOUT_PRESETS.keys())
-        if DIRECT_ADMIT_LAYOUT_KEY not in st.session_state:
-            st.session_state[DIRECT_ADMIT_LAYOUT_KEY] = "Баланс"
-        st.segmented_control(
-            "Макет панелей",
-            layout_options,
-            key=DIRECT_ADMIT_LAYOUT_KEY,
-            label_visibility="collapsed",
+    with st.expander("Непосредственный допуск по отделам", expanded=False):
+        workbench_df = apply_direct_admit_status_patches(
+            build_workbench_dataframe(queue_df, packages_df)
         )
-
-        weights = direct_admit_layout_weights()
-        pane_left, pane_center, pane_right = st.columns(weights)
-
-        with pane_left:
+        if workbench_df.empty:
             with st.container(border=True):
-                render_direct_admit_queue_pane(workbench_df, selected_cid)
-
-        with pane_center:
-            with st.container(border=True):
-                render_direct_admit_center_pane(selected_row, department_label)
-
-        with pane_right:
-            with st.container(border=True):
-                render_direct_admit_governance_pane(
-                    selected_row, pending_action, saver_name, workbench_df
+                render_direct_admit_module_header(
+                    department_label, compute_direct_admit_progress(workbench_df)
                 )
+                st.info("Нет проверок для текущих фильтров. Уточните месяц, проект или отдел.")
+            return
+
+        progress = compute_direct_admit_progress(workbench_df)
+        selected_cid = resolve_direct_admit_selected_cid(workbench_df)
+        st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = selected_cid
+
+        selected_row: pd.Series | None = None
+        if selected_cid:
+            selected_rows = workbench_df[
+                workbench_df["constraint_id"].astype(str) == selected_cid
+            ]
+            if not selected_rows.empty:
+                selected_row = selected_rows.iloc[0]
+
+        pending_action = safe_str(st.session_state.get(DIRECT_ADMIT_PENDING_ACTION_KEY))
+        saver_name = st.session_state.get("constraints_saver_name", "Пользователь Streamlit")
+
+        with st.container(border=True):
+            render_direct_admit_module_header(department_label, progress)
+
+            layout_options = list(DIRECT_ADMIT_LAYOUT_PRESETS.keys())
+            if DIRECT_ADMIT_LAYOUT_KEY not in st.session_state:
+                st.session_state[DIRECT_ADMIT_LAYOUT_KEY] = "Баланс"
+            st.segmented_control(
+                "Макет панелей",
+                layout_options,
+                key=DIRECT_ADMIT_LAYOUT_KEY,
+                label_visibility="collapsed",
+            )
+
+            weights = direct_admit_layout_weights()
+            pane_left, pane_center, pane_right = st.columns(weights)
+
+            with pane_left:
+                with st.container(border=True):
+                    st.markdown(
+                        '<span class="da-direct-admit-pane-marker" aria-hidden="true"></span>',
+                        unsafe_allow_html=True,
+                    )
+                    render_direct_admit_queue_pane(workbench_df, selected_cid)
+
+            with pane_center:
+                with st.container(border=True):
+                    st.markdown(
+                        '<span class="da-direct-admit-pane-marker" aria-hidden="true"></span>',
+                        unsafe_allow_html=True,
+                    )
+                    render_direct_admit_center_pane(selected_row, department_label)
+
+            with pane_right:
+                with st.container(border=True):
+                    st.markdown(
+                        '<span class="da-direct-admit-pane-marker" aria-hidden="true"></span>',
+                        unsafe_allow_html=True,
+                    )
+                    render_direct_admit_governance_pane(
+                        selected_row, pending_action, saver_name, workbench_df
+                    )
 
 
 def render_queue_detail_summary(row: pd.Series) -> None:
@@ -5244,35 +6095,35 @@ def render_admission_plan_list_module(
     packages_df: pd.DataFrame,
     scope_df: pd.DataFrame,
 ) -> None:
-    st.markdown("### Список месячного плана для допуска")
-    st.caption(
-        "Строки месячного плана, отправленные из Конструктора v2 в контур допуска."
-    )
+    with st.expander("Список месячного плана для допуска", expanded=False):
+        st.caption(
+            "Строки месячного плана, отправленные из Конструктора v2 в контур допуска."
+        )
 
-    st.markdown('<div class="admission-module-panel">', unsafe_allow_html=True)
-    render_admission_module_summary_kpis(packages_df)
-    render_admission_module_check_kpis(scope_df, packages_df)
+        st.markdown('<div class="admission-module-panel">', unsafe_allow_html=True)
+        render_admission_module_summary_kpis(packages_df)
+        render_admission_module_check_kpis(scope_df, packages_df)
 
-    if packages_df.empty:
-        st.caption("По выбранным фильтрам строк нет.")
+        if packages_df.empty:
+            st.caption("По выбранным фильтрам строк нет.")
+            st.markdown("</div>", unsafe_allow_html=True)
+            return
+
+        table_view = prepare_admission_main_table(packages_df)
+        row_count = len(table_view)
+        st.markdown('<div class="admission-plan-table">', unsafe_allow_html=True)
+        st.dataframe(
+            style_admission_main_table(table_view),
+            use_container_width=True,
+            hide_index=True,
+            height=PACKAGE_TABLE_HEIGHT_PX,
+            on_select="rerun",
+            selection_mode="single-row",
+            key=PACKAGE_TABLE_SELECTION_KEY,
+        )
         st.markdown("</div>", unsafe_allow_html=True)
-        return
-
-    table_view = prepare_admission_main_table(packages_df)
-    row_count = len(table_view)
-    st.markdown('<div class="admission-plan-table">', unsafe_allow_html=True)
-    st.dataframe(
-        style_admission_main_table(table_view),
-        use_container_width=True,
-        hide_index=True,
-        height=PACKAGE_TABLE_HEIGHT_PX,
-        on_select="rerun",
-        selection_mode="single-row",
-        key=PACKAGE_TABLE_SELECTION_KEY,
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.caption(f"Показано {row_count} строк.")
-    st.markdown("</div>", unsafe_allow_html=True)
+        st.caption(f"Показано {row_count} строк.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_admission_line_details(
@@ -5353,6 +6204,27 @@ def render_admission_line_details(
     render_edit_card(selected_row)
 
 
+def render_decision_registry_module(registry_df: pd.DataFrame) -> None:
+    with st.expander("Реестр решений по допуску", expanded=False):
+        st.caption(
+            "Журнал решений, принятых отделами по кодам месячного плана. "
+            "Используется для контроля статуса допуска, блокировок, доработок и истории согласования."
+        )
+        st.caption("Показаны решения по текущему фильтру страницы.")
+        if registry_df.empty:
+            st.info("По текущему набору фильтров решений не найдено.")
+            return
+        technical_df = prepare_constraint_display_df(registry_df)
+        show_cols = [c for c in TABLE_COLUMNS if c in technical_df.columns]
+        table_view = technical_df[show_cols].rename(columns=TABLE_COLUMNS_RU)
+        st.dataframe(
+            style_decision_registry_table(table_view),
+            use_container_width=True,
+            hide_index=True,
+            height=TABLE_HEIGHT_PX,
+        )
+
+
 def render_admission_secondary_panels(
     packages_df: pd.DataFrame,
     scope_df: pd.DataFrame,
@@ -5362,16 +6234,7 @@ def render_admission_secondary_panels(
     with st.expander("Детали выбранной строки и проверки", expanded=False):
         render_admission_line_details(packages_df, scope_df)
 
-    with st.expander("Техническая таблица допуска", expanded=False):
-        technical_df = prepare_constraint_display_df(scope_df)
-        show_cols = [c for c in TABLE_COLUMNS if c in technical_df.columns]
-        table_view = technical_df[show_cols].rename(columns=TABLE_COLUMNS_RU)
-        st.dataframe(
-            style_table(table_view),
-            use_container_width=True,
-            hide_index=True,
-            height=TABLE_HEIGHT_PX,
-        )
+    render_decision_registry_module(queue_df)
 
 
 def main() -> None:
@@ -5414,6 +6277,8 @@ def main() -> None:
         title_opts = package_filter_options(packages_enriched, "title_display")
         discipline_opts = package_filter_options(packages_enriched, "discipline_display")
         department_opts = filter_options(base_df, "responsible_department")
+
+        apply_admission_filter_memory_before_widgets()
 
         init_filter_defaults(month_opts, FILTER_SESSION_KEYS["month"])
         init_filter_defaults(project_opts, FILTER_SESSION_KEYS["project"])
@@ -5461,9 +6326,22 @@ def main() -> None:
         )
         with r2c6:
             st.markdown('<div class="admission-filter-reset"></div>', unsafe_allow_html=True)
-            if st.button("Сбросить", key="admission_filter_reset_btn"):
-                reset_admission_filters()
+
+        r3c1, r3c2, r3c3, r3c4 = st.columns([1.3, 1.4, 1.3, 2.0])
+        with r3c1:
+            st.checkbox("Сохранять фильтры", key=ADMISSION_FILTER_MEMORY_ENABLED_KEY)
+        with r3c2:
+            if st.button("Зафиксировать фильтры", key="admission_filter_lock_btn"):
+                lock_admission_filters()
                 st.rerun()
+        with r3c3:
+            if st.button("Сбросить фильтры", key="admission_filter_reset_filters_btn"):
+                request_admission_filters_reset()
+                st.rerun()
+        with r3c4:
+            st.caption(admission_filter_status_text())
+
+        sync_admission_filter_memory_after_widgets()
         st.markdown("</div>", unsafe_allow_html=True)
 
     packages_work = build_package_dataframe(base_df)
@@ -5482,7 +6360,7 @@ def main() -> None:
     )
     visible_package_keys = set(packages_df["package_key"].astype(str).tolist())
     scope_df = filter_constraints_by_package_keys(base_df, visible_package_keys)
-    queue_df = apply_queue_filters(
+    queue_df = filter_decision_registry_df(
         scope_df,
         department_sel,
         check_status_sel,
@@ -5491,7 +6369,12 @@ def main() -> None:
 
     render_admission_plan_list_module(packages_df, scope_df)
     render_direct_admission_by_department_module(queue_df, packages_df, department_sel)
-    render_admission_secondary_panels(packages_df, scope_df, queue_df, department_sel)
+
+    # Legacy-блок деталей и ручного редактирования проверки временно скрыт из UI.
+    # Основной контур допуска — «Непосредственный допуск по отделам».
+    # render_admission_secondary_panels(packages_df, scope_df, queue_df, department_sel)
+
+    render_decision_registry_module(queue_df)
 
 
 if __name__ == "__main__":

@@ -167,6 +167,14 @@ WR2_OUTCOME_BG = {
     WR2_OUTCOME_NO_CHECKS: "background-color: #f4f4f5;",
 }
 
+WR2_OUTCOME_TEXT_COLOR = {
+    WR2_OUTCOME_BLOCKED: "#9a3412",
+    WR2_OUTCOME_OK: "#166534",
+    WR2_OUTCOME_RISK: "#a16207",
+    WR2_OUTCOME_WAITING: "#475569",
+    WR2_OUTCOME_NO_CHECKS: "#6b7280",
+}
+
 # Колонка UI → responsible_department в constraints
 WR2_DEPT_COLUMNS: List[tuple[str, str]] = [
     ("ПТО", "ПТО"),
@@ -228,6 +236,24 @@ WR2_SESSION_AUDIT = "wr2_decision_audit_log"
 WR2_SESSION_DRAFT = "wr2_passport_is_draft"
 WR2_SESSION_FORMED = "wr2_passport_is_formed"
 WR2_SESSION_SELECTED = "wr2_selected_plan_line_id"
+WR2_SESSION_DEFERRED = "wr2_deferred_decisions"
+WR2_SESSION_EXCLUDED = "wr2_excluded_decisions"
+
+WR2_MGMT_LABELS = {
+    WR2_MGMT_INCLUDE: "Включить в паспорт",
+    WR2_MGMT_INCLUDE_RISK: "Включить с риском",
+    WR2_MGMT_POSTPONE: "Отложить рассмотрение",
+    WR2_MGMT_EXCLUDE: "Исключить из паспорта",
+}
+
+WR2_PRIORITY_P1 = "P1 — Критический"
+WR2_PRIORITY_P2 = "P2 — Требует решения"
+WR2_PRIORITY_P3 = "P3 — Ожидает"
+WR2_PRIORITY_ORDER = {
+    WR2_PRIORITY_P1: 0,
+    WR2_PRIORITY_P2: 1,
+    WR2_PRIORITY_P3: 2,
+}
 
 WR2_RISK_REASON_PLACEHOLDER = (
     "Например: «Звено будет в простое, принято решение запускать работы параллельно "
@@ -689,6 +715,8 @@ def wr2_init_passport_session() -> None:
     st.session_state.setdefault(WR2_SESSION_AUDIT, [])
     st.session_state.setdefault(WR2_SESSION_DRAFT, False)
     st.session_state.setdefault(WR2_SESSION_FORMED, False)
+    st.session_state.setdefault(WR2_SESSION_DEFERRED, {})
+    st.session_state.setdefault(WR2_SESSION_EXCLUDED, {})
 
 
 def wr2_sid(plan_line_id: str) -> str:
@@ -707,16 +735,167 @@ def wr2_risk_comment_key(plan_line_id: str) -> str:
     return f"wr2_risk_comment_{wr2_sid(plan_line_id)}"
 
 
+def wr2_decision_basis_key(plan_line_id: str) -> str:
+    return f"wr2_decision_basis_{wr2_sid(plan_line_id)}"
+
+
+def wr2_decision_responsible_key(plan_line_id: str) -> str:
+    return f"wr2_decision_responsible_{wr2_sid(plan_line_id)}"
+
+
+def wr2_decision_review_deadline_key(plan_line_id: str) -> str:
+    return f"wr2_decision_review_deadline_{wr2_sid(plan_line_id)}"
+
+
+def wr2_decision_comment_key(plan_line_id: str) -> str:
+    return f"wr2_decision_comment_{wr2_sid(plan_line_id)}"
+
+
+def wr2_risk_impact_key(plan_line_id: str) -> str:
+    return f"wr2_risk_impact_{wr2_sid(plan_line_id)}"
+
+
+def wr2_risk_acceptance_basis_key(plan_line_id: str) -> str:
+    return f"wr2_risk_acceptance_basis_{wr2_sid(plan_line_id)}"
+
+
+def wr2_mgmt_display_label(decision: str) -> str:
+    return WR2_MGMT_LABELS.get(decision, decision)
+
+
+def wr2_get_decision_record(plan_line_id: str) -> Dict[str, Any]:
+    comp = st.session_state.get(WR2_SESSION_COMPOSITION, {})
+    if plan_line_id in comp:
+        return comp[plan_line_id]
+    deferred = st.session_state.get(WR2_SESSION_DEFERRED, {})
+    if plan_line_id in deferred:
+        return deferred[plan_line_id]
+    excluded = st.session_state.get(WR2_SESSION_EXCLUDED, {})
+    if plan_line_id in excluded:
+        return excluded[plan_line_id]
+    return {}
+
+
+def wr2_hydrate_decision_widgets(plan_line_id: str) -> None:
+    record = wr2_get_decision_record(plan_line_id)
+    if not record:
+        return
+    defaults = {
+        wr2_decision_basis_key(plan_line_id): safe_str(record.get("basis")),
+        wr2_decision_responsible_key(plan_line_id): safe_str(record.get("responsible")),
+        wr2_decision_review_deadline_key(plan_line_id): safe_str(
+            record.get("review_deadline") or record.get("risk_deadline")
+        ),
+        wr2_decision_comment_key(plan_line_id): safe_str(record.get("comment")),
+        wr2_risk_reason_text_key(plan_line_id): safe_str(
+            record.get("risk_description") or record.get("basis")
+        ),
+        wr2_risk_impact_key(plan_line_id): safe_str(record.get("risk_impact")),
+        wr2_risk_responsible_key(plan_line_id): safe_str(
+            record.get("risk_mitigation_owner") or record.get("responsible")
+        ),
+        wr2_risk_deadline_key(plan_line_id): safe_str(
+            record.get("risk_mitigation_deadline") or record.get("risk_deadline")
+        ),
+        wr2_risk_acceptance_basis_key(plan_line_id): safe_str(record.get("risk_acceptance_basis")),
+        wr2_risk_comment_key(plan_line_id): safe_str(
+            record.get("risk_manager_comment") or record.get("comment")
+        ),
+    }
+    for key, value in defaults.items():
+        if value and key not in st.session_state:
+            st.session_state[key] = value
+
+
+def wr2_field_from_record_or_widget(
+    plan_line_id: str,
+    widget_key: str,
+    *record_fields: str,
+) -> str:
+    record = wr2_get_decision_record(plan_line_id)
+    if record:
+        for field in record_fields:
+            value = safe_str(record.get(field))
+            if value:
+                return value
+    return safe_str(st.session_state.get(widget_key))
+
+
+def wr2_get_decision_basis(plan_line_id: str) -> str:
+    return wr2_field_from_record_or_widget(
+        plan_line_id,
+        wr2_decision_basis_key(plan_line_id),
+        "basis",
+    )
+
+
+def wr2_get_decision_responsible(plan_line_id: str) -> str:
+    return wr2_field_from_record_or_widget(
+        plan_line_id,
+        wr2_decision_responsible_key(plan_line_id),
+        "responsible",
+    )
+
+
+def wr2_get_decision_review_deadline(plan_line_id: str) -> str:
+    return wr2_field_from_record_or_widget(
+        plan_line_id,
+        wr2_decision_review_deadline_key(plan_line_id),
+        "review_deadline",
+        "risk_deadline",
+    )
+
+
+def wr2_get_decision_comment(plan_line_id: str) -> str:
+    return wr2_field_from_record_or_widget(
+        plan_line_id,
+        wr2_decision_comment_key(plan_line_id),
+        "comment",
+        "risk_manager_comment",
+    )
+
+
+def wr2_get_risk_impact(plan_line_id: str) -> str:
+    return wr2_field_from_record_or_widget(
+        plan_line_id,
+        wr2_risk_impact_key(plan_line_id),
+        "risk_impact",
+    )
+
+
+def wr2_get_risk_acceptance_basis(plan_line_id: str) -> str:
+    return wr2_field_from_record_or_widget(
+        plan_line_id,
+        wr2_risk_acceptance_basis_key(plan_line_id),
+        "risk_acceptance_basis",
+    )
+
+
 def wr2_get_risk_responsible(plan_line_id: str) -> str:
-    return safe_str(st.session_state.get(wr2_risk_responsible_key(plan_line_id)))
+    return wr2_field_from_record_or_widget(
+        plan_line_id,
+        wr2_risk_responsible_key(plan_line_id),
+        "risk_mitigation_owner",
+        "responsible",
+    )
 
 
 def wr2_get_risk_deadline(plan_line_id: str) -> str:
-    return safe_str(st.session_state.get(wr2_risk_deadline_key(plan_line_id)))
+    return wr2_field_from_record_or_widget(
+        plan_line_id,
+        wr2_risk_deadline_key(plan_line_id),
+        "risk_mitigation_deadline",
+        "risk_deadline",
+    )
 
 
 def wr2_get_risk_comment(plan_line_id: str) -> str:
-    return safe_str(st.session_state.get(wr2_risk_comment_key(plan_line_id)))
+    return wr2_field_from_record_or_widget(
+        plan_line_id,
+        wr2_risk_comment_key(plan_line_id),
+        "risk_manager_comment",
+        "comment",
+    )
 
 
 def wr2_risk_fields_complete(plan_line_id: str) -> bool:
@@ -734,13 +913,16 @@ def wr2_append_audit(entry: Dict[str, Any]) -> None:
 
 
 def wr2_sync_auto_admitted_composition(board_df: pd.DataFrame) -> None:
-    comp = st.session_state.setdefault(WR2_SESSION_COMPOSITION, {})
+    comp = dict(st.session_state.get(WR2_SESSION_COMPOSITION, {}))
+    deferred = dict(st.session_state.get(WR2_SESSION_DEFERRED, {}))
+    excluded = dict(st.session_state.get(WR2_SESSION_EXCLUDED, {}))
     now_iso = datetime.now(timezone.utc).isoformat()
+    changed = False
     for _, row in board_df.iterrows():
         if safe_str(row.get("outcome")) != WR2_OUTCOME_OK:
             continue
         pid = safe_str(row.get("plan_line_id"))
-        if not pid or pid in comp:
+        if not pid or pid in comp or pid in deferred or pid in excluded:
             continue
         comp[pid] = {
             "boq_code": safe_str(row.get("boq_code")),
@@ -750,11 +932,17 @@ def wr2_sync_auto_admitted_composition(board_df: pd.DataFrame) -> None:
             "override": False,
             "basis": "Авто: чистый допуск",
             "responsible": "—",
+            "review_deadline": "—",
             "risk_deadline": "—",
             "comment": "—",
             "risk_blocker": safe_str(row.get("blocking_departments")) or "—",
+            "plan_value": safe_num(row.get("plan_value_num")),
+            "labor_hours": safe_num(row.get("labor_hours")),
             "added_at": now_iso,
         }
+        changed = True
+    if changed:
+        st.session_state[WR2_SESSION_COMPOSITION] = comp
 
 
 def wr2_dept_badge_for_group(group: pd.DataFrame, dept_db: str) -> str:
@@ -832,6 +1020,30 @@ def wr2_passport_auto_label(outcome: str) -> str:
     return "Не включать"
 
 
+def wr2_live_decision_key(plan_line_id: str) -> str:
+    return f"wr2_decision_radio_{wr2_sid(plan_line_id)}"
+
+
+def wr2_get_live_decision(row: pd.Series) -> str:
+    pid = safe_str(row.get("plan_line_id"))
+    radio_key = wr2_live_decision_key(pid)
+    stored = safe_str(st.session_state.get(radio_key))
+    if stored in WR2_MGMT_OPTIONS:
+        return stored
+    return wr2_get_mgmt_decision(row)
+
+
+def wr2_render_outcome_status(outcome: str) -> None:
+    color = WR2_OUTCOME_TEXT_COLOR.get(outcome, "#374151")
+    st.markdown(
+        f'<p style="margin:0 0 0.25rem 0;font-size:0.78rem;color:rgba(49,51,63,0.6);">'
+        f"Итог допуска</p>"
+        f'<p style="margin:0;font-size:1.05rem;font-weight:600;color:{color};">'
+        f"{outcome}</p>",
+        unsafe_allow_html=True,
+    )
+
+
 def wr2_mgmt_session_key(plan_line_id: str) -> str:
     safe = "".join(ch if ch.isalnum() else "_" for ch in plan_line_id)
     return f"wr2_mgmt_{safe}"
@@ -855,6 +1067,12 @@ def wr2_default_mgmt_decision(outcome: str) -> str:
 
 def wr2_get_mgmt_decision(row: pd.Series) -> str:
     pid = safe_str(row.get("plan_line_id"))
+    deferred = st.session_state.get(WR2_SESSION_DEFERRED, {})
+    if pid and pid in deferred:
+        return WR2_MGMT_POSTPONE
+    excluded = st.session_state.get(WR2_SESSION_EXCLUDED, {})
+    if pid and pid in excluded:
+        return WR2_MGMT_EXCLUDE
     comp = st.session_state.get(WR2_SESSION_COMPOSITION, {})
     if pid and pid in comp:
         return safe_str(comp[pid].get("decision")) or WR2_MGMT_EXCLUDE
@@ -868,57 +1086,200 @@ def wr2_get_mgmt_decision(row: pd.Series) -> str:
     return wr2_default_mgmt_decision(outcome)
 
 
+def wr2_needs_management_review(row: pd.Series) -> bool:
+    outcome = safe_str(row.get("outcome"))
+    decision = wr2_get_mgmt_decision(row)
+    if decision in (WR2_MGMT_POSTPONE, WR2_MGMT_EXCLUDE):
+        return True
+    if outcome == WR2_OUTCOME_OK:
+        return False
+    return outcome in (
+        WR2_OUTCOME_RISK,
+        WR2_OUTCOME_BLOCKED,
+        WR2_OUTCOME_WAITING,
+        WR2_OUTCOME_NO_CHECKS,
+    )
+
+
+def wr2_review_priority(row: pd.Series) -> str:
+    outcome = safe_str(row.get("outcome"))
+    if outcome == WR2_OUTCOME_BLOCKED or bool(row.get("has_overdue")):
+        return WR2_PRIORITY_P1
+    if outcome == WR2_OUTCOME_RISK:
+        return WR2_PRIORITY_P2
+    return WR2_PRIORITY_P3
+
+
+def wr2_primary_constraint(row: pd.Series) -> str:
+    reason = safe_str(row.get("reason"))
+    if reason and reason != "—":
+        return reason
+    blocking = safe_str(row.get("blocking_departments"))
+    if blocking and blocking != "—":
+        return blocking
+    return safe_str(row.get("outcome_status_reason")) or "—"
+
+
+def wr2_build_review_queue_df(board_df: pd.DataFrame) -> pd.DataFrame:
+    if board_df.empty:
+        return board_df.copy()
+    rows: List[Dict[str, Any]] = []
+    for _, row in board_df.iterrows():
+        if not wr2_needs_management_review(row):
+            continue
+        priority = wr2_review_priority(row)
+        rows.append(
+            {
+                "_plan_line_id": safe_str(row.get("plan_line_id")),
+                "_priority_sort": WR2_PRIORITY_ORDER.get(priority, 9),
+                "_plan_value_num": safe_num(row.get("plan_value_num")),
+                "BOQ-код": display_dash(row.get("boq_code")),
+                "Наименование": display_dash(row.get("boq_name")),
+                "Статус допуска": safe_str(row.get("outcome")),
+                "Основное ограничение": wr2_primary_constraint(row),
+                "Стоимость": money_ru(row.get("plan_value_num")),
+                "Приоритет": priority,
+            }
+        )
+    if not rows:
+        return pd.DataFrame()
+    result = pd.DataFrame(rows)
+    return result.sort_values(
+        ["_priority_sort", "_plan_value_num"],
+        ascending=[True, False],
+        kind="stable",
+    ).reset_index(drop=True)
+
+
+def wr2_build_decision_record(
+    row: pd.Series,
+    decision: str,
+    *,
+    basis: str,
+    responsible: str,
+    review_deadline: str,
+    comment: str,
+    risk_description: str = "",
+    risk_impact: str = "",
+    risk_mitigation_owner: str = "",
+    risk_mitigation_deadline: str = "",
+    risk_acceptance_basis: str = "",
+    risk_manager_comment: str = "",
+) -> Dict[str, Any]:
+    outcome = safe_str(row.get("outcome"))
+    override = decision == WR2_MGMT_INCLUDE_RISK and outcome != WR2_OUTCOME_OK
+    return {
+        "boq_code": safe_str(row.get("boq_code")),
+        "boq_name": safe_str(row.get("boq_name")),
+        "decision": decision,
+        "outcome": outcome,
+        "override": override,
+        "basis": basis,
+        "responsible": responsible,
+        "review_deadline": review_deadline,
+        "comment": comment,
+        "risk_description": risk_description,
+        "risk_impact": risk_impact,
+        "risk_mitigation_owner": risk_mitigation_owner,
+        "risk_mitigation_deadline": risk_mitigation_deadline,
+        "risk_acceptance_basis": risk_acceptance_basis,
+        "risk_manager_comment": risk_manager_comment,
+        "risk_deadline": risk_mitigation_deadline,
+        "risk_blocker": safe_str(row.get("blocking_departments")) or "—",
+        "plan_value": safe_num(row.get("plan_value_num")),
+        "labor_hours": safe_num(row.get("labor_hours")),
+        "added_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def wr2_apply_management_decision(
     row: pd.Series,
     decision: str,
     *,
     basis: str = "",
     responsible: str = "",
-    risk_deadline: str = "",
+    review_deadline: str = "",
     comment: str = "",
+    risk_description: str = "",
+    risk_impact: str = "",
+    risk_mitigation_owner: str = "",
+    risk_mitigation_deadline: str = "",
+    risk_acceptance_basis: str = "",
+    risk_manager_comment: str = "",
 ) -> List[str]:
     errors: List[str] = []
     pid = safe_str(row.get("plan_line_id"))
     if not pid:
         return ["Не выбран plan_line_id."]
     outcome = safe_str(row.get("outcome"))
-    if decision == WR2_MGMT_INCLUDE_RISK:
-        if not basis:
-            errors.append("Укажите основание управленческого решения.")
-        if not responsible:
-            errors.append("Укажите ответственного за риск.")
-        if not risk_deadline:
-            errors.append("Укажите срок снятия риска.")
-        if not comment:
-            errors.append("Укажите комментарий.")
-        if errors:
-            return errors
 
-    comp = st.session_state.setdefault(WR2_SESSION_COMPOSITION, {})
-    old_decision = comp.get(pid, {}).get("decision")
+    if not basis.strip():
+        errors.append("Укажите основание решения.")
+    if not responsible.strip():
+        errors.append("Укажите ответственного.")
+    if not review_deadline.strip():
+        errors.append("Укажите срок пересмотра.")
+    if not comment.strip():
+        errors.append("Укажите комментарий.")
+
+    if decision == WR2_MGMT_INCLUDE_RISK:
+        if not risk_description.strip():
+            errors.append("Укажите описание риска.")
+        if not risk_impact.strip():
+            errors.append("Укажите возможные последствия.")
+        if not risk_mitigation_owner.strip():
+            errors.append("Укажите ответственного за устранение.")
+        if not risk_mitigation_deadline.strip():
+            errors.append("Укажите срок устранения.")
+        if not risk_acceptance_basis.strip():
+            errors.append("Укажите основание принятия риска.")
+        if not risk_manager_comment.strip():
+            errors.append("Укажите комментарий руководителя.")
+
+    if errors:
+        return errors
+
+    comp = dict(st.session_state.get(WR2_SESSION_COMPOSITION, {}))
+    deferred = dict(st.session_state.get(WR2_SESSION_DEFERRED, {}))
+    excluded = dict(st.session_state.get(WR2_SESSION_EXCLUDED, {}))
+    old_decision = wr2_get_mgmt_decision(row)
     now_iso = datetime.now(timezone.utc).isoformat()
-    override = decision == WR2_MGMT_INCLUDE_RISK and outcome != WR2_OUTCOME_OK
+    record = wr2_build_decision_record(
+        row,
+        decision,
+        basis=basis.strip(),
+        responsible=responsible.strip(),
+        review_deadline=review_deadline.strip(),
+        comment=comment.strip(),
+        risk_description=risk_description.strip(),
+        risk_impact=risk_impact.strip(),
+        risk_mitigation_owner=risk_mitigation_owner.strip(),
+        risk_mitigation_deadline=risk_mitigation_deadline.strip(),
+        risk_acceptance_basis=risk_acceptance_basis.strip(),
+        risk_manager_comment=risk_manager_comment.strip(),
+    )
+    override = bool(record.get("override"))
 
     if decision in WR2_PASSPORT_DECISIONS:
-        comp[pid] = {
-            "boq_code": safe_str(row.get("boq_code")),
-            "boq_name": safe_str(row.get("boq_name")),
-            "decision": decision,
-            "outcome": outcome,
-            "override": override,
-            "basis": basis if decision == WR2_MGMT_INCLUDE_RISK else "—",
-            "responsible": responsible if decision == WR2_MGMT_INCLUDE_RISK else "—",
-            "risk_deadline": risk_deadline if decision == WR2_MGMT_INCLUDE_RISK else "—",
-            "comment": comment if decision == WR2_MGMT_INCLUDE_RISK else "—",
-            "risk_blocker": safe_str(row.get("blocking_departments")) or "—",
-            "plan_value": safe_num(row.get("plan_value_num")),
-            "labor_hours": safe_num(row.get("labor_hours")),
-            "added_at": now_iso,
-        }
+        deferred.pop(pid, None)
+        excluded.pop(pid, None)
+        comp[pid] = record
+    elif decision == WR2_MGMT_POSTPONE:
+        comp.pop(pid, None)
+        excluded.pop(pid, None)
+        deferred[pid] = record
+    elif decision == WR2_MGMT_EXCLUDE:
+        comp.pop(pid, None)
+        deferred.pop(pid, None)
+        excluded[pid] = record
     elif pid in comp:
         del comp[pid]
 
+    st.session_state[WR2_SESSION_COMPOSITION] = comp
+    st.session_state[WR2_SESSION_DEFERRED] = deferred
+    st.session_state[WR2_SESSION_EXCLUDED] = excluded
     st.session_state[wr2_mgmt_session_key(pid)] = decision
+
     wr2_append_audit(
         {
             "datetime": now_iso,
@@ -928,20 +1289,38 @@ def wr2_apply_management_decision(
             "old_decision": old_decision,
             "decision": decision,
             "override": override,
-            "basis": basis,
-            "responsible": responsible,
-            "comment": comment,
+            "basis": basis.strip(),
+            "responsible": responsible.strip(),
+            "comment": comment.strip(),
         }
     )
     return []
 
 
 def wr2_remove_from_passport(pid: str, boq_code: str, outcome: str) -> None:
-    comp = st.session_state.setdefault(WR2_SESSION_COMPOSITION, {})
+    comp = dict(st.session_state.get(WR2_SESSION_COMPOSITION, {}))
+    excluded = dict(st.session_state.get(WR2_SESSION_EXCLUDED, {}))
     formed = bool(st.session_state.get(WR2_SESSION_FORMED))
     if pid in comp:
         del comp[pid]
+    st.session_state[WR2_SESSION_COMPOSITION] = comp
     st.session_state[wr2_mgmt_session_key(pid)] = WR2_MGMT_EXCLUDE
+    excluded[pid] = {
+        "boq_code": boq_code,
+        "boq_name": "—",
+        "decision": WR2_MGMT_EXCLUDE,
+        "outcome": outcome,
+        "basis": (
+            "Код исключён из паспорта управленческим решением"
+            if formed
+            else "Код убран из черновика состава паспорта"
+        ),
+        "responsible": "—",
+        "review_deadline": "—",
+        "comment": "—",
+        "plan_value": 0.0,
+    }
+    st.session_state[WR2_SESSION_EXCLUDED] = excluded
     note = (
         "Код исключён из паспорта управленческим решением"
         if formed
@@ -963,7 +1342,12 @@ def wr2_remove_from_passport(pid: str, boq_code: str, outcome: str) -> None:
 
 
 def wr2_get_risk_reason_text(plan_line_id: str) -> str:
-    return safe_str(st.session_state.get(wr2_risk_reason_text_key(plan_line_id)))
+    return wr2_field_from_record_or_widget(
+        plan_line_id,
+        wr2_risk_reason_text_key(plan_line_id),
+        "risk_description",
+        "basis",
+    )
 
 
 def wr2_effective_passport_label(row: pd.Series) -> str:
@@ -1460,7 +1844,8 @@ def style_war_room_board_table(df_in: pd.DataFrame):
     return styler.applymap(bg_fn, subset=subset)
 
 
-def render_war_room_v2_kpis(board_df: pd.DataFrame) -> None:
+def render_war_room_v3_summary(board_df: pd.DataFrame) -> None:
+    st.markdown("### Сводка по месячному плану")
     if board_df.empty:
         st.caption("Нет кодов в выбранном срезе.")
         return
@@ -1475,8 +1860,14 @@ def render_war_room_v2_kpis(board_df: pd.DataFrame) -> None:
         board_df.loc[board_df["outcome"] == WR2_OUTCOME_OK, "plan_value_num"].sum()
     )
     value_risk = float(
+        board_df.loc[board_df["outcome"] == WR2_OUTCOME_RISK, "plan_value_num"].sum()
+    )
+    value_blocked = float(
+        board_df.loc[board_df["outcome"] == WR2_OUTCOME_BLOCKED, "plan_value_num"].sum()
+    )
+    wait_value = float(
         board_df.loc[
-            board_df["outcome"].isin([WR2_OUTCOME_RISK, WR2_OUTCOME_BLOCKED, WR2_OUTCOME_WAITING]),
+            board_df["outcome"].isin([WR2_OUTCOME_WAITING, WR2_OUTCOME_NO_CHECKS]),
             "plan_value_num",
         ].sum()
     )
@@ -1486,13 +1877,16 @@ def render_war_room_v2_kpis(board_df: pd.DataFrame) -> None:
     c2.metric("Допущено", ok_cnt)
     c3.metric("Допущено с риском", risk_cnt)
     c4.metric("Заблокировано", blocked_cnt)
-    c5.metric("Ожидает проверки", wait_cnt)
-    c6.metric("Стоимость допущено", money_ru_compact(value_ok))
-    c7.metric("Стоимость ограничений", money_ru_compact(value_risk))
+    c5.metric("Стоимость допущенных работ", money_ru_compact(value_ok))
+    c6.metric("Стоимость работ под риском", money_ru_compact(value_risk))
+    c7.metric("Стоимость заблокированных работ", money_ru_compact(value_blocked))
     st.markdown("</div>", unsafe_allow_html=True)
+    st.caption(
+        f"Ожидает проверки: {wait_cnt} код(ов) · Стоимость: {money_ru_compact(wait_value)}"
+    )
 
 
-def render_war_room_v2_filters(
+def render_war_room_v3_filters(
     full_board: pd.DataFrame,
     constraints_df: pd.DataFrame,
     v2_df: pd.DataFrame,
@@ -1506,7 +1900,7 @@ def render_war_room_v2_filters(
         st.session_state[WR2_FILTER_KEYS["discipline"]] = "Все"
 
     inject_war_room_v2_styles()
-    st.markdown("### Срез War Room")
+    st.markdown("### Срез месячного плана")
     with st.container(border=True):
         st.markdown('<div class="war-room-v2-filters">', unsafe_allow_html=True)
         r1c1, r1c2, r1c3, r1c4, r1c5, r1c6 = st.columns(6)
@@ -1591,235 +1985,527 @@ def render_war_room_v2_filters(
     }
 
 
-def render_war_room_v2_board(board_df: pd.DataFrame) -> Optional[str]:
-    st.markdown("### Строки месячного плана — итог допуска")
+def render_war_room_v3_review_queue(board_df: pd.DataFrame) -> Optional[str]:
+    st.markdown("### Очередь управленческого рассмотрения")
     st.caption(
-        "Одна строка = один код месячного плана (`plan_line_id`). "
-        "Агрегация решений отделов из Page 21. Редактирование допуска — только на Page 21."
+        "Коды, по которым требуется управленческое решение. "
+        "Чисто допущенные коды включаются в паспорт автоматически."
     )
-    if board_df.empty:
-        st.info("Нет кодов по выбранным фильтрам.")
-        return None
+    queue_df = wr2_build_review_queue_df(board_df)
+    if queue_df.empty:
+        st.success("Все коды в срезе допущены автоматически или не требуют рассмотрения.")
+        return st.session_state.get(WR2_SESSION_SELECTED)
 
-    display_rows: List[Dict[str, Any]] = []
-    boq_options: Dict[str, str] = {}
-    for _, row in board_df.iterrows():
-        pid = safe_str(row.get("plan_line_id"))
-        boq = display_dash(row.get("boq_code"))
-        if pid:
-            boq_options[f"{boq} — {safe_str(row.get('outcome'))}"] = pid
-        outcome_display = safe_str(row.get("classic_outcome") or row.get("outcome"))
-        row_dict: Dict[str, Any] = {
-            "Проект": display_dash(row.get("project_code")),
-            "Очередь": display_dash(row.get("queue_display")),
-            "Титул": display_dash(row.get("title_display")),
-            "Система": display_dash(row.get("system_display")),
-            "Пакет": display_dash(row.get("package_display")),
-            "BOQ-код": boq,
-            "Наименование": display_dash(row.get("boq_name")),
-            "Звено": display_dash(row.get("crew")),
-            "Трудозатраты, чел/ч": wr2_format_hours(safe_num(row.get("labor_hours"))),
-            "Норма выработки": wr2_format_norm(safe_num(row.get("norm_hours_per_unit"))),
-            "Плановый объём": (
-                f"{safe_num(row.get('planned_qty')):,.3f}".replace(",", " ")
-                if safe_num(row.get("planned_qty"))
-                else "—"
-            ),
-            "Плановая стоимость, ₽": money_ru(row.get("plan_value_num")),
-            "Стоимость звена, ₽": money_ru(row.get("labor_cost")),
-            "Маржа / разница, ₽": money_ru(row.get("margin_num")),
-            "Итог допуска": outcome_display,
-            "Причина итогового статуса": display_dash(row.get("outcome_status_reason")),
-            "Включать в паспорт": wr2_effective_passport_label(row),
-            "_plan_line_id": pid,
-        }
-        for display_label, classic_label in WR2_BOARD_DEPT_DISPLAY:
-            row_dict[display_label] = safe_str(row.get(f"classic_{classic_label}"))
-        display_rows.append(row_dict)
-
-    show = pd.DataFrame(display_rows)
-    show = show[[col for col in WR2_BOARD_TABLE_COLUMNS if col in show.columns]]
-    st.caption(f"Показано {len(show)} кодов.")
+    display_cols = [
+        "BOQ-код",
+        "Наименование",
+        "Статус допуска",
+        "Основное ограничение",
+        "Стоимость",
+        "Приоритет",
+    ]
+    show = queue_df[display_cols]
+    st.caption(f"В очереди: {len(queue_df)} код(ов). Выберите строку для управленческого решения.")
     st.dataframe(
-        style_war_room_board_table(show),
+        show,
         use_container_width=True,
         hide_index=True,
-        height=min(560, 80 + 35 * max(len(show), 1)),
+        height=min(320, 80 + 35 * max(len(show), 1)),
+        on_select="rerun",
+        selection_mode="single-row",
+        key="wr2_review_queue_select",
     )
 
-    with st.expander("Технические идентификаторы", expanded=False):
-        ids = board_df[["boq_code", "plan_line_id", "month_key", "source"]].copy()
-        ids["Источник"] = ids["source"].apply(wr2_source_display_label)
-        ids = ids.drop(columns=["source"])
-        ids.columns = ["BOQ-код", "plan_line_id", "Месяц", "Источник"]
-        st.dataframe(ids, use_container_width=True, hide_index=True)
+    selected_pid: Optional[str] = None
+    sel_state = st.session_state.get("wr2_review_queue_select")
+    if isinstance(sel_state, dict):
+        rows_sel = sel_state.get("selection", {}).get("rows", [])
+        if rows_sel:
+            idx = int(rows_sel[0])
+            if 0 <= idx < len(queue_df):
+                selected_pid = safe_str(queue_df.iloc[idx].get("_plan_line_id"))
 
-    if not boq_options:
-        return None
-    labels = list(boq_options.keys())
-    current = st.session_state.get(WR2_SESSION_SELECTED)
-    if current not in boq_options.values():
-        st.session_state[WR2_SESSION_SELECTED] = next(iter(boq_options.values()))
-    default_label = next(
-        (lbl for lbl, pid in boq_options.items() if pid == st.session_state[WR2_SESSION_SELECTED]),
-        labels[0],
+    if not selected_pid:
+        options: Dict[str, str] = {}
+        for _, queue_row in queue_df.iterrows():
+            label = (
+                f"{queue_row['BOQ-код']} — {queue_row['Статус допуска']} "
+                f"({queue_row['Приоритет']})"
+            )
+            options[label] = safe_str(queue_row.get("_plan_line_id"))
+        labels = list(options.keys())
+        current = st.session_state.get(WR2_SESSION_SELECTED)
+        default_idx = next(
+            (i for i, lbl in enumerate(labels) if options[lbl] == current),
+            0,
+        )
+        picked = st.radio(
+            "Выбор кода (если строка таблицы не выделена)",
+            labels,
+            index=default_idx,
+            key="wr2_review_queue_radio",
+        )
+        selected_pid = options.get(picked)
+
+    if selected_pid:
+        st.session_state[WR2_SESSION_SELECTED] = selected_pid
+    return selected_pid
+
+
+def render_war_room_v3_board_detail(board_df: pd.DataFrame) -> None:
+    with st.expander("Детализация всех кодов месяца", expanded=False):
+        st.caption(
+            "Полная таблица месячного плана по итогу допуска. "
+            "Редактирование допуска — только на странице «Допуск месячного плана»."
+        )
+        if board_df.empty:
+            st.info("Нет кодов по выбранным фильтрам.")
+            return
+
+        display_rows: List[Dict[str, Any]] = []
+        for _, row in board_df.iterrows():
+            pid = safe_str(row.get("plan_line_id"))
+            boq = display_dash(row.get("boq_code"))
+            outcome_display = safe_str(row.get("classic_outcome") or row.get("outcome"))
+            row_dict: Dict[str, Any] = {
+                "Проект": display_dash(row.get("project_code")),
+                "Очередь": display_dash(row.get("queue_display")),
+                "Титул": display_dash(row.get("title_display")),
+                "Система": display_dash(row.get("system_display")),
+                "Пакет": display_dash(row.get("package_display")),
+                "BOQ-код": boq,
+                "Наименование": display_dash(row.get("boq_name")),
+                "Звено": display_dash(row.get("crew")),
+                "Трудозатраты, чел/ч": wr2_format_hours(safe_num(row.get("labor_hours"))),
+                "Норма выработки": wr2_format_norm(safe_num(row.get("norm_hours_per_unit"))),
+                "Плановый объём": (
+                    f"{safe_num(row.get('planned_qty')):,.3f}".replace(",", " ")
+                    if safe_num(row.get("planned_qty"))
+                    else "—"
+                ),
+                "Плановая стоимость, ₽": money_ru(row.get("plan_value_num")),
+                "Стоимость звена, ₽": money_ru(row.get("labor_cost")),
+                "Маржа / разница, ₽": money_ru(row.get("margin_num")),
+                "Итог допуска": outcome_display,
+                "Причина итогового статуса": display_dash(row.get("outcome_status_reason")),
+                "Включать в паспорт": wr2_effective_passport_label(row),
+                "_plan_line_id": pid,
+            }
+            for display_label, classic_label in WR2_BOARD_DEPT_DISPLAY:
+                row_dict[display_label] = safe_str(row.get(f"classic_{classic_label}"))
+            display_rows.append(row_dict)
+
+        show = pd.DataFrame(display_rows)
+        show = show[[col for col in WR2_BOARD_TABLE_COLUMNS if col in show.columns]]
+        st.caption(f"Показано {len(show)} кодов.")
+        st.dataframe(
+            style_war_room_board_table(show),
+            use_container_width=True,
+            hide_index=True,
+            height=min(560, 80 + 35 * max(len(show), 1)),
+        )
+
+
+def render_war_room_v3_code_card(row: pd.Series) -> None:
+    st.markdown("#### Карточка кода")
+    boq = display_dash(row.get("boq_code"))
+    st.markdown(f"**{boq}** — {display_dash(row.get('boq_name'))}")
+    wr2_render_outcome_status(safe_str(row.get("outcome")))
+    st.markdown(f"**Система:** {display_dash(row.get('system_display'))}")
+    st.markdown(f"**Титул:** {display_dash(row.get('title_display'))}")
+    qty = safe_num(row.get("planned_qty"))
+    st.markdown(
+        f"**Объём:** {f'{qty:,.3f}'.replace(',', ' ') if qty else '—'}"
     )
-    picked = st.selectbox(
-        "Выберите BOQ-код для управленческого решения",
-        labels,
-        index=labels.index(default_label) if default_label in labels else 0,
-        key="wr2_boq_picker",
+    st.markdown(f"**Стоимость:** {money_ru(row.get('plan_value_num'))}")
+
+    dept_parts: List[str] = []
+    for display_label, classic_label in WR2_BOARD_DEPT_DISPLAY:
+        status = safe_str(row.get(f"classic_{classic_label}"))
+        if status and status != "—":
+            dept_parts.append(f"**{display_label}:** {status}")
+    if dept_parts:
+        st.markdown("**Статусы отделов**")
+        for part in dept_parts:
+            st.markdown(part)
+
+    st.markdown("**Основные ограничения**")
+    st.markdown(display_dash(row.get("blocking_departments")))
+    st.caption(display_dash(row.get("outcome_status_reason")))
+
+    pid = safe_str(row.get("plan_line_id"))
+    with st.expander("Техническая информация", expanded=False):
+        st.markdown(f"**plan_line_id:** `{pid}`")
+        st.markdown(f"**Месяц:** {display_dash(row.get('month_key'))}")
+        st.markdown(f"**Источник:** {wr2_source_display_label(row.get('source'))}")
+        st.markdown(f"**Проект:** {display_dash(row.get('project_code'))}")
+        st.markdown(f"**Причина блокировки:** {display_dash(row.get('reason'))}")
+        st.markdown(f"**Критичный отдел:** {display_dash(row.get('critical_department'))}")
+
+
+def render_war_room_v3_decision_panel(row: pd.Series) -> None:
+    st.markdown("#### Управленческое решение")
+    pid = safe_str(row.get("plan_line_id"))
+    outcome = safe_str(row.get("outcome"))
+    default_decision = wr2_get_mgmt_decision(row)
+    if outcome == WR2_OUTCOME_OK and default_decision not in WR2_MGMT_OPTIONS:
+        default_decision = WR2_MGMT_INCLUDE
+    st.radio(
+        "Вариант решения",
+        WR2_MGMT_OPTIONS,
+        index=WR2_MGMT_OPTIONS.index(default_decision)
+        if default_decision in WR2_MGMT_OPTIONS
+        else 0,
+        format_func=wr2_mgmt_display_label,
+        key=wr2_live_decision_key(pid),
+        horizontal=True,
     )
-    return boq_options[picked]
 
 
-def render_war_room_v2_management_panel(
+def render_war_room_v3_decision_basis(row: pd.Series, decision: str) -> None:
+    st.markdown("#### Обоснование принятого решения")
+    pid = safe_str(row.get("plan_line_id"))
+    wr2_hydrate_decision_widgets(pid)
+    b1, b2 = st.columns(2)
+    with b1:
+        st.text_area(
+            "Основание решения",
+            key=wr2_decision_basis_key(pid),
+            height=80,
+        )
+        st.text_input(
+            "Ответственный",
+            key=wr2_decision_responsible_key(pid),
+        )
+    with b2:
+        st.text_input(
+            "Срок пересмотра",
+            placeholder="например: 15.07.2026",
+            key=wr2_decision_review_deadline_key(pid),
+        )
+        st.text_area(
+            "Комментарий",
+            key=wr2_decision_comment_key(pid),
+            height=80,
+        )
+    if decision == WR2_MGMT_INCLUDE_RISK:
+        outcome_is_blocked = safe_str(row.get("outcome")) == WR2_OUTCOME_BLOCKED
+        st.caption(
+            f"Причина блокировки: {display_dash(row.get('reason'))} | "
+            f"Критичный отдел: {display_dash(row.get('critical_department'))}"
+        )
+        if outcome_is_blocked:
+            st.warning(
+                "Код заблокирован отделом допуска. Включение возможно только как управленческий риск."
+            )
+
+
+def render_war_room_v3_risk_protocol(row: pd.Series) -> None:
+    st.markdown("#### Протокол принятия риска")
+    pid = safe_str(row.get("plan_line_id"))
+    wr2_hydrate_decision_widgets(pid)
+    r1, r2 = st.columns(2)
+    with r1:
+        st.text_area(
+            "Описание риска",
+            placeholder=WR2_RISK_REASON_PLACEHOLDER,
+            key=wr2_risk_reason_text_key(pid),
+            height=80,
+        )
+        st.text_area(
+            "Возможные последствия",
+            key=wr2_risk_impact_key(pid),
+            height=80,
+        )
+        st.text_input(
+            "Ответственный за устранение",
+            key=wr2_risk_responsible_key(pid),
+        )
+    with r2:
+        st.text_input(
+            "Срок устранения",
+            placeholder="например: 15.07.2026",
+            key=wr2_risk_deadline_key(pid),
+        )
+        st.text_area(
+            "Основание принятия риска",
+            key=wr2_risk_acceptance_basis_key(pid),
+            height=80,
+        )
+        st.text_area(
+            "Комментарий руководителя",
+            key=wr2_risk_comment_key(pid),
+            height=80,
+        )
+
+
+def render_war_room_v3_management_workspace(
     board_df: pd.DataFrame,
     selected_pid: Optional[str],
 ) -> None:
-    st.markdown("### Управленческое решение по паспорту")
-    st.info(
-        "Отдельный управленческий слой War Room. **Не** меняет `check_status` и решения Page 21. "
-        "Выберите один BOQ-код в таблице выше и зафиксируйте управленческое решение по паспорту."
-    )
+    st.markdown("### Рабочая зона управленческого решения")
     if board_df.empty or not selected_pid:
-        st.caption("Выберите BOQ-код в таблице.")
+        st.info("Выберите код в очереди управленческого рассмотрения.")
         return
 
     match = board_df[board_df["plan_line_id"].astype(str) == selected_pid]
     if match.empty:
         st.warning("Выбранный код не найден в текущем срезе.")
         return
+
     row = match.iloc[0]
     pid = safe_str(row.get("plan_line_id"))
-    outcome = safe_str(row.get("outcome"))
     boq = display_dash(row.get("boq_code"))
     st.session_state[WR2_SESSION_SELECTED] = pid
+    wr2_hydrate_decision_widgets(pid)
 
-    default_decision = wr2_get_mgmt_decision(row)
-    if outcome == WR2_OUTCOME_OK and default_decision not in WR2_MGMT_OPTIONS:
-        default_decision = WR2_MGMT_INCLUDE
+    left, right = st.columns([2, 3])
+    with left:
+        render_war_room_v3_code_card(row)
+    with right:
+        render_war_room_v3_decision_panel(row)
+        decision = wr2_get_live_decision(row)
+        render_war_room_v3_decision_basis(row, decision)
+        if decision == WR2_MGMT_INCLUDE_RISK:
+            render_war_room_v3_risk_protocol(row)
 
-    st.markdown(f"#### Карточка кода: **{boq}**")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Итог допуска", outcome)
-    c2.metric("Плановая стоимость", money_ru(row.get("plan_value_num")))
-    c3.metric("Трудозатраты", wr2_format_hours(safe_num(row.get("labor_hours"))))
+        if st.button("Применить управленческое решение", key=f"wr2_apply_{wr2_sid(pid)}"):
+            apply_decision = wr2_get_live_decision(row)
+            errors = wr2_apply_management_decision(
+                row,
+                apply_decision,
+                basis=wr2_get_decision_basis(pid),
+                responsible=wr2_get_decision_responsible(pid),
+                review_deadline=wr2_get_decision_review_deadline(pid),
+                comment=wr2_get_decision_comment(pid),
+                risk_description=wr2_get_risk_reason_text(pid),
+                risk_impact=wr2_get_risk_impact(pid),
+                risk_mitigation_owner=wr2_get_risk_responsible(pid),
+                risk_mitigation_deadline=wr2_get_risk_deadline(pid),
+                risk_acceptance_basis=wr2_get_risk_acceptance_basis(pid),
+                risk_manager_comment=wr2_get_risk_comment(pid),
+            )
+            if errors:
+                for err in errors:
+                    st.error(err)
+            else:
+                st.success(f"Решение по {boq} сохранено.")
+                st.rerun()
 
-    d1, d2 = st.columns(2)
-    with d1:
-        st.markdown(f"**Наименование:** {display_dash(row.get('boq_name'))}")
-        st.markdown(f"**Блокирующие отделы:** {display_dash(row.get('blocking_departments'))}")
-        st.markdown(
-            f"**Плановый объём:** "
-            f"{safe_num(row.get('planned_qty')):,.3f}".replace(",", " ")
-            if safe_num(row.get("planned_qty"))
-            else "—"
+
+def wr2_records_to_table(
+    records: Dict[str, Dict[str, Any]],
+    board_df: pd.DataFrame,
+) -> pd.DataFrame:
+    if not records:
+        return pd.DataFrame()
+    board_by_id = {
+        safe_str(r.get("plan_line_id")): r for _, r in board_df.iterrows()
+    }
+    rows: List[Dict[str, Any]] = []
+    for pid, item in records.items():
+        board_row = board_by_id.get(pid)
+        rows.append(
+            {
+                "_plan_line_id": pid,
+                "BOQ-код": display_dash(item.get("boq_code")),
+                "Наименование": display_dash(item.get("boq_name")),
+                "Стоимость": money_ru(
+                    item.get("plan_value")
+                    or (board_row.get("plan_value_num") if board_row is not None else 0)
+                ),
+                "Основание": safe_str(item.get("basis")) or "—",
+            }
         )
-    with d2:
-        st.markdown(f"**Звено:** {display_dash(row.get('crew'))}")
-        st.markdown(f"**Норма выработки:** {wr2_format_norm(safe_num(row.get('norm_hours_per_unit')))}")
-        st.markdown(f"**Стоимость звена:** {money_ru(row.get('labor_cost'))}")
-
-    decision = st.radio(
-        "Управленческое решение",
-        WR2_MGMT_OPTIONS,
-        index=WR2_MGMT_OPTIONS.index(default_decision)
-        if default_decision in WR2_MGMT_OPTIONS
-        else 0,
-        key=f"wr2_decision_radio_{wr2_sid(pid)}",
-        horizontal=True,
-    )
-
-    basis = responsible = risk_deadline = comment = ""
-    if decision == WR2_MGMT_INCLUDE_RISK:
-        st.warning(
-            "Код заблокирован отделом допуска. Включение возможно только как управленческий риск."
-            if outcome == WR2_OUTCOME_BLOCKED
-            else "Включение с управленческим риском требует обоснования."
-        )
-        r1, r2 = st.columns(2)
-        with r1:
-            basis = st.text_area(
-                "Основание управленческого решения",
-                value=wr2_get_risk_reason_text(pid),
-                placeholder=WR2_RISK_REASON_PLACEHOLDER,
-                key=wr2_risk_reason_text_key(pid),
-                height=80,
-            )
-            responsible = st.text_input(
-                "Ответственный за риск",
-                value=wr2_get_risk_responsible(pid),
-                key=wr2_risk_responsible_key(pid),
-            )
-        with r2:
-            risk_deadline = st.text_input(
-                "Срок снятия риска",
-                value=wr2_get_risk_deadline(pid),
-                placeholder="например: 15.07.2026",
-                key=wr2_risk_deadline_key(pid),
-            )
-            comment = st.text_area(
-                "Комментарий",
-                value=wr2_get_risk_comment(pid),
-                key=wr2_risk_comment_key(pid),
-                height=80,
-            )
-        if outcome == WR2_OUTCOME_BLOCKED:
-            st.caption(
-                f"Причина блокировки: {display_dash(row.get('reason'))} | "
-                f"Критичный отдел: {display_dash(row.get('critical_department'))}"
-            )
-
-    if st.button("Применить управленческое решение", key=f"wr2_apply_{wr2_sid(pid)}"):
-        errors = wr2_apply_management_decision(
-            row,
-            decision,
-            basis=wr2_get_risk_reason_text(pid),
-            responsible=wr2_get_risk_responsible(pid),
-            risk_deadline=wr2_get_risk_deadline(pid),
-            comment=wr2_get_risk_comment(pid),
-        )
-        if errors:
-            for err in errors:
-                st.error(err)
-        else:
-            st.success(f"Решение по {boq} сохранено в session.")
-            st.rerun()
+    return pd.DataFrame(rows)
 
 
-def render_war_room_passport_composition(board_df: pd.DataFrame) -> None:
+def render_war_room_v3_passport_basket(board_df: pd.DataFrame) -> None:
     st.markdown("### Состав паспорта месяца")
     st.caption(
-        "Коды с решением «Включить в паспорт» или «Включить с риском». "
-        "Удаление из состава не меняет итог допуска отделов."
+        "Будущий состав паспорта по управленческим решениям. "
+        "Чисто допущенные коды включаются автоматически."
     )
-    comp_df = wr2_compute_passport_composition_table(board_df)
-    if comp_df.empty:
-        st.info("Состав паспорта пуст. Примите управленческое решение по кодам.")
-        return
+    comp = st.session_state.get(WR2_SESSION_COMPOSITION, {})
+    deferred = st.session_state.get(WR2_SESSION_DEFERRED, {})
+    excluded = st.session_state.get(WR2_SESSION_EXCLUDED, {})
 
-    show = comp_df.drop(columns=["_plan_line_id"], errors="ignore")
-    st.dataframe(show, use_container_width=True, hide_index=True)
+    included = {pid: item for pid, item in comp.items() if item.get("decision") == WR2_MGMT_INCLUDE}
+    risk = {pid: item for pid, item in comp.items() if item.get("decision") == WR2_MGMT_INCLUDE_RISK}
 
-    st.markdown("#### Убрать из паспорта")
-    for _, comp_row in comp_df.iterrows():
-        pid = safe_str(comp_row.get("_plan_line_id"))
-        boq = display_dash(comp_row.get("BOQ-код"))
-        match = board_df[board_df["plan_line_id"].astype(str) == pid]
-        outcome = safe_str(match.iloc[0].get("outcome")) if not match.empty else "—"
-        formed = bool(st.session_state.get(WR2_SESSION_FORMED))
-        label = (
-            f"Убрать {boq} (аудит: исключение из сформированного паспорта)"
-            if formed
-            else f"Убрать {boq} из черновика"
-        )
-        if st.button(label, key=f"wr2_remove_passport_{wr2_sid(pid)}"):
-            wr2_remove_from_passport(pid, boq, outcome)
-            st.rerun()
+    tabs = st.tabs(
+        [
+            "Допущено",
+            "Допущено с риском",
+            "Отложено",
+            "Исключено",
+        ]
+    )
+    groups = [
+        (tabs[0], included, True),
+        (tabs[1], risk, True),
+        (tabs[2], deferred, False),
+        (tabs[3], excluded, False),
+    ]
+    for tab, records, removable in groups:
+        with tab:
+            table = wr2_records_to_table(records, board_df)
+            count = len(records)
+            total_value = sum(safe_num(item.get("plan_value")) for item in records.values())
+            st.caption(f"Кодов: {count} · Сумма: {money_ru(total_value)}")
+            if table.empty:
+                st.info("Нет кодов в этой группе.")
+            else:
+                st.dataframe(
+                    table.drop(columns=["_plan_line_id"], errors="ignore"),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            if removable and not table.empty:
+                st.markdown("**Убрать из паспорта**")
+                for _, comp_row in table.iterrows():
+                    pid = safe_str(comp_row.get("_plan_line_id"))
+                    boq = display_dash(comp_row.get("BOQ-код"))
+                    match = board_df[board_df["plan_line_id"].astype(str) == pid]
+                    outcome = safe_str(match.iloc[0].get("outcome")) if not match.empty else "—"
+                    formed = bool(st.session_state.get(WR2_SESSION_FORMED))
+                    label = (
+                        f"Убрать {boq} (аудит: исключение из сформированного паспорта)"
+                        if formed
+                        else f"Убрать {boq} из черновика"
+                    )
+                    if st.button(label, key=f"wr2_remove_passport_{wr2_sid(pid)}"):
+                        wr2_remove_from_passport(pid, boq, outcome)
+                        st.rerun()
 
 
-def render_war_room_v2_executive(
+def wr2_compute_readiness(
+    project_sel: str,
+    month_sel: str,
+    scoped_board: pd.DataFrame,
+) -> Dict[str, Any]:
+    clean_scope = wr2_passport_scope_rows(scoped_board, allow_risk=False)
+    full_scope = wr2_passport_scope_rows(scoped_board, allow_risk=True)
+    validation_clean = wr2_validate_management_decisions(clean_scope, allow_risk=False)
+    validation_full = wr2_validate_management_decisions(full_scope, allow_risk=True)
+    all_errors = validation_clean + validation_full
+
+    include_cnt = 0
+    risk_cnt = 0
+    if not full_scope.empty:
+        for _, scope_row in full_scope.iterrows():
+            decision = wr2_get_mgmt_decision(scope_row)
+            if decision == WR2_MGMT_INCLUDE:
+                include_cnt += 1
+            elif decision == WR2_MGMT_INCLUDE_RISK:
+                risk_cnt += 1
+
+    blocked_outside = 0
+    if not scoped_board.empty:
+        for _, scope_row in scoped_board.iterrows():
+            if safe_str(scope_row.get("outcome")) != WR2_OUTCOME_BLOCKED:
+                continue
+            if not wr2_row_in_passport_inclusion(scope_row, allow_risk=True):
+                blocked_outside += 1
+
+    value_passport = float(full_scope["plan_value_num"].sum()) if not full_scope.empty else 0.0
+    value_risk = 0.0
+    if not full_scope.empty:
+        for _, scope_row in full_scope.iterrows():
+            if wr2_get_mgmt_decision(scope_row) == WR2_MGMT_INCLUDE_RISK:
+                value_risk += safe_num(scope_row.get("plan_value_num"))
+
+    checks = [
+        ("Выбран конкретный проект и месяц", project_sel != "Все" and month_sel != "Все"),
+        ("Есть состав паспорта", not full_scope.empty),
+        (
+            "Все рискованные включения имеют протокол риска",
+            risk_cnt == 0 or len(validation_full) == 0,
+        ),
+        ("Нет ошибок валидации", len(all_errors) == 0),
+    ]
+    ready = all(ok for _, ok in checks) and not full_scope.empty
+
+    return {
+        "ready": ready,
+        "errors": all_errors,
+        "metrics": {
+            "total": len(scoped_board),
+            "in_passport_clean": include_cnt,
+            "in_passport_risk": risk_cnt,
+            "blocked_outside": blocked_outside,
+            "value_passport": value_passport,
+            "value_risk": value_risk,
+            "critical": blocked_outside,
+        },
+        "checks": checks,
+        "can_clean": not validation_clean and not clean_scope.empty,
+        "can_full": not validation_full and not full_scope.empty,
+        "clean_scope": clean_scope,
+        "full_scope": full_scope,
+    }
+
+
+def render_war_room_v3_passport_readiness(
+    project_sel: str,
+    month_sel: str,
+    board_df: pd.DataFrame,
+) -> Dict[str, Any]:
+    st.markdown("### Проверка готовности паспорта")
+    if project_sel == "Все" or month_sel == "Все":
+        st.warning("Выберите конкретный проект и месяц для проверки готовности.")
+        return {
+            "ready": False,
+            "errors": [],
+            "checks": [],
+            "can_clean": False,
+            "can_full": False,
+            "clean_scope": pd.DataFrame(),
+            "full_scope": pd.DataFrame(),
+        }
+
+    scoped_board = board_df[
+        (board_df["project_code"].astype(str) == project_sel)
+        & (board_df["month_key"].astype(str) == month_sel)
+    ].copy()
+    if scoped_board.empty:
+        st.warning("Нет кодов для выбранного проекта и месяца.")
+        return {
+            "ready": False,
+            "errors": [],
+            "checks": [],
+            "can_clean": False,
+            "can_full": False,
+            "clean_scope": pd.DataFrame(),
+            "full_scope": pd.DataFrame(),
+        }
+
+    readiness = wr2_compute_readiness(project_sel, month_sel, scoped_board)
+    metrics = readiness["metrics"]
+    c1, c2, c3, c4 = st.columns(4)
+    c5, c6, c7, c8 = st.columns(4)
+    c1.metric("Всего кодов", metrics["total"])
+    c2.metric("Допущено в паспорт", metrics["in_passport_clean"])
+    c3.metric("Под риском", metrics["in_passport_risk"])
+    c4.metric("Заблокировано вне паспорта", metrics["blocked_outside"])
+    c5.metric("Стоимость паспорта", money_ru_compact(metrics["value_passport"]))
+    c6.metric("Стоимость под риском", money_ru_compact(metrics["value_risk"]))
+    c7.metric("Критические ограничения", metrics["critical"])
+    c8.metric("Готовность", "Готово" if readiness["ready"] else "Требует внимания")
+
+    for label, ok in readiness["checks"]:
+        if ok:
+            st.success(f"✓ {label}")
+        else:
+            st.warning(f"✗ {label}")
+
+    for err in readiness["errors"]:
+        st.error(err)
+
+    return readiness
+
+
+def render_war_room_v3(
     constraints_df: pd.DataFrame,
     v2_df: pd.DataFrame,
     queue_df: pd.DataFrame,
@@ -1827,13 +2513,13 @@ def render_war_room_v2_executive(
     full_board = build_war_room_read_model(constraints_df, v2_df, queue_df)
     if full_board.empty:
         st.info(
-            "Нет кодов для War Room. Отправьте план из конструктора 10B в допуск "
-            "или сформируйте проверки в контуре допуска."
+            "Нет кодов для управленческих решений. Отправьте план из конструктора "
+            "в допуск или сформируйте проверки в контуре допуска."
         )
         return
 
     wr2_init_passport_session()
-    filters = render_war_room_v2_filters(full_board, constraints_df, v2_df)
+    filters = render_war_room_v3_filters(full_board, constraints_df, v2_df)
     board_df = apply_war_room_plan_filters(
         full_board,
         project=filters["project"],
@@ -1848,15 +2534,29 @@ def render_war_room_v2_executive(
         search_boq=filters["search_boq"],
     )
     wr2_sync_auto_admitted_composition(board_df)
-
-    render_war_room_v2_kpis(board_df)
-    st.markdown("---")
-    selected_pid = render_war_room_v2_board(board_df)
-    st.markdown("---")
-    render_war_room_v2_management_panel(board_df, selected_pid)
-    st.markdown("---")
-    render_war_room_passport_composition(board_df)
     st.session_state["wr2_passport_board_df"] = board_df.copy()
+
+    render_war_room_v3_summary(board_df)
+    st.markdown("---")
+    selected_pid = render_war_room_v3_review_queue(board_df)
+    render_war_room_v3_board_detail(board_df)
+    st.markdown("---")
+    render_war_room_v3_management_workspace(board_df, selected_pid)
+    st.markdown("---")
+    render_war_room_v3_passport_basket(board_df)
+    st.markdown("---")
+    readiness = render_war_room_v3_passport_readiness(
+        filters["project"],
+        filters["month"],
+        board_df,
+    )
+    st.markdown("---")
+    render_war_room_v3_passport_formation(
+        filters["project"],
+        filters["month"],
+        board_df=board_df,
+        readiness=readiness,
+    )
 
 
 def filter_options(df: pd.DataFrame, col: str) -> List[str]:
@@ -2362,6 +3062,142 @@ def wr2_passport_scope_rows(
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
+def render_war_room_v3_passport_formation(
+    project_sel: str,
+    month_sel: str,
+    board_df: Optional[pd.DataFrame] = None,
+    readiness: Optional[Dict[str, Any]] = None,
+) -> None:
+    st.markdown("### Сформировать паспорт месяца")
+    st.caption(
+        "Официальное формирование паспорта из управленчески утверждённого состава. "
+        "Итог допуска отделов при этом не меняется."
+    )
+    wr2_init_passport_session()
+
+    if project_sel == "Все" or month_sel == "Все":
+        st.warning("Выберите конкретный проект и месяц для формирования паспорта.")
+        return
+
+    scoped_board = board_df
+    if scoped_board is None:
+        scoped_board = st.session_state.get("wr2_passport_board_df")
+    if scoped_board is None or scoped_board.empty:
+        st.warning("Нет данных для формирования паспорта по выбранным фильтрам.")
+        return
+
+    scoped_board = scoped_board[
+        (scoped_board["project_code"].astype(str) == project_sel)
+        & (scoped_board["month_key"].astype(str) == month_sel)
+    ].copy()
+    if scoped_board.empty:
+        st.warning(
+            f"Нет кодов для проекта {project_sel} и месяца {month_sel} по текущим фильтрам."
+        )
+        return
+
+    if readiness:
+        clean_scope = readiness.get("clean_scope", pd.DataFrame())
+        full_scope = readiness.get("full_scope", pd.DataFrame())
+        can_clean = bool(readiness.get("can_clean"))
+        can_full = bool(readiness.get("can_full"))
+    else:
+        clean_scope = wr2_passport_scope_rows(scoped_board, allow_risk=False)
+        full_scope = wr2_passport_scope_rows(scoped_board, allow_risk=True)
+        validation_clean = wr2_validate_management_decisions(clean_scope, allow_risk=False)
+        validation_full = wr2_validate_management_decisions(full_scope, allow_risk=True)
+        can_clean = not validation_clean and not clean_scope.empty
+        can_full = not validation_full and not full_scope.empty
+
+    st.caption(
+        f"В составе паспорта: {len(full_scope)} код(ов) "
+        f"(чистых: {len(clean_scope)}, с риском: {len(full_scope) - len(clean_scope)})."
+    )
+    if st.session_state.get(WR2_SESSION_DRAFT):
+        st.info("Черновик состава паспорта сохранён.")
+    if st.session_state.get(WR2_SESSION_FORMED):
+        st.warning("Паспорт уже сформирован. Исключение кодов создаёт аудит-след.")
+
+    created_by = st.text_input(
+        "Кто утверждает",
+        value="Пользователь Streamlit",
+        key="passport_created_by",
+    )
+
+    b1, b2, b3, b4 = st.columns(4)
+    if b1.button("Сохранить черновик паспорта", key="wr2_save_passport_draft"):
+        st.session_state[WR2_SESSION_DRAFT] = True
+        st.session_state[WR2_SESSION_FORMED] = False
+        wr2_append_audit(
+            {
+                "datetime": datetime.now(timezone.utc).isoformat(),
+                "boq_code": "—",
+                "plan_line_id": "—",
+                "old_outcome": "—",
+                "decision": "SAVE_DRAFT",
+                "override": False,
+                "basis": f"Черновик: {len(full_scope)} код(ов)",
+                "responsible": created_by,
+                "comment": f"{project_sel} / {month_sel}",
+            }
+        )
+        st.success("Черновик состава паспорта сохранён.")
+    if b4.button("Очистить состав паспорта", key="wr2_clear_passport"):
+        st.session_state[WR2_SESSION_COMPOSITION] = {}
+        st.session_state[WR2_SESSION_DEFERRED] = {}
+        st.session_state[WR2_SESSION_EXCLUDED] = {}
+        st.session_state[WR2_SESSION_DRAFT] = False
+        st.session_state[WR2_SESSION_FORMED] = False
+        wr2_append_audit(
+            {
+                "datetime": datetime.now(timezone.utc).isoformat(),
+                "boq_code": "—",
+                "plan_line_id": "—",
+                "old_outcome": "—",
+                "decision": "CLEAR",
+                "override": False,
+                "basis": "Очищен состав паспорта",
+                "responsible": created_by,
+                "comment": "—",
+            }
+        )
+        st.success("Состав паспорта очищен.")
+        st.rerun()
+
+    if b2.button(
+        "Сформировать паспорт месяца",
+        key="create_monthly_passport_btn",
+        disabled=not can_clean,
+    ):
+        summary = wr2_create_monthly_passport_with_overrides(
+            project_code=project_sel,
+            month_key=month_sel,
+            created_by=created_by.strip() or "Пользователь Streamlit",
+            board_df=clean_scope,
+            allow_risk=False,
+        )
+        _render_passport_summary(summary, formed_risk=False)
+
+    if b3.button(
+        "Сформировать паспорт с рисками",
+        key="create_monthly_passport_risk_btn",
+        disabled=not can_full,
+    ):
+        summary = wr2_create_monthly_passport_with_overrides(
+            project_code=project_sel,
+            month_key=month_sel,
+            created_by=created_by.strip() or "Пользователь Streamlit",
+            board_df=full_scope,
+            allow_risk=True,
+        )
+        _render_passport_summary(summary, formed_risk=True)
+
+    audit = st.session_state.get(WR2_SESSION_AUDIT, [])
+    if audit:
+        with st.expander(f"Аудит управленческих решений ({len(audit)})", expanded=False):
+            st.dataframe(pd.DataFrame(audit), use_container_width=True, hide_index=True)
+
+
 def render_passport_formation(
     project_sel: str,
     month_sel: str,
@@ -2501,18 +3337,21 @@ def _render_passport_summary(summary: Dict[str, Any], *, formed_risk: bool) -> N
         st.success("Паспорт месяца сформирован" + (" (с рисками)" if formed_risk else ""))
         c1, c2, c3, c4 = st.columns(4)
         c5, c6, c7, c8 = st.columns(4)
-        c1.metric("passport_id", display_dash(summary.get("passport_id")))
-        c2.metric("Строк включено", summary.get("created_lines", 0))
-        c3.metric("Пропущено (BLOCKED)", summary.get("skipped_blocked", 0))
-        c4.metric("BLOCKED без override", summary.get("blocked_without_override", 0))
-        c5.metric("Override включено", summary.get("override_included_rows", 0))
-        c6.metric("Пропущено (ожидание)", summary.get("skipped_waiting", 0))
-        c7.metric("Стоимость плана", money_ru(summary.get("total_value")))
-        c8.metric("Трудозатраты, ч", f"{safe_num(summary.get('total_hours')):,.1f}".replace(",", " "))
+        c1.metric("Строк включено", summary.get("created_lines", 0))
+        c2.metric("Пропущено (заблокировано)", summary.get("skipped_blocked", 0))
+        c3.metric("Заблокировано без override", summary.get("blocked_without_override", 0))
+        c4.metric("Override включено", summary.get("override_included_rows", 0))
+        c5.metric("Пропущено (ожидание)", summary.get("skipped_waiting", 0))
+        c6.metric("Стоимость плана", money_ru(summary.get("total_value")))
+        c7.metric("Трудозатраты, ч", f"{safe_num(summary.get('total_hours')):,.1f}".replace(",", " "))
+        c8.metric("Статус", "Создан")
+        with st.expander("Техническая информация", expanded=False):
+            st.markdown(f"**Идентификатор паспорта:** `{display_dash(summary.get('passport_id'))}`")
         st.cache_data.clear()
     elif status == "already_exists":
         st.info("Паспорт месяца уже существует")
-        st.caption(f"passport_id: {display_dash(summary.get('passport_id'))}")
+        with st.expander("Техническая информация", expanded=False):
+            st.markdown(f"**Идентификатор паспорта:** `{display_dash(summary.get('passport_id'))}`")
     elif status in ("no_eligible_lines", "no_source_rows", "no_approved_lines"):
         st.warning("Нет строк, готовых для формирования паспорта месяца")
     else:
@@ -2754,29 +3593,31 @@ def render_legacy_war_room(
     else:
         render_kpis(df)
 
-    st.markdown("---")
-    render_passport_formation(project_sel, month_sel)
-
     if df.empty:
         return
 
     st.markdown("---")
-    render_department_summary(df)
-    st.markdown("---")
+    st.markdown("### Критические ограничения")
     render_top10(df)
     st.markdown("---")
+    st.markdown("### Просроченные ограничения")
     render_overdue(df)
     st.markdown("---")
+    st.markdown("### Топ владельцев ограничений")
     render_owners(df)
     st.markdown("---")
+    st.markdown("### Динамика ограничений")
     render_gate_layers(df)
+    st.markdown("---")
+    render_department_summary(df)
 
 
 def main() -> None:
-    st.title("War Room ограничений")
+    st.title("Управление решениями по месячному плану")
     st.caption(
-        "Итог допуска месячного плана и готовность кодов к формированию паспорта. "
-        "Решения отделов принимаются на Page 21; здесь — агрегированный executive-слой."
+        "Управленческий контур после допуска отделов. "
+        "Операционный допуск — на странице «Допуск месячного плана»; "
+        "здесь принимаются решения по включению кодов в паспорт месяца."
     )
 
     base_df = load_constraints()
@@ -2787,17 +3628,10 @@ def main() -> None:
     v2_df = load_v2_plan_lines()
     queue_df = load_review_queue()
 
-    render_war_room_v2_executive(base_df, v2_df, queue_df)
-
-    st.markdown("---")
-    render_passport_formation(
-        st.session_state.get(WR2_FILTER_KEYS["project"], "Все"),
-        st.session_state.get(WR2_FILTER_KEYS["month"], "Все"),
-        board_df=st.session_state.get("wr2_passport_board_df"),
-    )
+    render_war_room_v3(base_df, v2_df, queue_df)
 
     with st.expander(
-        "Классический War Room — детализация по ограничениям (legacy)",
+        "Аналитика ограничений",
         expanded=False,
     ):
         st.markdown("### Фильтры (ограничения)")

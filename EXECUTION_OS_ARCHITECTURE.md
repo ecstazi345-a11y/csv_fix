@@ -2,7 +2,8 @@
 
 > **Статус:** стратегическая архитектура (документация).  
 > **Не является** текущей реализацией в коде. Streamlit, SQL и engine modules — отдельные этапы после проектирования views.  
-> **Связанные файлы:** `PROJECT_CONTEXT.md`, `README_SMR_EXECUTION_LOGIC.md`, `NEXT_STEPS.md`
+> **Связанные файлы:** `PROJECT_CONTEXT.md`, `README_SMR_EXECUTION_LOGIC.md`, `NEXT_STEPS.md`  
+> **Контур месячного планирования (FROZEN):** `docs/MONTHLY_PLANNING_ARCHITECTURE_FREEZE.md`, `docs/MONTHLY_PLANNING_IMPLEMENTATION_PLAN.md`
 
 ---
 

@@ -52,6 +52,7 @@ V2_PLAN_LINE_SELECT_COLUMNS = [
     "unit",
     "labor_hours",
     "labor_cost",
+    "crew_size",
     "unit_price",
     "plan_value",
     "crew",
@@ -104,8 +105,10 @@ TABLE_HEIGHT_PX = 560
 PACKAGE_TABLE_SELECTION_KEY = "admission_package_table_select"
 PACKAGE_SELECTED_KEY = "admission_package_selected_key"
 PACKAGE_CHECK_TABLE_KEY = "admission_package_check_table_select"
-PACKAGE_TABLE_HEIGHT_PX = 420
+PACKAGE_TABLE_HEIGHT_PX = 36 * 25 + 38  # ~25 visible rows in «Список месячного плана для допуска»
 PACKAGE_CHECK_TABLE_HEIGHT_PX = 280
+ADMISSION_HOURS_PER_PERSON_MONTH = 176  # фонд ч/чел/мес — KPI конструктора; в таблицах допуска не показываем FTE
+ADMISSION_PRODUCTIVE_HOURS_PER_PERSON_SHIFT = 8.0  # как PRODUCTIVE_HOURS_PER_PERSON_SHIFT в 10B
 
 WORKBENCH_DETAIL_CID_KEY = "admission_workbench_detail_cid"
 WORKBENCH_MAX_ROWS = 80
@@ -391,9 +394,12 @@ PACKAGE_STATUS_STYLE = {
 
 ADMISSION_MAIN_TABLE_NUMERIC_COLUMNS = {
     "Объём",
-    "Трудозатраты",
     "Стоимость объёма",
+    "Трудозатраты, чел·ч",
+    "Людей в звене",
+    "Длительность, смен",
     "Стоимость труда",
+    "Труд / стоимость работ, %",
 }
 
 # TODO v2 persistence: system/iwp must be saved from 10B to monthly_plan_lines_v2.
@@ -409,6 +415,7 @@ V2_PLAN_LINE_BASE_COLUMNS = [
     "planned_qty",
     "labor_hours",
     "labor_cost",
+    "crew_size",
     "unit_price",
     "plan_value",
     "crew",
@@ -467,14 +474,15 @@ ADMISSION_MAIN_TABLE_COLUMNS = [
     "boq_name",
     "unit_display",
     "planned_qty_display",
-    "required_hours_display",
     "plan_value_display",
+    "required_hours_display",
+    "crew_size_display",
+    "duration_shifts_display",
     "labor_cost_display",
+    "labor_to_plan_pct_display",
     "crew_display",
     "who_holds_display",
     "planned_by_display",
-    "planned_date_display",
-    "planned_time_msk_display",
     "sent_to_constraints_display",
 ]
 
@@ -489,9 +497,12 @@ ADMISSION_MAIN_TABLE_COLUMNS_RU = {
     "boq_name": "Наименование работ",
     "unit_display": "Ед.",
     "planned_qty_display": "Объём",
-    "required_hours_display": "Трудозатраты",
     "plan_value_display": "Стоимость объёма",
+    "required_hours_display": "Трудозатраты, чел·ч",
+    "crew_size_display": "Людей в звене",
+    "duration_shifts_display": "Длительность, смен",
     "labor_cost_display": "Стоимость труда",
+    "labor_to_plan_pct_display": "Труд / стоимость работ, %",
     "crew_display": "Звено",
     "package_status_ui": "Статус допуска",
     "who_holds_display": "Удерживает",
@@ -743,6 +754,150 @@ CHECK_STATUS_BG_RU = {
     "Не пройдено": "background-color: #fee2e2;",
 }
 
+DECISION_REGISTRY_CHECK_STATUS_DISPLAY: Dict[str, str] = {
+    "Ожидает проверки": "ПРОВЕРЯЕТСЯ",
+    "ОЖИДАЕТ": "ПРОВЕРЯЕТСЯ",
+    "Пройдено": "ПРОЙДЕНО",
+    "PASS": "ПРОЙДЕНО",
+    "Риск / требуется уточнение": "УТОЧНЕНИЕ",
+    "WARNING": "УТОЧНЕНИЕ",
+    "Удержание / блокировка": "ЗАБЛОКИРОВАНО",
+    "HOLD": "ЗАБЛОКИРОВАНО",
+    "Не пройдено": "НЕ ПРОЙДЕНО",
+    "FAIL": "НЕ ПРОЙДЕНО",
+}
+
+DECISION_REGISTRY_VALUE_COLUMN_RU = "Стоимость под решением"
+
+DECISION_REGISTRY_TABLE_COLUMNS = [
+    "check_status",
+    "project_code",
+    "month_key",
+    "queue_display",
+    "discipline_display",
+    "system_display",
+    "iwp_display",
+    "boq_code",
+    "boq_name",
+    "responsible_department",
+    "gate_layer",
+    "check_name",
+    "planned_qty_month_display",
+    "plan_value_month_display",
+    "crew_code_display",
+    "required_hours_display",
+    "crew_size_display",
+    "duration_shifts_display",
+    "labor_cost_display",
+    "labor_to_plan_pct_display",
+    "owner_name",
+    "value_at_risk_display",
+    "updated_by",
+    "block_clarify_reason_display",
+    "comment",
+]
+
+DECISION_REGISTRY_TABLE_COLUMNS_RU = {
+    "check_status": "Статус проверки",
+    "project_code": "Проект",
+    "month_key": "Месяц",
+    "queue_display": "Очередь",
+    "discipline_display": "Дисциплина",
+    "system_display": "Система",
+    "iwp_display": "IWP",
+    "boq_code": "BOQ-код",
+    "boq_name": "Наименование работы",
+    "responsible_department": "Отдел",
+    "gate_layer": "Контур допуска",
+    "check_name": "Проверка",
+    "planned_qty_month_display": "Объём месяца",
+    "plan_value_month_display": "Стоимость объёма",
+    "crew_code_display": "Шифр звена",
+    "required_hours_display": "Трудозатраты, чел·ч",
+    "crew_size_display": "Людей в звене",
+    "duration_shifts_display": "Длительность, смен",
+    "labor_cost_display": "Стоимость труда",
+    "labor_to_plan_pct_display": "Труд / стоимость работ, %",
+    "owner_name": "Владелец решения",
+    "value_at_risk_display": DECISION_REGISTRY_VALUE_COLUMN_RU,
+    "updated_by": "Последнее обновление внёс",
+    "block_clarify_reason_display": "Причина блокировки / уточнения",
+    "comment": "Комментарий",
+}
+
+DECISION_REGISTRY_NUMERIC_COLUMNS = {
+    "Объём месяца",
+    "Стоимость объёма",
+    "Трудозатраты, чел·ч",
+    "Людей в звене",
+    "Длительность, смен",
+    "Стоимость труда",
+    "Труд / стоимость работ, %",
+    DECISION_REGISTRY_VALUE_COLUMN_RU,
+}
+
+DECISION_REGISTRY_CHECK_STATUS_TEXT_STYLE = {
+    "ПРОВЕРЯЕТСЯ": ADMISSION_STATUS_TEXT_STYLE["Проверяется"],
+    "ПРОЙДЕНО": ADMISSION_STATUS_TEXT_STYLE["Допущено"],
+    "УТОЧНЕНИЕ": ADMISSION_STATUS_TEXT_STYLE["Требует уточнения"],
+    "ЗАБЛОКИРОВАНО": ADMISSION_STATUS_TEXT_STYLE["Заблокировано"],
+    "НЕ ПРОЙДЕНО": ADMISSION_STATUS_TEXT_STYLE["Заблокировано"],
+}
+
+ADMISSION_SHARED_TABLE_COLUMN_WIDTHS: dict[str, str] = {
+    "Статус проверки": "small",
+    "Статус допуска": "small",
+    "Проект": "small",
+    "Месяц": "small",
+    "Очередь": "small",
+    "Дисциплина": "medium",
+    "Система": "medium",
+    "IWP": "medium",
+    "BOQ код": "small",
+    "BOQ-код": "small",
+    "Наименование работ": "large",
+    "Наименование работы": "large",
+    "Отдел": "medium",
+    "Контур допуска": "medium",
+    "Проверка": "medium",
+    "Трудозатраты, чел·ч": "small",
+    "Людей в звене": "small",
+    "Длительность, смен": "small",
+    "Стоимость труда": "medium",
+    "Труд / стоимость работ, %": "small",
+    "Владелец решения": "medium",
+    DECISION_REGISTRY_VALUE_COLUMN_RU: "medium",
+    "Последнее обновление внёс": "medium",
+    "Комментарий": "large",
+}
+
+ADMISSION_PLAN_LIST_COLUMN_WIDTHS: dict[str, str] = {
+    **ADMISSION_SHARED_TABLE_COLUMN_WIDTHS,
+    "Титул": "medium",
+    "Ед.": "small",
+    "Объём": "small",
+    "Стоимость объёма": "medium",
+    "Звено": "small",
+    "Удерживает": "medium",
+    "Кто запланировал": "medium",
+    "Передано в допуск, МСК": "medium",
+}
+
+
+def build_admission_table_column_config(
+    display_df: pd.DataFrame,
+    width_map: dict[str, str],
+) -> dict[str, Any]:
+    """Стабильные ширины колонок admission-таблиц через st.column_config."""
+    config: dict[str, Any] = {}
+    for col in display_df.columns:
+        width = width_map.get(col)
+        if width is not None:
+            config[col] = st.column_config.TextColumn(col, width=width, disabled=True)
+        else:
+            config[col] = st.column_config.TextColumn(col, disabled=True)
+    return config
+
 
 def safe_str(value: Any) -> str:
     return "" if value is None or pd.isna(value) else str(value).strip()
@@ -825,6 +980,69 @@ def format_labor_hours_display(value: Any) -> str:
     if hours <= 0:
         return "—"
     return f"{hours:,.1f}".replace(",", " ")
+
+
+def format_crew_size_display(value: Any) -> str:
+    crew_size = int(max(safe_num(value), 0))
+    if crew_size <= 0:
+        return "—"
+    return str(crew_size)
+
+
+def compute_duration_shifts(labor_hours: Any, crew_size: Any) -> float:
+    safe_hours = safe_num(labor_hours)
+    if safe_hours <= 0:
+        return 0.0
+    safe_crew_raw = safe_num(crew_size)
+    if safe_crew_raw <= 0:
+        safe_crew = 1
+    else:
+        safe_crew = max(int(safe_crew_raw), 1)
+    crew_day_capacity = safe_crew * ADMISSION_PRODUCTIVE_HOURS_PER_PERSON_SHIFT
+    return safe_hours / crew_day_capacity
+
+
+def format_duration_shifts_display(labor_hours: float, crew_size: float) -> str:
+    duration = compute_duration_shifts(labor_hours, crew_size)
+    if duration <= 0:
+        return "—"
+    return f"{duration:,.1f}".replace(",", " ").replace(".", ",") + " смен"
+
+
+def append_v2_labor_display_columns(
+    row: Dict[str, Any],
+    v2_row: Dict[str, Any],
+    *,
+    fallback_labor_hours: float = 0.0,
+) -> None:
+    """Трудовой контур допуска — по логике конструктора 10B (crew_size, duration_shifts)."""
+    labor_hours = (
+        safe_num(v2_row.get("labor_hours"))
+        if v2_row and v2_row.get("labor_hours") is not None
+        else fallback_labor_hours
+    )
+    labor_cost = safe_num(v2_row.get("labor_cost")) if v2_row else 0.0
+    plan_value = safe_num(row.get("plan_value"))
+    if v2_row and v2_row.get("plan_value") is not None:
+        plan_value = safe_num(v2_row.get("plan_value"))
+    crew_size = 1
+    if v2_row and v2_row.get("crew_size") is not None:
+        crew_raw = safe_num(v2_row.get("crew_size"))
+        crew_size = max(int(crew_raw), 1) if crew_raw > 0 else 1
+    row["required_hours_display"] = format_labor_hours_display(labor_hours)
+    row["crew_size_display"] = format_crew_size_display(crew_size)
+    row["duration_shifts_display"] = format_duration_shifts_display(labor_hours, crew_size)
+    row["labor_cost_display"] = format_money_display(labor_cost)
+    labor_to_plan_pct = labor_cost / plan_value * 100.0 if plan_value > 0 else 0.0
+    row["labor_to_plan_pct_display"] = format_labor_to_plan_pct_display(
+        labor_to_plan_pct, plan_value
+    )
+
+
+def format_labor_to_plan_pct_display(pct: float, plan_value: float) -> str:
+    if plan_value <= 0:
+        return "—"
+    return f"{pct:.1f}".replace(".", ",") + " %"
 
 
 def format_money_display(value: Any) -> str:
@@ -1238,12 +1456,6 @@ def enrich_packages_with_v2_lines(
         crew = safe_str(v2_row.get("crew")) or safe_str(pkg.get("crew_id"))
         planned_qty = v2_row.get("planned_qty") if v2_row else None
         unit = safe_str(v2_row.get("unit")) if v2_row else ""
-        labor_hours = (
-            safe_num(v2_row.get("labor_hours"))
-            if v2_row
-            else safe_num(pkg.get("required_hours"))
-        )
-        labor_cost = safe_num(v2_row.get("labor_cost")) if v2_row else 0.0
         plan_value = safe_num(pkg.get("plan_value"))
         if v2_row and v2_row.get("plan_value") is not None:
             plan_value = safe_num(v2_row.get("plan_value"))
@@ -1261,10 +1473,13 @@ def enrich_packages_with_v2_lines(
         row["crew_display"] = field_display(crew)
         row["unit_display"] = field_display(unit)
         row["planned_qty_display"] = format_qty_display(planned_qty)
-        row["required_hours_display"] = format_labor_hours_display(labor_hours)
         row["plan_value"] = plan_value
         row["plan_value_display"] = format_money_display(plan_value)
-        row["labor_cost_display"] = format_money_display(labor_cost)
+        append_v2_labor_display_columns(
+            row,
+            v2_row,
+            fallback_labor_hours=safe_num(pkg.get("required_hours")),
+        )
         row["sent_to_constraints_display"] = (
             format_datetime_moscow(sent_at) if has_meaningful_value(sent_at) else "—"
         )
@@ -1274,6 +1489,64 @@ def enrich_packages_with_v2_lines(
         row["package_status_ui"] = PACKAGE_STATUS_RU.get(
             safe_str(row.get("package_status")),
             safe_str(row.get("package_status")),
+        )
+        enriched_rows.append(row)
+
+    return pd.DataFrame(enriched_rows)
+
+
+def enrich_decision_registry_with_v2_lines(
+    registry_df: pd.DataFrame,
+    v2_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Добавляет поля строки плана v2 для реестра решений (по line_id ограничения)."""
+    if registry_df.empty:
+        return registry_df
+
+    v2_lookup: Dict[str, Dict[str, Any]] = {}
+    if not v2_df.empty and "plan_line_id" in v2_df.columns:
+        for _, row in v2_df.iterrows():
+            key = normalize_line_id(row.get("plan_line_id"))
+            if key:
+                v2_lookup[key] = row.to_dict()
+
+    enriched_rows: List[Dict[str, Any]] = []
+    for _, constraint in registry_df.iterrows():
+        line_id = safe_str(constraint.get("line_id"))
+        v2_row = v2_lookup.get(normalize_line_id(line_id), {})
+
+        facility_v2 = safe_str(v2_row.get("facility"))
+        title = (
+            safe_str(v2_row.get("title"))
+            or facility_v2
+            or safe_str(constraint.get("facility_building"))
+        )
+        queue = safe_str(v2_row.get("queue"))
+        if not queue:
+            queue = derive_construction_queue_from_facility(title or facility_v2)
+        discipline = safe_str(v2_row.get("discipline")) or safe_str(
+            constraint.get("construction_discipline")
+        )
+        plan_value = safe_num(constraint.get("plan_value"))
+        if v2_row and v2_row.get("plan_value") is not None:
+            plan_value = safe_num(v2_row.get("plan_value"))
+        crew_code = safe_str(v2_row.get("crew")) or safe_str(constraint.get("crew_id"))
+        planned_qty = v2_row.get("planned_qty") if v2_row else None
+
+        row = constraint.to_dict()
+        row["plan_value"] = plan_value
+        row["queue_display"] = field_display(queue) if queue else "—"
+        row["discipline_display"] = field_display(discipline)
+        row["system_display"] = field_display(v2_row.get("system")) if v2_row else "—"
+        row["iwp_display"] = field_display(v2_row.get("iwp")) if v2_row else "—"
+        row["planned_qty_month_display"] = format_qty_display(planned_qty)
+        row["plan_value_month_display"] = format_money_display(plan_value)
+        row["crew_code_display"] = field_display(crew_code) if crew_code else "—"
+        row["block_clarify_reason_display"] = format_registry_block_clarify_reason_display(row)
+        append_v2_labor_display_columns(
+            row,
+            v2_row,
+            fallback_labor_hours=safe_num(constraint.get("required_hours")),
         )
         enriched_rows.append(row)
 
@@ -1614,6 +1887,53 @@ def inject_admission_page_styles() -> None:
         .admission-module-kpi-detail [data-testid="stMetricValue"] {
             font-size: 0.95rem !important;
             color: #334155 !important;
+        }
+        .admission-plan-list-kpi-panel {
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #f8fafc;
+            padding: 0.75rem 0.85rem 0.65rem;
+            margin: 0.35rem 0 0.85rem 0;
+        }
+        .admission-plan-list-kpi-group + .admission-plan-list-kpi-group {
+            margin-top: 0.65rem;
+            padding-top: 0.65rem;
+            border-top: 1px solid #e2e8f0;
+        }
+        .admission-plan-list-kpi-group-title {
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin: 0 0 0.45rem 0;
+        }
+        .admission-plan-list-kpi-row--risk {
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 0.55rem;
+            margin-bottom: 0.15rem;
+        }
+        .admission-plan-list-kpi-row--risk .v2-kpi-card {
+            min-height: 66px;
+            padding: 0.6rem 0.7rem;
+            gap: 0.5rem;
+        }
+        .admission-plan-list-kpi-row--risk .v2-kpi-card-icon {
+            flex: 0 0 28px;
+            width: 28px;
+            height: 28px;
+            font-size: 0.75rem;
+        }
+        .admission-plan-list-kpi-row--risk .v2-kpi-card-label {
+            font-size: 0.62rem;
+            line-height: 1.2;
+        }
+        .admission-plan-list-kpi-row--risk .v2-kpi-card-value {
+            font-size: 1.05rem;
+        }
+        .v2-kpi-card--muted .v2-kpi-card-icon {
+            background: #f1f5f9;
+            color: #64748b;
         }
         .admission-plan-table [data-testid="stDataFrame"] {
             font-size: 0.84rem;
@@ -2461,6 +2781,17 @@ def combined_constraint_reason(row: pd.Series) -> str:
     return block or root
 
 
+def format_registry_block_clarify_reason_display(row: Dict[str, Any]) -> str:
+    """Display-only: block_reason / root_cause из monthly_plan_constraints."""
+    block = safe_str(row.get("block_reason"))
+    root = safe_str(row.get("root_cause"))
+    if block and root and block != root:
+        text = f"{block} / {root}"
+    else:
+        text = block or root
+    return field_display(text) if text else "—"
+
+
 def constraint_occurrence_date(row: pd.Series) -> date:
     for col in ("constraint_created_at", "created_at"):
         if col in row.index:
@@ -2737,6 +3068,25 @@ def style_check_status_text(val: Any) -> str:
     return "color: #475569;"
 
 
+def format_decision_registry_check_status_display(val: Any) -> str:
+    """Display-only: короткие enterprise-статусы в верхнем регистре."""
+    text = str(val).strip()
+    if not text or text == "—":
+        return text
+    mapped = DECISION_REGISTRY_CHECK_STATUS_DISPLAY.get(text)
+    if mapped:
+        return mapped
+    return text.upper()
+
+
+def style_decision_registry_check_status_text(val: Any) -> str:
+    """Мягкие цвета статусов — как в таблице «Список месячного плана для допуска»."""
+    text = str(val).strip().upper()
+    if not text or text == "—":
+        return "color: #64748b;"
+    return DECISION_REGISTRY_CHECK_STATUS_TEXT_STYLE.get(text, "color: #475569;")
+
+
 def style_overdue_bg(val: Any) -> str:
     try:
         if int(float(val)) > 0:
@@ -2919,12 +3269,17 @@ def style_table(df_in: pd.DataFrame):
 
 def style_decision_registry_table(df_in: pd.DataFrame):
     styler = df_in.style
-    status_col = TABLE_COLUMNS_RU.get("check_status", "Статус проверки")
+    status_col = DECISION_REGISTRY_TABLE_COLUMNS_RU.get("check_status", "Статус проверки")
+    labor_pct_col = DECISION_REGISTRY_TABLE_COLUMNS_RU.get(
+        "labor_to_plan_pct_display", "Труд / стоимость работ, %"
+    )
     if status_col in styler.data.columns:
-        styler = _apply_cell_style(styler, style_check_status_text, status_col)
-    styler = _apply_cell_style(styler, style_overdue_bg, TABLE_COLUMNS_RU["days_overdue"])
-    severity_col = TABLE_COLUMNS_RU.get("severity", "Критичность")
-    styler = _apply_cell_style(styler, style_severity_text, severity_col)
+        styler = _apply_cell_style(styler, style_decision_registry_check_status_text, status_col)
+    if labor_pct_col in styler.data.columns:
+        styler = _apply_cell_style(styler, style_admission_labor_to_plan_pct_text, labor_pct_col)
+    for col in DECISION_REGISTRY_NUMERIC_COLUMNS:
+        if col in df_in.columns:
+            styler = styler.set_properties(subset=[col], **{"text-align": "right"})
     return styler
 
 
@@ -3036,6 +3391,131 @@ def render_admission_module_check_kpis(
     c6.metric("Просрочено", overdue_cnt)
     c7.metric("Стоимость под блокировкой", money_ru(blocked_value))
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _admission_plan_list_kpi_card_html(label: str, value: str, variant: str) -> str:
+    icons = {
+        "total": "∑",
+        "open": "○",
+        "ready": "✓",
+        "blocked": "!",
+        "risk": "₽",
+        "muted": "·",
+        "pass": "✓",
+    }
+    icon = icons.get(variant, "·")
+    return (
+        f'<div class="v2-kpi-card v2-kpi-card--{variant}">'
+        f'<div class="v2-kpi-card-icon">{icon}</div>'
+        f"<div>"
+        f'<div class="v2-kpi-card-label">{label}</div>'
+        f'<div class="v2-kpi-card-value">{value}</div>'
+        f"</div></div>"
+    )
+
+
+def render_admission_plan_list_kpi_panel(
+    packages_df: pd.DataFrame,
+    scope_df: pd.DataFrame,
+) -> None:
+    """Компактная KPI-панель блока «Список месячного плана для допуска»."""
+    pkg_total = len(packages_df)
+    pkg_open = (
+        int((packages_df["package_status"] == PACKAGE_STATUS_OPEN).sum()) if pkg_total else 0
+    )
+    pkg_ready = (
+        int((packages_df["package_status"] == PACKAGE_STATUS_READY).sum()) if pkg_total else 0
+    )
+    pkg_blocked = (
+        int((packages_df["package_status"] == PACKAGE_STATUS_BLOCKED).sum()) if pkg_total else 0
+    )
+    admission_value = (
+        float(packages_df["plan_value"].sum())
+        if pkg_total and "plan_value" in packages_df.columns
+        else 0.0
+    )
+
+    check_total = len(scope_df)
+    wait_cnt = (
+        len(scope_df[scope_df["check_status"].astype(str) == "ОЖИДАЕТ"])
+        if "check_status" in scope_df.columns
+        else 0
+    )
+    pass_cnt = (
+        len(scope_df[scope_df["check_status"].astype(str) == "PASS"])
+        if "check_status" in scope_df.columns
+        else 0
+    )
+    warn_cnt = (
+        len(scope_df[scope_df["check_status"].astype(str) == "WARNING"])
+        if "check_status" in scope_df.columns
+        else 0
+    )
+    hold_cnt = (
+        len(scope_df[scope_df["check_status"].astype(str) == "HOLD"])
+        if "check_status" in scope_df.columns
+        else 0
+    )
+    fail_cnt = (
+        len(scope_df[scope_df["check_status"].astype(str) == "FAIL"])
+        if "check_status" in scope_df.columns
+        else 0
+    )
+    overdue_cnt = (
+        int(scope_df["is_overdue"].astype(bool).sum())
+        if "is_overdue" in scope_df.columns
+        else 0
+    )
+    blocked_value = blocked_admission_value(packages_df)
+
+    volume_cards = "".join(
+        [
+            _admission_plan_list_kpi_card_html("Строк в допуске", str(pkg_total), "total"),
+            _admission_plan_list_kpi_card_html("Ожидают проверки", str(pkg_open), "open"),
+            _admission_plan_list_kpi_card_html("Допущено отделами", str(pkg_ready), "ready"),
+            _admission_plan_list_kpi_card_html("Заблокировано", str(pkg_blocked), "blocked"),
+            _admission_plan_list_kpi_card_html(
+                "Стоимость допуска", money_ru(admission_value), "risk"
+            ),
+        ]
+    )
+    risk_cards = "".join(
+        [
+            _admission_plan_list_kpi_card_html(
+                "Всего строк для допуска", str(check_total), "total"
+            ),
+            _admission_plan_list_kpi_card_html("Ожидают проверки", str(wait_cnt), "open"),
+            _admission_plan_list_kpi_card_html("Пройдено проверок", str(pass_cnt), "ready"),
+            _admission_plan_list_kpi_card_html(
+                "Уточнение требуется", str(warn_cnt), "muted"
+            ),
+            _admission_plan_list_kpi_card_html(
+                "Удержание / блок", str(hold_cnt + fail_cnt), "blocked"
+            ),
+            _admission_plan_list_kpi_card_html("Просрочено", str(overdue_cnt), "muted"),
+            _admission_plan_list_kpi_card_html(
+                "Стоимость под блокировкой",
+                money_ru(blocked_value),
+                "risk",
+            ),
+        ]
+    )
+
+    st.markdown(
+        f"""
+        <div class="admission-plan-list-kpi-panel">
+            <div class="admission-plan-list-kpi-group">
+                <div class="admission-plan-list-kpi-group-title">Объём допуска</div>
+                <div class="v2-kpi-row">{volume_cards}</div>
+            </div>
+            <div class="admission-plan-list-kpi-group">
+                <div class="admission-plan-list-kpi-group-title">Риски допуска</div>
+                <div class="v2-kpi-row admission-plan-list-kpi-row--risk">{risk_cards}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_package_executive_cards(packages_df: pd.DataFrame) -> None:
@@ -5545,18 +6025,42 @@ def style_package_table(df_in: pd.DataFrame):
 
 
 def style_admission_status_text(val: Any) -> str:
-    text = str(val).strip()
+    text = str(val).strip().upper()
     for key, style in ADMISSION_STATUS_TEXT_STYLE.items():
-        if key in text:
+        if key.upper() in text:
             return style
     return "color: #475569;"
 
 
+def _parse_labor_to_plan_pct_display(val: Any) -> float | None:
+    text = str(val).strip()
+    if not text or text == "—":
+        return None
+    cleaned = text.replace("%", "").strip().replace(",", ".")
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def style_admission_labor_to_plan_pct_text(val: Any) -> str:
+    """Подсветка >=100% — тот же красный, что у статуса «Заблокировано»."""
+    pct = _parse_labor_to_plan_pct_display(val)
+    if pct is not None and pct >= 100.0:
+        return ADMISSION_STATUS_TEXT_STYLE["Заблокировано"]
+    return ""
+
+
 def style_admission_main_table(df_in: pd.DataFrame):
     status_col = ADMISSION_MAIN_TABLE_COLUMNS_RU.get("package_status_ui", "Статус допуска")
+    labor_pct_col = ADMISSION_MAIN_TABLE_COLUMNS_RU.get(
+        "labor_to_plan_pct_display", "Труд / стоимость работ, %"
+    )
     styler = df_in.style
     if status_col in styler.data.columns:
         styler = _apply_cell_style(styler, style_admission_status_text, status_col)
+    if labor_pct_col in styler.data.columns:
+        styler = _apply_cell_style(styler, style_admission_labor_to_plan_pct_text, labor_pct_col)
     for col in ADMISSION_MAIN_TABLE_NUMERIC_COLUMNS:
         if col in df_in.columns:
             styler = styler.set_properties(subset=[col], **{"text-align": "right"})
@@ -5584,6 +6088,8 @@ def prepare_constraint_display_df(df: pd.DataFrame) -> pd.DataFrame:
         )
     if "updated_by" in display_df.columns:
         display_df["updated_by"] = display_df["updated_by"].apply(display_dash)
+    if "owner_name" in display_df.columns:
+        display_df["owner_name"] = display_df["owner_name"].apply(display_dash)
     if "resolution_status" in display_df.columns:
         display_df["resolution_status"] = display_df["resolution_status"].apply(
             lambda v: RESOLUTION_RU.get(
@@ -6083,6 +6589,10 @@ def prepare_admission_main_table(packages_df: pd.DataFrame) -> pd.DataFrame:
                 safe_str(value),
                 field_display(value),
             )
+        ).apply(
+            lambda label: str(label).strip().upper()
+            if str(label).strip() and str(label).strip() != "—"
+            else label
         )
     for col in show_cols:
         if col == "package_status_ui":
@@ -6101,8 +6611,7 @@ def render_admission_plan_list_module(
         )
 
         st.markdown('<div class="admission-module-panel">', unsafe_allow_html=True)
-        render_admission_module_summary_kpis(packages_df)
-        render_admission_module_check_kpis(scope_df, packages_df)
+        render_admission_plan_list_kpi_panel(packages_df, scope_df)
 
         if packages_df.empty:
             st.caption("По выбранным фильтрам строк нет.")
@@ -6120,6 +6629,9 @@ def render_admission_plan_list_module(
             on_select="rerun",
             selection_mode="single-row",
             key=PACKAGE_TABLE_SELECTION_KEY,
+            column_config=build_admission_table_column_config(
+                table_view, ADMISSION_PLAN_LIST_COLUMN_WIDTHS
+            ),
         )
         st.markdown("</div>", unsafe_allow_html=True)
         st.caption(f"Показано {row_count} строк.")
@@ -6204,7 +6716,10 @@ def render_admission_line_details(
     render_edit_card(selected_row)
 
 
-def render_decision_registry_module(registry_df: pd.DataFrame) -> None:
+def render_decision_registry_module(
+    registry_df: pd.DataFrame,
+    v2_lines_df: pd.DataFrame,
+) -> None:
     with st.expander("Реестр решений по допуску", expanded=False):
         st.caption(
             "Журнал решений, принятых отделами по кодам месячного плана. "
@@ -6214,14 +6729,20 @@ def render_decision_registry_module(registry_df: pd.DataFrame) -> None:
         if registry_df.empty:
             st.info("По текущему набору фильтров решений не найдено.")
             return
-        technical_df = prepare_constraint_display_df(registry_df)
-        show_cols = [c for c in TABLE_COLUMNS if c in technical_df.columns]
-        table_view = technical_df[show_cols].rename(columns=TABLE_COLUMNS_RU)
+        technical_df = enrich_decision_registry_with_v2_lines(registry_df, v2_lines_df)
+        technical_df = prepare_constraint_display_df(technical_df)
+        show_cols = [c for c in DECISION_REGISTRY_TABLE_COLUMNS if c in technical_df.columns]
+        table_view = technical_df[show_cols].rename(columns=DECISION_REGISTRY_TABLE_COLUMNS_RU)
+        status_col = DECISION_REGISTRY_TABLE_COLUMNS_RU["check_status"]
+        if status_col in table_view.columns:
+            table_view[status_col] = table_view[status_col].apply(
+                format_decision_registry_check_status_display
+            )
         st.dataframe(
             style_decision_registry_table(table_view),
             use_container_width=True,
             hide_index=True,
-            height=TABLE_HEIGHT_PX,
+            height=PACKAGE_TABLE_HEIGHT_PX,
         )
 
 
@@ -6229,12 +6750,13 @@ def render_admission_secondary_panels(
     packages_df: pd.DataFrame,
     scope_df: pd.DataFrame,
     queue_df: pd.DataFrame,
+    v2_lines_df: pd.DataFrame,
     department_sel: str,
 ) -> None:
     with st.expander("Детали выбранной строки и проверки", expanded=False):
         render_admission_line_details(packages_df, scope_df)
 
-    render_decision_registry_module(queue_df)
+    render_decision_registry_module(queue_df, v2_lines_df)
 
 
 def main() -> None:
@@ -6374,7 +6896,7 @@ def main() -> None:
     # Основной контур допуска — «Непосредственный допуск по отделам».
     # render_admission_secondary_panels(packages_df, scope_df, queue_df, department_sel)
 
-    render_decision_registry_module(queue_df)
+    render_decision_registry_module(queue_df, v2_lines_df)
 
 
 if __name__ == "__main__":

@@ -81,13 +81,54 @@ ADMISSION_OUTCOME_BG = {
 
 DEPT_STATUS_NO_CHECK = "Нет проверки"
 
-# Отображение в ячейках отделов (только RU)
+# Отображение в ячейках отделов (только RU) — источник данных, без изменений
 DEPT_STATUS_LABEL = {
     "PASS": "Пройдено",
     "WARNING": "Риск",
     "HOLD": "Удержание",
     "FAIL": "Не пройдено",
     "ОЖИДАЕТ": "Ожидает проверки",
+}
+
+# Единый display mapping статусов — aligned with Page 21 DECISION_REGISTRY_CHECK_STATUS_DISPLAY
+WR2_REGISTRY_ADMISSION_TEXT_STYLE = {
+    "Проверяется": "color: #2E5B9A;",
+    "Допущено": "color: #2F6B4F;",
+    "Заблокировано": "color: #9B3D3D;",
+    "Требует уточнения": "color: #92610E;",
+}
+
+WR2_REGISTRY_STATUS_DISPLAY: Dict[str, str] = {
+    "Ожидает проверки": "ПРОВЕРЯЕТСЯ",
+    "ОЖИДАЕТ": "ПРОВЕРЯЕТСЯ",
+    "Пройдено": "ПРОЙДЕНО",
+    "PASS": "ПРОЙДЕНО",
+    "Риск / требуется уточнение": "УТОЧНЕНИЕ",
+    "WARNING": "УТОЧНЕНИЕ",
+    "Риск": "УТОЧНЕНИЕ",
+    "Удержание / блокировка": "УДЕРЖАНИЕ",
+    "HOLD": "УДЕРЖАНИЕ",
+    "Удержание": "УДЕРЖАНИЕ",
+    "Не пройдено": "ЗАБЛОКИРОВАНО",
+    "FAIL": "ЗАБЛОКИРОВАНО",
+    "Нет проверки": "НЕТ ПРОВЕРКИ",
+    DEPT_STATUS_NO_CHECK: "НЕТ ПРОВЕРКИ",
+    ADMISSION_OK: "ПРОЙДЕНО",
+    ADMISSION_RISK: "ДОПУЩЕНО С РИСКОМ",
+    ADMISSION_BLOCKED: "ЗАБЛОКИРОВАНО",
+    ADMISSION_WAITING: "ПРОВЕРЯЕТСЯ",
+    ADMISSION_NO_CHECKS: "НЕТ ПРОВЕРКИ",
+}
+
+WR2_REGISTRY_STATUS_TEXT_STYLE = {
+    "ПРОВЕРЯЕТСЯ": WR2_REGISTRY_ADMISSION_TEXT_STYLE["Проверяется"],
+    "ПРОЙДЕНО": WR2_REGISTRY_ADMISSION_TEXT_STYLE["Допущено"],
+    "УТОЧНЕНИЕ": WR2_REGISTRY_ADMISSION_TEXT_STYLE["Требует уточнения"],
+    "УДЕРЖАНИЕ": WR2_REGISTRY_ADMISSION_TEXT_STYLE["Заблокировано"],
+    "ЗАБЛОКИРОВАНО": WR2_REGISTRY_ADMISSION_TEXT_STYLE["Заблокировано"],
+    "НЕ ПРОЙДЕНО": WR2_REGISTRY_ADMISSION_TEXT_STYLE["Заблокировано"],
+    "ДОПУЩЕНО С РИСКОМ": WR2_REGISTRY_ADMISSION_TEXT_STYLE["Требует уточнения"],
+    "НЕТ ПРОВЕРКИ": "color: #64748b;",
 }
 
 DEPT_STATUS_BG = {
@@ -255,6 +296,10 @@ WR2_PRIORITY_ORDER = {
     WR2_PRIORITY_P3: 2,
 }
 
+WR2_REGISTRY_TABLE_HEIGHT_PX = 36 * 25 + 38  # ~25 visible rows — как «Реестр решений» Page 21
+WR2_REGISTRY_SELECT_KEY = "wr2_unified_registry_select"
+WR2_PRODUCTIVE_HOURS_PER_PERSON_SHIFT = 8.0
+
 WR2_RISK_REASON_PLACEHOLDER = (
     "Например: «Звено будет в простое, принято решение запускать работы параллельно "
     "снятию ограничения»; «Ограничение не блокирует фактический старт работ»; "
@@ -313,24 +358,26 @@ WR2_BOARD_DEPT_DISPLAY: List[tuple[str, str]] = [
 ]
 
 WR2_BOARD_TABLE_COLUMNS = [
+    "Итог допуска",
     "Проект",
     "Очередь",
     "Титул",
+    "Дисциплина",
     "Система",
     "Пакет",
     "BOQ-код",
-    "Наименование",
+    "Наименование работы",
     *[label for label, _ in WR2_BOARD_DEPT_DISPLAY],
-    "Звено",
-    "Трудозатраты, чел/ч",
-    "Норма выработки",
     "Плановый объём",
-    "Плановая стоимость, ₽",
-    "Стоимость звена, ₽",
-    "Маржа / разница, ₽",
-    "Итог допуска",
-    "Причина итогового статуса",
-    "Включать в паспорт",
+    "Плановая стоимость",
+    "Звено",
+    "Людей в звене",
+    "Трудозатраты, чел·ч",
+    "Длительность, смен",
+    "Норма выработки",
+    "Стоимость труда / стоимость звена",
+    "Труд / стоимость работ, %",
+    "Причина итогового допуска",
 ]
 
 
@@ -656,6 +703,40 @@ def wr2_format_norm(value: float) -> str:
     if value <= 0:
         return "—"
     return f"{value:,.3f}".replace(",", " ")
+
+
+def wr2_format_crew_size_display(value: Any) -> str:
+    crew_size = int(max(safe_num(value), 0))
+    if crew_size <= 0:
+        return "—"
+    return str(crew_size)
+
+
+def wr2_format_duration_shifts_display(labor_hours: Any, crew_size: Any) -> str:
+    safe_hours = safe_num(labor_hours)
+    safe_crew_raw = safe_num(crew_size)
+    if safe_hours <= 0 or safe_crew_raw <= 0:
+        return "—"
+    duration = safe_hours / (safe_crew_raw * WR2_PRODUCTIVE_HOURS_PER_PERSON_SHIFT)
+    if duration <= 0:
+        return "—"
+    return f"{duration:,.1f}".replace(",", " ").replace(".", ",") + " смен"
+
+
+def wr2_format_labor_to_plan_pct_display(labor_cost: Any, plan_value: Any) -> str:
+    cost = safe_num(labor_cost)
+    plan_val = safe_num(plan_value)
+    if plan_val <= 0:
+        return "—"
+    pct = cost / plan_val * 100.0
+    return f"{pct:.1f}".replace(".", ",") + " %"
+
+
+def wr2_registry_admission_reason_display(row: pd.Series) -> str:
+    reason = display_dash(row.get("reason"))
+    if reason != "—":
+        return reason
+    return display_dash(row.get("outcome_status_reason"))
 
 
 def wr2_outcome_status_reason(group: pd.DataFrame, counts: Dict[str, int]) -> str:
@@ -1120,35 +1201,97 @@ def wr2_primary_constraint(row: pd.Series) -> str:
     return safe_str(row.get("outcome_status_reason")) or "—"
 
 
-def wr2_build_review_queue_df(board_df: pd.DataFrame) -> pd.DataFrame:
+def wr2_build_unified_registry_df(board_df: pd.DataFrame) -> pd.DataFrame:
+    """Полный реестр кодов месяца для War Room (1 строка = 1 plan_line_id)."""
     if board_df.empty:
-        return board_df.copy()
-    rows: List[Dict[str, Any]] = []
-    for _, row in board_df.iterrows():
-        if not wr2_needs_management_review(row):
-            continue
-        priority = wr2_review_priority(row)
-        rows.append(
-            {
-                "_plan_line_id": safe_str(row.get("plan_line_id")),
-                "_priority_sort": WR2_PRIORITY_ORDER.get(priority, 9),
-                "_plan_value_num": safe_num(row.get("plan_value_num")),
-                "BOQ-код": display_dash(row.get("boq_code")),
-                "Наименование": display_dash(row.get("boq_name")),
-                "Статус допуска": safe_str(row.get("outcome")),
-                "Основное ограничение": wr2_primary_constraint(row),
-                "Стоимость": money_ru(row.get("plan_value_num")),
-                "Приоритет": priority,
-            }
-        )
-    if not rows:
         return pd.DataFrame()
-    result = pd.DataFrame(rows)
+
+    display_rows: List[Dict[str, Any]] = []
+    for _, row in board_df.iterrows():
+        pid = safe_str(row.get("plan_line_id"))
+        boq = display_dash(row.get("boq_code"))
+        outcome_display = safe_str(row.get("classic_outcome") or row.get("outcome"))
+        needs_review = wr2_needs_management_review(row)
+        priority = wr2_review_priority(row)
+        labor_hours = safe_num(row.get("labor_hours"))
+        labor_cost = safe_num(row.get("labor_cost"))
+        crew_size_raw = safe_num(row.get("crew_size"))
+        plan_value_num = safe_num(row.get("plan_value_num"))
+        row_dict: Dict[str, Any] = {
+            "_plan_line_id": pid,
+            "_needs_review_sort": 0 if needs_review else 1,
+            "_priority_sort": WR2_PRIORITY_ORDER.get(priority, 9),
+            "_plan_value_num": plan_value_num,
+            "Итог допуска": outcome_display,
+            "Проект": display_dash(row.get("project_code")),
+            "Очередь": display_dash(row.get("queue_display")),
+            "Титул": display_dash(row.get("title_display")),
+            "Дисциплина": display_dash(row.get("discipline")),
+            "Система": display_dash(row.get("system_display")),
+            "Пакет": display_dash(row.get("package_display")),
+            "BOQ-код": boq,
+            "Наименование работы": display_dash(row.get("boq_name")),
+            "Плановый объём": (
+                f"{safe_num(row.get('planned_qty')):,.3f}".replace(",", " ")
+                if safe_num(row.get("planned_qty"))
+                else "—"
+            ),
+            "Плановая стоимость": money_ru(plan_value_num),
+            "Звено": display_dash(row.get("crew")),
+            "Людей в звене": wr2_format_crew_size_display(crew_size_raw),
+            "Трудозатраты, чел·ч": wr2_format_hours(labor_hours),
+            "Длительность, смен": wr2_format_duration_shifts_display(
+                labor_hours, crew_size_raw
+            ),
+            "Норма выработки": wr2_format_norm(safe_num(row.get("norm_hours_per_unit"))),
+            "Стоимость труда / стоимость звена": money_ru(labor_cost),
+            "Труд / стоимость работ, %": wr2_format_labor_to_plan_pct_display(
+                labor_cost, plan_value_num
+            ),
+            "Причина итогового допуска": wr2_registry_admission_reason_display(row),
+        }
+        for display_label, classic_label in WR2_BOARD_DEPT_DISPLAY:
+            row_dict[display_label] = safe_str(row.get(f"classic_{classic_label}"))
+        display_rows.append(row_dict)
+
+    result = pd.DataFrame(display_rows)
     return result.sort_values(
-        ["_priority_sort", "_plan_value_num"],
-        ascending=[True, False],
+        ["_needs_review_sort", "_priority_sort", "_plan_value_num"],
+        ascending=[True, True, False],
         kind="stable",
     ).reset_index(drop=True)
+
+
+def wr2_resolve_unified_registry_selection(registry_df: pd.DataFrame) -> Optional[str]:
+    if registry_df.empty:
+        return None
+
+    line_ids = registry_df["_plan_line_id"].astype(str).tolist()
+    selected_pid: Optional[str] = None
+
+    sel_state = st.session_state.get(WR2_REGISTRY_SELECT_KEY)
+    if isinstance(sel_state, dict):
+        rows_sel = sel_state.get("selection", {}).get("rows", [])
+        if rows_sel:
+            idx = int(rows_sel[0])
+            if 0 <= idx < len(line_ids):
+                selected_pid = line_ids[idx]
+
+    if not selected_pid:
+        stored = safe_str(st.session_state.get(WR2_SESSION_SELECTED))
+        if stored in line_ids:
+            selected_pid = stored
+
+    if not selected_pid:
+        needs_review = registry_df[registry_df["_needs_review_sort"] == 0]
+        if not needs_review.empty:
+            selected_pid = safe_str(needs_review.iloc[0].get("_plan_line_id"))
+        else:
+            selected_pid = line_ids[0]
+
+    if selected_pid:
+        st.session_state[WR2_SESSION_SELECTED] = selected_pid
+    return selected_pid
 
 
 def wr2_build_decision_record(
@@ -1571,6 +1714,7 @@ def build_war_room_read_model(
                 "plan_value": safe_num(row.get("plan_value")),
                 "labor_hours": safe_num(row.get("labor_hours")),
                 "labor_cost": safe_num(row.get("labor_cost")),
+                "crew_size": safe_num(row.get("crew_size")),
                 "queue_display": derive_construction_queue_from_facility(facility),
                 "title_display": facility,
                 "system_display": display_dash(row.get("system")),
@@ -1596,6 +1740,7 @@ def build_war_room_read_model(
             "plan_value": safe_num(first.get("plan_value")),
             "labor_hours": safe_num(first.get("labor_hours") or first.get("required_hours")),
             "labor_cost": safe_num(first.get("labor_cost")),
+            "crew_size": safe_num(first.get("crew_size")),
             "queue_display": derive_construction_queue_from_facility(facility),
             "title_display": facility,
             "system_display": "—",
@@ -1622,6 +1767,7 @@ def build_war_room_read_model(
                 "plan_value": safe_num(qrow.get("plan_value")),
                 "labor_hours": safe_num(qrow.get("labor_hours") or qrow.get("required_hours")),
                 "labor_cost": safe_num(qrow.get("labor_cost")),
+                "crew_size": safe_num(qrow.get("crew_size")),
                 "queue_display": derive_construction_queue_from_facility(facility),
                 "title_display": facility,
                 "system_display": "—",
@@ -1800,16 +1946,87 @@ def inject_war_room_v2_styles() -> None:
             min-height: 2.05rem;
             font-size: 0.86rem;
         }
-        .war-room-v2-kpi [data-testid="stMetric"] {
-            background: #f8fafc;
+        .admission-plan-list-kpi-panel {
             border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #f8fafc;
+            padding: 0.75rem 0.85rem 0.65rem;
+            margin: 0.35rem 0 0.85rem 0;
+        }
+        .v2-kpi-row {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 0.75rem;
+            margin: 0.85rem 0 1rem 0;
+        }
+        .admission-plan-list-kpi-panel .v2-kpi-row {
+            margin: 0;
+        }
+        .v2-kpi-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.65rem;
+            padding: 0.85rem 0.95rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #ffffff;
+            min-height: 78px;
+        }
+        .v2-kpi-card-icon {
+            flex: 0 0 34px;
+            width: 34px;
+            height: 34px;
             border-radius: 8px;
-            padding: 0.35rem 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            font-weight: 700;
         }
-        .war-room-v2-kpi [data-testid="stMetricLabel"] {
-            font-size: 0.78rem;
+        .v2-kpi-card--total .v2-kpi-card-icon { background: #E8EEF5; color: #475F7B; }
+        .v2-kpi-card--open .v2-kpi-card-icon { background: #E6EEF8; color: #2E5B9A; }
+        .v2-kpi-card--ready .v2-kpi-card-icon { background: #E7F5EE; color: #2F6B4F; }
+        .v2-kpi-card--blocked .v2-kpi-card-icon { background: #FEE2E2; color: #B91C1C; }
+        .v2-kpi-card--risk .v2-kpi-card-icon { background: #F9EDE8; color: #A65F45; }
+        .v2-kpi-card--muted .v2-kpi-card-icon {
+            background: #f1f5f9;
+            color: #64748b;
         }
-        .war-room-v2-kpi [data-testid="stMetricValue"] {
+        .v2-kpi-card-label {
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 0.15rem;
+        }
+        .v2-kpi-card-value {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1.15;
+        }
+        .admission-plan-list-kpi-row--risk {
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 0.55rem;
+            margin-bottom: 0.15rem;
+        }
+        .admission-plan-list-kpi-row--risk .v2-kpi-card {
+            min-height: 66px;
+            padding: 0.6rem 0.7rem;
+            gap: 0.5rem;
+        }
+        .admission-plan-list-kpi-row--risk .v2-kpi-card-icon {
+            flex: 0 0 28px;
+            width: 28px;
+            height: 28px;
+            font-size: 0.75rem;
+        }
+        .admission-plan-list-kpi-row--risk .v2-kpi-card-label {
+            font-size: 0.62rem;
+            line-height: 1.2;
+        }
+        .admission-plan-list-kpi-row--risk .v2-kpi-card-value {
             font-size: 1.05rem;
         }
         </style>
@@ -1818,30 +2035,70 @@ def inject_war_room_v2_styles() -> None:
     )
 
 
-def style_war_room_board_table(df_in: pd.DataFrame):
-    dept_cols = [label for label, _ in WR2_BOARD_DEPT_DISPLAY if label in df_in.columns]
-    styled_cols = dept_cols.copy()
-    if "Итог допуска" in df_in.columns:
-        styled_cols.append("Итог допуска")
-
-    def _bg(value: Any) -> str:
-        text = safe_str(value)
-        if text in ADMISSION_OUTCOME_BG:
-            return ADMISSION_OUTCOME_BG[text]
-        if text in WR2_OUTCOME_BG:
-            return WR2_OUTCOME_BG[text]
-        if text in DEPT_STATUS_BG:
-            return DEPT_STATUS_BG[text]
-        return ""
-
-    styler = df_in.style
-    if not styled_cols:
+def _apply_wr2_registry_cell_style(styler, func, column: str):
+    if column not in styler.data.columns:
         return styler
-    bg_fn = lambda v: _bg(v)  # noqa: E731
-    subset = pd.IndexSlice[:, styled_cols]
     if hasattr(styler, "map"):
-        return styler.map(bg_fn, subset=subset)
-    return styler.applymap(bg_fn, subset=subset)
+        return styler.map(func, subset=pd.IndexSlice[:, [column]])
+    return styler.applymap(func, subset=pd.IndexSlice[:, [column]])
+
+
+def format_wr2_registry_status_display(val: Any) -> str:
+    """Display-only uppercase labels — aligned with Page 21 decision registry."""
+    text = safe_str(val)
+    if not text or text == "—":
+        return "—"
+    mapped = WR2_REGISTRY_STATUS_DISPLAY.get(text)
+    if mapped:
+        return mapped
+    return WR2_REGISTRY_STATUS_DISPLAY.get(text.upper(), text.upper())
+
+
+def style_wr2_registry_status_text(val: Any) -> str:
+    text = str(val).strip().upper()
+    if not text or text == "—":
+        return "color: #64748b;"
+    return WR2_REGISTRY_STATUS_TEXT_STYLE.get(text, "color: #475569;")
+
+
+def wr2_registry_status_column_names(df: pd.DataFrame) -> List[str]:
+    cols = ["Итог допуска"]
+    cols.extend(label for label, _ in WR2_BOARD_DEPT_DISPLAY if label in df.columns)
+    return cols
+
+
+def prepare_wr2_registry_display_table(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    for col in wr2_registry_status_column_names(out):
+        out[col] = out[col].apply(format_wr2_registry_status_display)
+    return out
+
+
+def style_war_room_board_table(df_in: pd.DataFrame):
+    styler = df_in.style
+    for col in wr2_registry_status_column_names(df_in):
+        styler = _apply_wr2_registry_cell_style(styler, style_wr2_registry_status_text, col)
+    return styler
+
+
+def _war_room_plan_summary_kpi_card_html(label: str, value: str, variant: str) -> str:
+    icons = {
+        "total": "∑",
+        "open": "○",
+        "ready": "✓",
+        "blocked": "!",
+        "risk": "₽",
+        "muted": "·",
+    }
+    icon = icons.get(variant, "·")
+    return (
+        f'<div class="v2-kpi-card v2-kpi-card--{variant}">'
+        f'<div class="v2-kpi-card-icon">{icon}</div>'
+        f"<div>"
+        f'<div class="v2-kpi-card-label">{label}</div>'
+        f'<div class="v2-kpi-card-value">{value}</div>'
+        f"</div></div>"
+    )
 
 
 def render_war_room_v3_summary(board_df: pd.DataFrame) -> None:
@@ -1871,16 +2128,41 @@ def render_war_room_v3_summary(board_df: pd.DataFrame) -> None:
             "plan_value_num",
         ].sum()
     )
-    st.markdown('<div class="war-room-v2-kpi">', unsafe_allow_html=True)
-    c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
-    c1.metric("Всего кодов", total)
-    c2.metric("Допущено", ok_cnt)
-    c3.metric("Допущено с риском", risk_cnt)
-    c4.metric("Заблокировано", blocked_cnt)
-    c5.metric("Стоимость допущенных работ", money_ru_compact(value_ok))
-    c6.metric("Стоимость работ под риском", money_ru_compact(value_risk))
-    c7.metric("Стоимость заблокированных работ", money_ru_compact(value_blocked))
-    st.markdown("</div>", unsafe_allow_html=True)
+    summary_cards = "".join(
+        [
+            _war_room_plan_summary_kpi_card_html("Всего кодов", str(total), "total"),
+            _war_room_plan_summary_kpi_card_html("Допущено", str(ok_cnt), "ready"),
+            _war_room_plan_summary_kpi_card_html(
+                "Допущено с риском", str(risk_cnt), "open"
+            ),
+            _war_room_plan_summary_kpi_card_html(
+                "Заблокировано", str(blocked_cnt), "blocked"
+            ),
+            _war_room_plan_summary_kpi_card_html(
+                "Стоимость допущенных работ",
+                money_ru_compact(value_ok),
+                "ready",
+            ),
+            _war_room_plan_summary_kpi_card_html(
+                "Стоимость работ под риском",
+                money_ru_compact(value_risk),
+                "risk",
+            ),
+            _war_room_plan_summary_kpi_card_html(
+                "Стоимость заблокированных работ",
+                money_ru_compact(value_blocked),
+                "blocked",
+            ),
+        ]
+    )
+    st.markdown(
+        f"""
+        <div class="admission-plan-list-kpi-panel">
+            <div class="v2-kpi-row admission-plan-list-kpi-row--risk">{summary_cards}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     st.caption(
         f"Ожидает проверки: {wait_cnt} код(ов) · Стоимость: {money_ru_compact(wait_value)}"
     )
@@ -1985,162 +2267,88 @@ def render_war_room_v3_filters(
     }
 
 
-def render_war_room_v3_review_queue(board_df: pd.DataFrame) -> Optional[str]:
-    st.markdown("### Очередь управленческого рассмотрения")
+def render_war_room_v3_unified_registry(board_df: pd.DataFrame) -> Optional[str]:
+    st.markdown("### Единый реестр кодов месяца")
     st.caption(
-        "Коды, по которым требуется управленческое решение. "
-        "Чисто допущенные коды включаются в паспорт автоматически."
+        "Полный реестр месячного плана по итогу допуска. "
+        "Выберите строку для управленческого решения. "
+        "Редактирование допуска — только на странице «Допуск месячного плана»."
     )
-    queue_df = wr2_build_review_queue_df(board_df)
-    if queue_df.empty:
-        st.success("Все коды в срезе допущены автоматически или не требуют рассмотрения.")
+    if board_df.empty:
+        st.info("Нет кодов по выбранным фильтрам.")
         return st.session_state.get(WR2_SESSION_SELECTED)
 
-    display_cols = [
-        "BOQ-код",
-        "Наименование",
-        "Статус допуска",
-        "Основное ограничение",
-        "Стоимость",
-        "Приоритет",
-    ]
-    show = queue_df[display_cols]
-    st.caption(f"В очереди: {len(queue_df)} код(ов). Выберите строку для управленческого решения.")
-    st.dataframe(
-        show,
-        use_container_width=True,
-        hide_index=True,
-        height=min(320, 80 + 35 * max(len(show), 1)),
-        on_select="rerun",
-        selection_mode="single-row",
-        key="wr2_review_queue_select",
+    registry_df = wr2_build_unified_registry_df(board_df)
+    if registry_df.empty:
+        st.info("Нет кодов по выбранным фильтрам.")
+        return st.session_state.get(WR2_SESSION_SELECTED)
+
+    needs_review_cnt = int((registry_df["_needs_review_sort"] == 0).sum())
+    total_cnt = len(registry_df)
+    st.caption(
+        f"Показано {total_cnt} кодов · Требует рассмотрения: {needs_review_cnt}. "
+        "Выберите строку для управленческого решения."
     )
 
-    selected_pid: Optional[str] = None
-    sel_state = st.session_state.get("wr2_review_queue_select")
-    if isinstance(sel_state, dict):
-        rows_sel = sel_state.get("selection", {}).get("rows", [])
-        if rows_sel:
-            idx = int(rows_sel[0])
-            if 0 <= idx < len(queue_df):
-                selected_pid = safe_str(queue_df.iloc[idx].get("_plan_line_id"))
-
-    if not selected_pid:
-        options: Dict[str, str] = {}
-        for _, queue_row in queue_df.iterrows():
-            label = (
-                f"{queue_row['BOQ-код']} — {queue_row['Статус допуска']} "
-                f"({queue_row['Приоритет']})"
-            )
-            options[label] = safe_str(queue_row.get("_plan_line_id"))
-        labels = list(options.keys())
-        current = st.session_state.get(WR2_SESSION_SELECTED)
-        default_idx = next(
-            (i for i, lbl in enumerate(labels) if options[lbl] == current),
-            0,
-        )
-        picked = st.radio(
-            "Выбор кода (если строка таблицы не выделена)",
-            labels,
-            index=default_idx,
-            key="wr2_review_queue_radio",
-        )
-        selected_pid = options.get(picked)
-
-    if selected_pid:
-        st.session_state[WR2_SESSION_SELECTED] = selected_pid
-    return selected_pid
-
-
-def render_war_room_v3_board_detail(board_df: pd.DataFrame) -> None:
-    with st.expander("Детализация всех кодов месяца", expanded=False):
-        st.caption(
-            "Полная таблица месячного плана по итогу допуска. "
-            "Редактирование допуска — только на странице «Допуск месячного плана»."
-        )
-        if board_df.empty:
-            st.info("Нет кодов по выбранным фильтрам.")
-            return
-
-        display_rows: List[Dict[str, Any]] = []
-        for _, row in board_df.iterrows():
-            pid = safe_str(row.get("plan_line_id"))
-            boq = display_dash(row.get("boq_code"))
-            outcome_display = safe_str(row.get("classic_outcome") or row.get("outcome"))
-            row_dict: Dict[str, Any] = {
-                "Проект": display_dash(row.get("project_code")),
-                "Очередь": display_dash(row.get("queue_display")),
-                "Титул": display_dash(row.get("title_display")),
-                "Система": display_dash(row.get("system_display")),
-                "Пакет": display_dash(row.get("package_display")),
-                "BOQ-код": boq,
-                "Наименование": display_dash(row.get("boq_name")),
-                "Звено": display_dash(row.get("crew")),
-                "Трудозатраты, чел/ч": wr2_format_hours(safe_num(row.get("labor_hours"))),
-                "Норма выработки": wr2_format_norm(safe_num(row.get("norm_hours_per_unit"))),
-                "Плановый объём": (
-                    f"{safe_num(row.get('planned_qty')):,.3f}".replace(",", " ")
-                    if safe_num(row.get("planned_qty"))
-                    else "—"
-                ),
-                "Плановая стоимость, ₽": money_ru(row.get("plan_value_num")),
-                "Стоимость звена, ₽": money_ru(row.get("labor_cost")),
-                "Маржа / разница, ₽": money_ru(row.get("margin_num")),
-                "Итог допуска": outcome_display,
-                "Причина итогового статуса": display_dash(row.get("outcome_status_reason")),
-                "Включать в паспорт": wr2_effective_passport_label(row),
-                "_plan_line_id": pid,
-            }
-            for display_label, classic_label in WR2_BOARD_DEPT_DISPLAY:
-                row_dict[display_label] = safe_str(row.get(f"classic_{classic_label}"))
-            display_rows.append(row_dict)
-
-        show = pd.DataFrame(display_rows)
-        show = show[[col for col in WR2_BOARD_TABLE_COLUMNS if col in show.columns]]
-        st.caption(f"Показано {len(show)} кодов.")
-        st.dataframe(
-            style_war_room_board_table(show),
-            use_container_width=True,
-            hide_index=True,
-            height=min(560, 80 + 35 * max(len(show), 1)),
-        )
+    show_cols = [c for c in WR2_BOARD_TABLE_COLUMNS if c in registry_df.columns]
+    show = prepare_wr2_registry_display_table(registry_df[show_cols])
+    st.dataframe(
+        style_war_room_board_table(show),
+        use_container_width=True,
+        hide_index=True,
+        height=WR2_REGISTRY_TABLE_HEIGHT_PX,
+        on_select="rerun",
+        selection_mode="single-row",
+        key=WR2_REGISTRY_SELECT_KEY,
+    )
+    return wr2_resolve_unified_registry_selection(registry_df)
 
 
 def render_war_room_v3_code_card(row: pd.Series) -> None:
-    st.markdown("#### Карточка кода")
     boq = display_dash(row.get("boq_code"))
-    st.markdown(f"**{boq}** — {display_dash(row.get('boq_name'))}")
-    wr2_render_outcome_status(safe_str(row.get("outcome")))
-    st.markdown(f"**Система:** {display_dash(row.get('system_display'))}")
-    st.markdown(f"**Титул:** {display_dash(row.get('title_display'))}")
-    qty = safe_num(row.get("planned_qty"))
-    st.markdown(
-        f"**Объём:** {f'{qty:,.3f}'.replace(',', ' ') if qty else '—'}"
-    )
-    st.markdown(f"**Стоимость:** {money_ru(row.get('plan_value_num'))}")
-
-    dept_parts: List[str] = []
-    for display_label, classic_label in WR2_BOARD_DEPT_DISPLAY:
-        status = safe_str(row.get(f"classic_{classic_label}"))
-        if status and status != "—":
-            dept_parts.append(f"**{display_label}:** {status}")
-    if dept_parts:
-        st.markdown("**Статусы отделов**")
-        for part in dept_parts:
-            st.markdown(part)
-
-    st.markdown("**Основные ограничения**")
-    st.markdown(display_dash(row.get("blocking_departments")))
-    st.caption(display_dash(row.get("outcome_status_reason")))
-
+    boq_name = display_dash(row.get("boq_name"))
     pid = safe_str(row.get("plan_line_id"))
-    with st.expander("Техническая информация", expanded=False):
-        st.markdown(f"**plan_line_id:** `{pid}`")
-        st.markdown(f"**Месяц:** {display_dash(row.get('month_key'))}")
-        st.markdown(f"**Источник:** {wr2_source_display_label(row.get('source'))}")
-        st.markdown(f"**Проект:** {display_dash(row.get('project_code'))}")
-        st.markdown(f"**Причина блокировки:** {display_dash(row.get('reason'))}")
-        st.markdown(f"**Критичный отдел:** {display_dash(row.get('critical_department'))}")
+    label = f"Карточка кода · {boq}"
+    if boq_name != "—":
+        label = f"{label} — {boq_name}"
+
+    with st.expander(label, expanded=False):
+        st.markdown(f"**{boq}** — {boq_name}")
+        wr2_render_outcome_status(safe_str(row.get("outcome")))
+        st.markdown(f"**Система:** {display_dash(row.get('system_display'))}")
+        st.markdown(f"**Титул:** {display_dash(row.get('title_display'))}")
+        qty = safe_num(row.get("planned_qty"))
+        st.markdown(
+            f"**Объём:** {f'{qty:,.3f}'.replace(',', ' ') if qty else '—'}"
+        )
+        st.markdown(f"**Стоимость:** {money_ru(row.get('plan_value_num'))}")
+
+        dept_parts: List[str] = []
+        for display_label, classic_label in WR2_BOARD_DEPT_DISPLAY:
+            status = safe_str(row.get(f"classic_{classic_label}"))
+            if status and status != "—":
+                dept_parts.append(f"**{display_label}:** {status}")
+        if dept_parts:
+            st.markdown("**Статусы отделов**")
+            for part in dept_parts:
+                st.markdown(part)
+
+        st.markdown("**Основные ограничения**")
+        st.markdown(display_dash(row.get("blocking_departments")))
+        reason = display_dash(row.get("reason"))
+        if reason != "—":
+            st.markdown(f"**Причина ограничения:** {reason}")
+        st.caption(display_dash(row.get("outcome_status_reason")))
+
+        st.markdown(
+            f"**Проект:** {display_dash(row.get('project_code'))} · "
+            f"**Месяц:** {display_dash(row.get('month_key'))} · "
+            f"**Источник:** {wr2_source_display_label(row.get('source'))}"
+        )
+        st.markdown(
+            f"**Критичный отдел:** {display_dash(row.get('critical_department'))} · "
+            f"**plan_line_id:** `{pid}`"
+        )
 
 
 def render_war_room_v3_decision_panel(row: pd.Series) -> None:
@@ -2239,13 +2447,206 @@ def render_war_room_v3_risk_protocol(row: pd.Series) -> None:
         )
 
 
+def wr2_is_auto_clean_admitted(row: pd.Series) -> bool:
+    """UI-only: чистый допуск уже в composition."""
+    if safe_str(row.get("outcome")) != WR2_OUTCOME_OK:
+        return False
+    pid = safe_str(row.get("plan_line_id"))
+    return pid in st.session_state.get(WR2_SESSION_COMPOSITION, {})
+
+
+def wr2_render_management_decision_form(row: pd.Series) -> None:
+    pid = safe_str(row.get("plan_line_id"))
+    boq = display_dash(row.get("boq_code"))
+    render_war_room_v3_decision_panel(row)
+    decision = wr2_get_live_decision(row)
+    render_war_room_v3_decision_basis(row, decision)
+    if decision == WR2_MGMT_INCLUDE_RISK:
+        render_war_room_v3_risk_protocol(row)
+
+    if st.button("Применить управленческое решение", key=f"wr2_apply_{wr2_sid(pid)}"):
+        apply_decision = wr2_get_live_decision(row)
+        errors = wr2_apply_management_decision(
+            row,
+            apply_decision,
+            basis=wr2_get_decision_basis(pid),
+            responsible=wr2_get_decision_responsible(pid),
+            review_deadline=wr2_get_decision_review_deadline(pid),
+            comment=wr2_get_decision_comment(pid),
+            risk_description=wr2_get_risk_reason_text(pid),
+            risk_impact=wr2_get_risk_impact(pid),
+            risk_mitigation_owner=wr2_get_risk_responsible(pid),
+            risk_mitigation_deadline=wr2_get_risk_deadline(pid),
+            risk_acceptance_basis=wr2_get_risk_acceptance_basis(pid),
+            risk_manager_comment=wr2_get_risk_comment(pid),
+        )
+        if errors:
+            for err in errors:
+                st.error(err)
+        else:
+            st.success(f"Решение по {boq} сохранено.")
+            st.rerun()
+
+
+def wr2_build_obligation_table_from_scope(full_scope: pd.DataFrame) -> pd.DataFrame:
+    if full_scope.empty:
+        return pd.DataFrame()
+    rows: List[Dict[str, Any]] = []
+    for _, row in full_scope.iterrows():
+        pid = safe_str(row.get("plan_line_id"))
+        record = wr2_get_decision_record(pid)
+        decision = wr2_get_mgmt_decision(row)
+        rows.append(
+            {
+                "_plan_line_id": pid,
+                "BOQ-код": display_dash(row.get("boq_code")),
+                "Наименование": display_dash(row.get("boq_name")),
+                "Итог допуска": safe_str(row.get("outcome")),
+                "Решение": wr2_mgmt_display_label(decision),
+                "Стоимость": money_ru(row.get("plan_value_num")),
+                "Трудозатраты, чел·ч": wr2_format_hours(safe_num(row.get("labor_hours"))),
+                "Основание": safe_str(record.get("basis")) or "—",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def wr2_compute_obligation_labor_kpis(full_scope: pd.DataFrame) -> Dict[str, Any]:
+    if full_scope.empty:
+        return {
+            "planned_qty": 0.0,
+            "labor_hours": 0.0,
+            "labor_cost": 0.0,
+            "crew_size_sum": 0,
+            "duration_shifts_sum": 0.0,
+        }
+    planned_qty = float(full_scope["planned_qty"].apply(safe_num).sum()) if "planned_qty" in full_scope.columns else 0.0
+    labor_hours = float(full_scope["labor_hours"].apply(safe_num).sum()) if "labor_hours" in full_scope.columns else 0.0
+    labor_cost = float(full_scope["labor_cost"].apply(safe_num).sum()) if "labor_cost" in full_scope.columns else 0.0
+    crew_size_sum = 0
+    duration_shifts_sum = 0.0
+    if "crew_size" in full_scope.columns:
+        for _, row in full_scope.iterrows():
+            crew = safe_num(row.get("crew_size"))
+            hours = safe_num(row.get("labor_hours"))
+            if crew > 0:
+                crew_size_sum += int(crew)
+                duration_shifts_sum += hours / (crew * WR2_PRODUCTIVE_HOURS_PER_PERSON_SHIFT)
+    return {
+        "planned_qty": planned_qty,
+        "labor_hours": labor_hours,
+        "labor_cost": labor_cost,
+        "crew_size_sum": crew_size_sum,
+        "duration_shifts_sum": duration_shifts_sum,
+    }
+
+
+def wr2_format_obligation_qty(value: float) -> str:
+    if value <= 0:
+        return "—"
+    return f"{value:,.3f}".replace(",", " ")
+
+
+def wr2_format_obligation_duration_sum(value: float) -> str:
+    if value <= 0:
+        return "—"
+    return f"{value:,.1f}".replace(",", " ").replace(".", ",") + " смен"
+
+
+def wr2_verify_passport_in_storage(
+    passport_id: str,
+    project_code: str,
+    month_key: str,
+) -> List[str]:
+    """UI-only: проверка записи паспорта в Supabase после формирования."""
+    checks: List[str] = []
+    pid = safe_str(passport_id)
+    if not pid or pid == "—":
+        return ["passport_id не создан — проверка БД пропущена."]
+    try:
+        header_resp = (
+            supabase.table("monthly_plan_passports")
+            .select(
+                "passport_id, project_code, month_key, total_plan_value, "
+                "total_required_hours, total_labor_cost, rows_count"
+            )
+            .eq("passport_id", pid)
+            .limit(1)
+            .execute()
+        )
+        header_rows = header_resp.data or []
+        if not header_rows:
+            return [f"В monthly_plan_passports нет записи passport_id={pid}."]
+        header = header_rows[0]
+        if safe_str(header.get("project_code")) == project_code:
+            checks.append("project_code в шапке паспорта заполнен")
+        else:
+            checks.append(
+                f"project_code в шапке: {display_dash(header.get('project_code'))} "
+                f"(ожидался {project_code})"
+            )
+        if safe_str(header.get("month_key")) == month_key:
+            checks.append("month_key в шапке паспорта заполнен")
+        else:
+            checks.append(
+                f"month_key в шапке: {display_dash(header.get('month_key'))} "
+                f"(ожидался {month_key})"
+            )
+        if safe_num(header.get("total_plan_value")) > 0:
+            checks.append("total_plan_value заполнен")
+        if safe_num(header.get("total_required_hours")) >= 0:
+            checks.append("total_required_hours заполнен")
+        if safe_num(header.get("total_labor_cost")) >= 0:
+            checks.append("total_labor_cost заполнен")
+
+        lines_resp = (
+            supabase.table("monthly_plan_passport_lines")
+            .select(
+                "passport_line_id, admission_status, management_override, override_reason"
+            )
+            .eq("passport_id", pid)
+            .limit(10000)
+            .execute()
+        )
+        line_rows = lines_resp.data or []
+        if line_rows:
+            checks.append(f"monthly_plan_passport_lines: {len(line_rows)} строк(и)")
+            if any(safe_str(r.get("admission_status")) for r in line_rows):
+                checks.append("admission_status присутствует в строках")
+            override_rows = [r for r in line_rows if r.get("management_override")]
+            if override_rows:
+                if all(safe_str(r.get("override_reason")) for r in override_rows):
+                    checks.append("management_override / override_reason без ошибок")
+                else:
+                    checks.append(
+                        "management_override есть, override_reason заполнен не у всех строк"
+                    )
+        else:
+            checks.append("monthly_plan_passport_lines: строк не найдено")
+
+        view_resp = (
+            supabase.table("monthly_plan_passport_dashboard_v1")
+            .select("passport_id")
+            .eq("passport_id", pid)
+            .limit(1)
+            .execute()
+        )
+        if view_resp.data:
+            checks.append("monthly_plan_passport_dashboard_v1: данные доступны для Page 12")
+        else:
+            checks.append("monthly_plan_passport_dashboard_v1: строк не найдено")
+    except Exception as exc:  # noqa: BLE001
+        return [f"Ошибка проверки Supabase: {exc}"]
+    return checks
+
+
 def render_war_room_v3_management_workspace(
     board_df: pd.DataFrame,
     selected_pid: Optional[str],
 ) -> None:
     st.markdown("### Рабочая зона управленческого решения")
     if board_df.empty or not selected_pid:
-        st.info("Выберите код в очереди управленческого рассмотрения.")
+        st.info("Выберите строку в едином реестре кодов месяца.")
         return
 
     match = board_df[board_df["plan_line_id"].astype(str) == selected_pid]
@@ -2255,42 +2656,19 @@ def render_war_room_v3_management_workspace(
 
     row = match.iloc[0]
     pid = safe_str(row.get("plan_line_id"))
-    boq = display_dash(row.get("boq_code"))
     st.session_state[WR2_SESSION_SELECTED] = pid
     wr2_hydrate_decision_widgets(pid)
 
-    left, right = st.columns([2, 3])
-    with left:
-        render_war_room_v3_code_card(row)
-    with right:
-        render_war_room_v3_decision_panel(row)
-        decision = wr2_get_live_decision(row)
-        render_war_room_v3_decision_basis(row, decision)
-        if decision == WR2_MGMT_INCLUDE_RISK:
-            render_war_room_v3_risk_protocol(row)
+    render_war_room_v3_code_card(row)
 
-        if st.button("Применить управленческое решение", key=f"wr2_apply_{wr2_sid(pid)}"):
-            apply_decision = wr2_get_live_decision(row)
-            errors = wr2_apply_management_decision(
-                row,
-                apply_decision,
-                basis=wr2_get_decision_basis(pid),
-                responsible=wr2_get_decision_responsible(pid),
-                review_deadline=wr2_get_decision_review_deadline(pid),
-                comment=wr2_get_decision_comment(pid),
-                risk_description=wr2_get_risk_reason_text(pid),
-                risk_impact=wr2_get_risk_impact(pid),
-                risk_mitigation_owner=wr2_get_risk_responsible(pid),
-                risk_mitigation_deadline=wr2_get_risk_deadline(pid),
-                risk_acceptance_basis=wr2_get_risk_acceptance_basis(pid),
-                risk_manager_comment=wr2_get_risk_comment(pid),
-            )
-            if errors:
-                for err in errors:
-                    st.error(err)
-            else:
-                st.success(f"Решение по {boq} сохранено.")
-                st.rerun()
+    if wr2_is_auto_clean_admitted(row):
+        st.info(
+            "Код включён в драфт месячного обязательства автоматически по чистому допуску."
+        )
+        with st.expander("Изменить решение вручную", expanded=False):
+            wr2_render_management_decision_form(row)
+    else:
+        wr2_render_management_decision_form(row)
 
 
 def wr2_records_to_table(
@@ -2505,6 +2883,222 @@ def render_war_room_v3_passport_readiness(
     return readiness
 
 
+def render_war_room_v3_obligation_draft(
+    project_sel: str,
+    month_sel: str,
+    board_df: pd.DataFrame,
+) -> None:
+    st.markdown("### Драфт месячного обязательства")
+    st.caption(
+        "Состав месячного обязательства по управленческим решениям. "
+        "Чисто допущенные коды включаются автоматически."
+    )
+    wr2_init_passport_session()
+
+    deferred = st.session_state.get(WR2_SESSION_DEFERRED, {})
+    excluded = st.session_state.get(WR2_SESSION_EXCLUDED, {})
+    comp = st.session_state.get(WR2_SESSION_COMPOSITION, {})
+    risk_records = {
+        pid: item for pid, item in comp.items() if item.get("decision") == WR2_MGMT_INCLUDE_RISK
+    }
+
+    scope_ready = project_sel != "Все" and month_sel != "Все"
+    if not scope_ready:
+        st.warning(
+            "Выберите конкретный проект и месяц для формирования месячного обязательства."
+        )
+        scoped_board = board_df.copy()
+        readiness = wr2_compute_readiness(project_sel, month_sel, scoped_board)
+    else:
+        scoped_board = board_df[
+            (board_df["project_code"].astype(str) == project_sel)
+            & (board_df["month_key"].astype(str) == month_sel)
+        ].copy()
+        if scoped_board.empty:
+            st.warning("Нет кодов для выбранного проекта и месяца.")
+            return
+        readiness = wr2_compute_readiness(project_sel, month_sel, scoped_board)
+
+    full_scope = readiness.get("full_scope", pd.DataFrame())
+    clean_scope = readiness.get("clean_scope", pd.DataFrame())
+    metrics = readiness.get("metrics", {})
+    labor_kpis = wr2_compute_obligation_labor_kpis(full_scope)
+    can_full = bool(readiness.get("can_full"))
+    obligation_table = wr2_build_obligation_table_from_scope(full_scope)
+    ready_status = "Готово" if readiness.get("ready") else "Требует внимания"
+
+    if st.session_state.get(WR2_SESSION_FORMED):
+        st.warning("Паспорт уже сформирован. Исключение кодов создаёт аудит-след.")
+
+    k1, k2, k3, k4 = st.columns(4)
+    k5, k6, k7, k8 = st.columns(4)
+    k1.metric("Готовность", ready_status)
+    k2.metric("Кодов в обязательстве", len(full_scope))
+    k3.metric("Стоимость обязательства", money_ru_compact(metrics.get("value_passport", 0)))
+    k4.metric("Кодов с риском", metrics.get("in_passport_risk", 0))
+    k5.metric("Стоимость риска", money_ru_compact(metrics.get("value_risk", 0)))
+    k6.metric("Трудозатраты, чел·ч", wr2_format_hours(labor_kpis["labor_hours"]))
+    k7.metric("Стоимость труда", money_ru_compact(labor_kpis["labor_cost"]))
+    k8.metric(
+        "Отложено / исключено",
+        f"{len(deferred)} / {len(excluded)}",
+    )
+
+    for err in readiness.get("errors", []):
+        st.error(err)
+
+    with st.expander(
+        f"Состав обязательства ({len(obligation_table)})",
+        expanded=False,
+    ):
+        if obligation_table.empty:
+            st.info("Нет кодов в драфте месячного обязательства.")
+        else:
+            st.caption(
+                f"Чистых: {len(clean_scope)} · С риском: "
+                f"{max(len(full_scope) - len(clean_scope), 0)}"
+            )
+            st.dataframe(
+                obligation_table.drop(columns=["_plan_line_id"], errors="ignore"),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with st.expander(
+        f"Коды с риском ({len(risk_records)})",
+        expanded=False,
+    ):
+        if not risk_records:
+            st.info("Нет кодов, включённых с риском.")
+        else:
+            risk_table = wr2_records_to_table(risk_records, board_df)
+            st.dataframe(
+                risk_table.drop(columns=["_plan_line_id"], errors="ignore"),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with st.expander(
+        f"Отложенные и исключённые ({len(deferred) + len(excluded)})",
+        expanded=False,
+    ):
+        if not deferred and not excluded:
+            st.info("Нет отложенных или исключённых кодов.")
+        else:
+            if deferred:
+                st.markdown("**Отложено**")
+                deferred_table = wr2_records_to_table(deferred, board_df)
+                if deferred_table.empty:
+                    st.info("Нет отложенных кодов.")
+                else:
+                    st.dataframe(
+                        deferred_table.drop(columns=["_plan_line_id"], errors="ignore"),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+            if excluded:
+                st.markdown("**Исключено**")
+                excluded_table = wr2_records_to_table(excluded, board_df)
+                if excluded_table.empty:
+                    st.info("Нет исключённых кодов.")
+                else:
+                    st.dataframe(
+                        excluded_table.drop(columns=["_plan_line_id"], errors="ignore"),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+    created_by = st.text_input(
+        "Кто утверждает",
+        value="Пользователь Streamlit",
+        key="passport_created_by",
+    )
+
+    if st.button(
+        "Сформировать месячное обязательство",
+        key="wr2_form_monthly_obligation_btn",
+        disabled=not (scope_ready and can_full),
+        type="primary",
+    ):
+        summary = wr2_create_monthly_passport_with_overrides(
+            project_code=project_sel,
+            month_key=month_sel,
+            created_by=created_by.strip() or "Пользователь Streamlit",
+            board_df=full_scope,
+            allow_risk=True,
+        )
+        _render_passport_summary(
+            summary,
+            formed_risk=True,
+            project_code=project_sel,
+            month_key=month_sel,
+        )
+
+    with st.expander("Дополнительные действия / аудит", expanded=False):
+        if not obligation_table.empty:
+            st.markdown("**Убрать код из обязательства**")
+            for _, comp_row in obligation_table.iterrows():
+                pid = safe_str(comp_row.get("_plan_line_id"))
+                boq = display_dash(comp_row.get("BOQ-код"))
+                match = board_df[board_df["plan_line_id"].astype(str) == pid]
+                outcome = safe_str(match.iloc[0].get("outcome")) if not match.empty else "—"
+                formed = bool(st.session_state.get(WR2_SESSION_FORMED))
+                label = (
+                    f"Убрать {boq} (аудит: исключение из сформированного паспорта)"
+                    if formed
+                    else f"Убрать {boq} из драфта"
+                )
+                if st.button(label, key=f"wr2_remove_obligation_{wr2_sid(pid)}"):
+                    wr2_remove_from_passport(pid, boq, outcome)
+                    st.rerun()
+
+        if st.button("Очистить состав", key="wr2_clear_passport"):
+            st.session_state[WR2_SESSION_COMPOSITION] = {}
+            st.session_state[WR2_SESSION_DEFERRED] = {}
+            st.session_state[WR2_SESSION_EXCLUDED] = {}
+            st.session_state[WR2_SESSION_DRAFT] = False
+            st.session_state[WR2_SESSION_FORMED] = False
+            wr2_append_audit(
+                {
+                    "datetime": datetime.now(timezone.utc).isoformat(),
+                    "boq_code": "—",
+                    "plan_line_id": "—",
+                    "old_outcome": "—",
+                    "decision": "CLEAR",
+                    "override": False,
+                    "basis": "Очищен состав паспорта",
+                    "responsible": created_by,
+                    "comment": "—",
+                }
+            )
+            st.success("Состав обязательства очищен.")
+            st.rerun()
+
+        st.markdown("**Расширенные опции**")
+        st.caption(
+            "Сформировать паспорт только из чисто допущенных кодов (без рисковых включений)."
+        )
+        can_clean = bool(readiness.get("can_clean"))
+        if st.button(
+            "Сформировать паспорт месяца (без рисков)",
+            key="create_monthly_passport_btn",
+            disabled=not (scope_ready and can_clean),
+        ):
+            summary = wr2_create_monthly_passport_with_overrides(
+                project_code=project_sel,
+                month_key=month_sel,
+                created_by=created_by.strip() or "Пользователь Streamlit",
+                board_df=clean_scope,
+                allow_risk=False,
+            )
+            _render_passport_summary(summary, formed_risk=False)
+
+        audit = st.session_state.get(WR2_SESSION_AUDIT, [])
+        if audit:
+            st.markdown(f"**Аудит управленческих решений ({len(audit)})**")
+            st.dataframe(pd.DataFrame(audit), use_container_width=True, hide_index=True)
+
+
 def render_war_room_v3(
     constraints_df: pd.DataFrame,
     v2_df: pd.DataFrame,
@@ -2537,25 +3131,14 @@ def render_war_room_v3(
     st.session_state["wr2_passport_board_df"] = board_df.copy()
 
     render_war_room_v3_summary(board_df)
-    st.markdown("---")
-    selected_pid = render_war_room_v3_review_queue(board_df)
-    render_war_room_v3_board_detail(board_df)
+    selected_pid = render_war_room_v3_unified_registry(board_df)
     st.markdown("---")
     render_war_room_v3_management_workspace(board_df, selected_pid)
     st.markdown("---")
-    render_war_room_v3_passport_basket(board_df)
-    st.markdown("---")
-    readiness = render_war_room_v3_passport_readiness(
+    render_war_room_v3_obligation_draft(
         filters["project"],
         filters["month"],
         board_df,
-    )
-    st.markdown("---")
-    render_war_room_v3_passport_formation(
-        filters["project"],
-        filters["month"],
-        board_df=board_df,
-        readiness=readiness,
     )
 
 
@@ -3329,29 +3912,56 @@ def render_passport_formation(
             st.dataframe(pd.DataFrame(audit), use_container_width=True, hide_index=True)
 
 
-def _render_passport_summary(summary: Dict[str, Any], *, formed_risk: bool) -> None:
+def _render_passport_summary(
+    summary: Dict[str, Any],
+    *,
+    formed_risk: bool,
+    project_code: str = "",
+    month_key: str = "",
+) -> None:
     status = summary.get("status")
+    passport_id = display_dash(summary.get("passport_id"))
+    project_display = project_code or "—"
+    month_display = month_key or "—"
+
     if status == "created":
         st.session_state[WR2_SESSION_FORMED] = True
         st.session_state[WR2_SESSION_DRAFT] = False
-        st.success("Паспорт месяца сформирован" + (" (с рисками)" if formed_risk else ""))
+        st.success("Месячное обязательство сформировано и передано в паспорт месяца.")
         c1, c2, c3, c4 = st.columns(4)
-        c5, c6, c7, c8 = st.columns(4)
-        c1.metric("Строк включено", summary.get("created_lines", 0))
-        c2.metric("Пропущено (заблокировано)", summary.get("skipped_blocked", 0))
-        c3.metric("Заблокировано без override", summary.get("blocked_without_override", 0))
-        c4.metric("Override включено", summary.get("override_included_rows", 0))
-        c5.metric("Пропущено (ожидание)", summary.get("skipped_waiting", 0))
-        c6.metric("Стоимость плана", money_ru(summary.get("total_value")))
-        c7.metric("Трудозатраты, ч", f"{safe_num(summary.get('total_hours')):,.1f}".replace(",", " "))
-        c8.metric("Статус", "Создан")
-        with st.expander("Техническая информация", expanded=False):
-            st.markdown(f"**Идентификатор паспорта:** `{display_dash(summary.get('passport_id'))}`")
+        c1.metric("passport_id", passport_id)
+        c2.metric("project_code", project_display)
+        c3.metric("month_key", month_display)
+        c4.metric("Строк включено", summary.get("created_lines", 0))
+        c5, c6 = st.columns(2)
+        c5.metric("Стоимость", money_ru(summary.get("total_value")))
+        c6.metric(
+            "Трудозатраты, ч",
+            f"{safe_num(summary.get('total_hours')):,.1f}".replace(",", " "),
+        )
+        st.info(
+            "Данные переданы в Page 12 «Паспорт месяца». Следующий этап — итоговая "
+            "сводка, таблица, разбивки и Excel-выгрузка на Page 12."
+        )
+        st.caption(
+            "Откройте Page 12 «Паспорт месяца» в боковом меню и выберите тот же "
+            f"проект ({project_display}) и месяц ({month_display})."
+        )
+        if passport_id != "—" and project_code and month_key:
+            for check in wr2_verify_passport_in_storage(
+                passport_id, project_code, month_key
+            ):
+                st.success(f"✓ {check}")
         st.cache_data.clear()
     elif status == "already_exists":
-        st.info("Паспорт месяца уже существует")
-        with st.expander("Техническая информация", expanded=False):
-            st.markdown(f"**Идентификатор паспорта:** `{display_dash(summary.get('passport_id'))}`")
+        st.info("Паспорт месяца для этого проекта и месяца уже существует.")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("passport_id", passport_id)
+        c2.metric("project_code", project_display)
+        c3.metric("month_key", month_display)
+        st.caption(
+            "Откройте Page 12 «Паспорт месяца» и выберите проект и месяц для просмотра."
+        )
     elif status in ("no_eligible_lines", "no_source_rows", "no_approved_lines"):
         st.warning("Нет строк, готовых для формирования паспорта месяца")
     else:

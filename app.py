@@ -10,6 +10,7 @@ st.set_page_config(layout="wide")
 PAGES_DIR = Path(__file__).parent / "pages"
 
 MENU_TITLE_OVERRIDES: dict[str, str] = {
+    "01A_Engineering_Data_Architecture_Архитектура_данных_РД.py": "Архитектура данных РД",
     "10B_Конструктор_месячного_плана.py": "Конструктор месячного плана",
     "12_Planning_Паспорт_месяца.py": "Паспорт месячного плана",
     "21_Admission_Управление_ограничениями_месячного_плана.py": "Допуск месячного плана",
@@ -27,6 +28,7 @@ _TECH_PREFIX_RE = re.compile(
 )
 
 NAV_TOP_PAGES: list[str] = [
+    "01A_Engineering_Data_Architecture_Архитектура_данных_РД.py",
     "02_ВОР_по_РД.py",
 ]
 

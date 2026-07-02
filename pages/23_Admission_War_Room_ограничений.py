@@ -4,8 +4,15 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import streamlit as st
 
+from services.constraint_display import (
+    constraint_block_substance,
+    constraint_decision_line_compact,
+    is_generic_block_reason,
+    registry_specific_block_reason,
+)
 from services.monthly_passport_service import create_monthly_passport
 import services.monthly_passport_service as monthly_passport_service
+from services.constraints_loader import fetch_all_constraints
 from services.supabase_client import supabase
 
 st.set_page_config(layout="wide")
@@ -378,6 +385,8 @@ WR2_BOARD_TABLE_COLUMNS = [
     "Стоимость труда / стоимость звена",
     "Труд / стоимость работ, %",
     "Причина итогового допуска",
+    "Последнее ограничение",
+    "Возраст ограничения",
 ]
 
 
@@ -469,11 +478,11 @@ def row_risk_value(row: pd.Series) -> float:
 
 
 def reason_text(row: pd.Series) -> str:
-    for col in ("block_reason", "root_cause", "constraint_category", "comment"):
-        text = safe_str(row.get(col))
-        if text:
-            return text
-    return "—"
+    substance = constraint_block_substance(row)
+    if substance:
+        return substance
+    category = safe_str(row.get("constraint_category"))
+    return category or "—"
 
 
 def unique_risk_sum(df_part: pd.DataFrame) -> float:
@@ -549,8 +558,8 @@ def load_review_queue() -> pd.DataFrame:
 def load_constraints() -> pd.DataFrame:
     for table in (VIEW_DASHBOARD_V2, VIEW_DASHBOARD_V1, TABLE_CONSTRAINTS):
         try:
-            response = supabase.table(table).select("*").limit(10000).execute()
-            df = enrich_dataframe(pd.DataFrame(response.data or []))
+            rows = fetch_all_constraints(supabase, table)
+            df = enrich_dataframe(pd.DataFrame(rows))
             if not df.empty:
                 return df
         except Exception:  # noqa: BLE001
@@ -1201,14 +1210,122 @@ def wr2_primary_constraint(row: pd.Series) -> str:
     return safe_str(row.get("outcome_status_reason")) or "—"
 
 
+def wr2_registry_dept_short_label(db_value: Any) -> str:
+    db = safe_str(db_value)
+    for col_label, dept_db in ADMISSION_DEPT_COLUMNS:
+        if dept_db == db:
+            return col_label
+    mapped = dept_ui(db)
+    return mapped if mapped else "—"
+
+
+def wr2_constraint_decision_timestamp(row: pd.Series) -> Optional[pd.Timestamp]:
+    for col in ("last_action_at", "updated_at", "constraint_created_at", "created_at"):
+        if col not in row.index:
+            continue
+        raw = row.get(col)
+        if raw is None or pd.isna(raw):
+            continue
+        try:
+            parsed = pd.to_datetime(raw, utc=True)
+            if pd.isna(parsed):
+                continue
+            return parsed
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def wr2_format_registry_decision_datetime(value: Any) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    try:
+        parsed = pd.to_datetime(value, utc=True)
+        if pd.isna(parsed):
+            return ""
+        if parsed.tzinfo is not None:
+            parsed = parsed.tz_convert("Europe/Moscow")
+        return parsed.strftime("%d.%m.%Y %H:%M")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def wr2_latest_hold_constraint(group: pd.DataFrame) -> Optional[pd.Series]:
+    if group.empty or "check_status" not in group.columns:
+        return None
+    holds = group[group["check_status"].apply(norm_check_status_key) == "HOLD"]
+    if holds.empty:
+        return None
+    ranked = holds.copy()
+    ranked["_hold_sort_ts"] = ranked.apply(wr2_constraint_decision_timestamp, axis=1)
+    ranked = ranked.sort_values("_hold_sort_ts", ascending=False, na_position="last")
+    return ranked.iloc[0]
+
+
+def wr2_format_constraint_reason_text(row: pd.Series) -> str:
+    substance = constraint_block_substance(row)
+    if substance and not is_generic_block_reason(substance):
+        return substance
+    specific = registry_specific_block_reason(row)
+    if specific:
+        return specific
+    return ""
+
+
+def wr2_format_last_constraint_display(constraint_row: Optional[pd.Series]) -> str:
+    if constraint_row is None:
+        return "—"
+    dept = wr2_registry_dept_short_label(constraint_row.get("responsible_department"))
+    actor = (
+        safe_str(constraint_row.get("updated_by"))
+        or safe_str(constraint_row.get("owner_name"))
+        or "—"
+    )
+    decided_at = ""
+    for col in ("last_action_at", "updated_at"):
+        decided_at = wr2_format_registry_decision_datetime(constraint_row.get(col))
+        if decided_at:
+            break
+    reason = wr2_format_constraint_reason_text(constraint_row)
+    header_parts = [dept, actor]
+    if decided_at:
+        header_parts.append(decided_at)
+    header = " | ".join(header_parts)
+    if reason:
+        return f"{header}\n{reason}"
+    if dept != "—" or actor != "—" or decided_at:
+        return header
+    return "—"
+
+
+def wr2_format_constraint_age_days(constraint_row: Optional[pd.Series]) -> str:
+    if constraint_row is None:
+        return "—"
+    hold_ts = wr2_constraint_decision_timestamp(constraint_row)
+    if hold_ts is None or pd.isna(hold_ts):
+        hold_date = None
+        for col in ("last_action_at", "updated_at", "constraint_created_at", "created_at"):
+            hold_date = safe_date(constraint_row.get(col))
+            if hold_date:
+                break
+    else:
+        hold_date = hold_ts.tz_convert("Europe/Moscow").date() if hold_ts.tzinfo else hold_ts.date()
+    if hold_date is None:
+        return "—"
+    days = max((date.today() - hold_date).days, 0)
+    return f"{days} дн."
+
+
 def wr2_build_unified_registry_df(board_df: pd.DataFrame) -> pd.DataFrame:
     """Полный реестр кодов месяца для War Room (1 строка = 1 plan_line_id)."""
     if board_df.empty:
         return pd.DataFrame()
 
+    constraints_by_line = build_constraints_by_line_id(load_constraints())
     display_rows: List[Dict[str, Any]] = []
     for _, row in board_df.iterrows():
         pid = safe_str(row.get("plan_line_id"))
+        last_hold = wr2_latest_hold_constraint(constraints_by_line.get(pid, pd.DataFrame()))
         boq = display_dash(row.get("boq_code"))
         outcome_display = safe_str(row.get("classic_outcome") or row.get("outcome"))
         needs_review = wr2_needs_management_review(row)
@@ -1249,6 +1366,8 @@ def wr2_build_unified_registry_df(board_df: pd.DataFrame) -> pd.DataFrame:
                 labor_cost, plan_value_num
             ),
             "Причина итогового допуска": wr2_registry_admission_reason_display(row),
+            "Последнее ограничение": wr2_format_last_constraint_display(last_hold),
+            "Возраст ограничения": wr2_format_constraint_age_days(last_hold),
         }
         for display_label, classic_label in WR2_BOARD_DEPT_DISPLAY:
             row_dict[display_label] = safe_str(row.get(f"classic_{classic_label}"))
@@ -3405,7 +3524,10 @@ def line_reason_summary(group: pd.DataFrame, outcome: str) -> str:
     parts: List[str] = []
     seen: set[str] = set()
     for _, row in group[mask].iterrows():
-        text = reason_text(row)
+        if outcome == ADMISSION_BLOCKED:
+            text = constraint_decision_line_compact(row, dept_ui)
+        else:
+            text = reason_text(row)
         if text != "—" and text not in seen:
             seen.add(text)
             parts.append(text)

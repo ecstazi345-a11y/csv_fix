@@ -22,6 +22,15 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 from services.supabase_client import supabase
 
 from services.constraints_service import create_constraints_for_plan_lines
+from services.monthly_plan_draft_autosave import (
+    clear_autosave_status,
+    delete_draft_from_supabase,
+    get_autosave_status,
+    mark_draft_converted,
+    record_autosave_error,
+    record_autosave_not_needed,
+    record_autosave_success,
+)
 from services.monthly_scope_adjustments import (
     adjustments_support_not_required_columns,
     delete_adjustment,
@@ -1567,6 +1576,31 @@ def inject_page_styles() -> None:
             background: #f8fafc;
             margin-top: 0.5rem;
         }
+        .v2-draft-autosave-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem 1.25rem;
+            align-items: center;
+            padding: 0.55rem 0.85rem;
+            margin: 0.35rem 0 0.75rem 0;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            font-size: 0.86rem;
+            color: #334155;
+        }
+        .v2-draft-autosave-bar--ok {
+            border-color: #bbf7d0;
+            background: #f0fdf4;
+        }
+        .v2-draft-autosave-bar--error {
+            border-color: #fecaca;
+            background: #fef2f2;
+        }
+        .v2-draft-autosave-bar--found {
+            border-color: #fde68a;
+            background: #fffbeb;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -2863,6 +2897,10 @@ def append_v2_month_plan_draft_item(
     items.append(draft_item)
     st.session_state[V2_DRAFT_ITEMS_KEY] = items
     st.session_state[V2_PLAN_DIRTY_KEY] = True
+    _v2_autosave_draft_scope(
+        str(draft_item.get("project_code") or "").strip(),
+        str(draft_item.get("month_key") or "").strip(),
+    )
     return draft_item
 
 
@@ -3114,6 +3152,7 @@ def save_v2_month_plan(
             inserted += 1
 
     hydrate_v2_month_plan_if_needed(project_code, month_key, force=True)
+    _v2_finalize_draft_after_plan_save(project_code, month_key)
     return {"inserted": inserted, "updated": updated, "total": len(scope_items)}
 
 
@@ -3567,7 +3606,8 @@ def apply_v2_loaded_draft_to_session(
         for item in load_v2_session_draft_items()
         if not _v2_item_matches_scope(item, project_code, month_key)
     ]
-    st.session_state[V2_DRAFT_ITEMS_KEY] = kept + loaded_items
+    existing_plan = load_v2_month_plan_lines(project_code, month_key)
+    st.session_state[V2_DRAFT_ITEMS_KEY] = kept + existing_plan + loaded_items
     st.session_state[V2_SAVED_DRAFT_ID_KEY] = draft_id
 
 
@@ -3583,7 +3623,9 @@ def load_v2_saved_draft_into_session(
 
     header_updated_at = str(meta.get("updated_at") or "")
     raw_rows = _v2_query_draft_line_rows(draft_id)
-    loaded_items = load_v2_draft_lines_from_supabase(draft_id, header_updated_at)
+    loaded_items = _v2_prepare_restored_draft_items(
+        load_v2_draft_lines_from_supabase(draft_id, header_updated_at)
+    )
 
     apply_project = str(meta.get("project_code") or project_code).strip()
     apply_month = str(meta.get("month_key") or month_key).strip()
@@ -4212,6 +4254,7 @@ def delete_v2_plan_lines(
     st.session_state[V2_PLAN_EDIT_ROW_KEY] = ""
     scope_items = _v2_filter_items_for_scope(kept_items, project_code, month_key)
     st.session_state[V2_PLAN_DIRTY_KEY] = any(item.get("is_pending") for item in scope_items)
+    _v2_autosave_draft_scope(project_code, month_key)
     return {"deleted": deleted, "skipped": skipped}
 
 
@@ -4230,7 +4273,196 @@ def clear_v2_pending_plan_lines_for_scope(project_code: str, month_key: str) -> 
     st.session_state[V2_PLAN_DIRTY_KEY] = False
     st.session_state[V2_PLAN_SELECTED_KEYS] = []
     st.session_state[V2_PLAN_EDIT_ROW_KEY] = ""
+    _v2_autosave_draft_scope(project_code, month_key)
     return removed
+
+
+def _v2_pending_draft_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Строки, которые можно писать в draft: только несохранённые pending."""
+    return [item for item in items if item.get("is_pending") is True]
+
+
+def _v2_scope_plan_row_counts(
+    project_code: str,
+    month_key: str,
+) -> tuple[int, int]:
+    """(pending_count, saved_not_in_draft_count) для текущего scope."""
+    scope_items = _v2_filter_items_for_scope(
+        load_v2_session_draft_items(), project_code, month_key
+    )
+    pending_count = sum(1 for item in scope_items if item.get("is_pending") is True)
+    saved_count = sum(
+        1
+        for item in scope_items
+        if item.get("is_pending") is not True
+        and str(item.get("plan_line_id") or "").strip()
+    )
+    return pending_count, saved_count
+
+
+def _v2_prepare_restored_draft_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pending-строки из draft → session (без plan_line_id, только NOT_SENT)."""
+    prepared: list[dict[str, Any]] = []
+    for item in items:
+        row = dict(item)
+        row["is_pending"] = True
+        row["plan_line_id"] = None
+        row["status"] = V2_PLAN_STATUS_NOT_SENT
+        row["read_only"] = False
+        row["line_source_ui"] = "Черновик"
+        prepared.append(row)
+    return prepared
+
+
+def _v2_resolve_scope_draft_id(project_code: str, month_key: str) -> str:
+    draft_id = str(st.session_state.get(V2_SAVED_DRAFT_ID_KEY) or "").strip()
+    if draft_id:
+        return draft_id
+    return find_v2_saved_draft_id(project_code, month_key) or ""
+
+
+def _v2_autosave_draft_scope(project_code: str, month_key: str) -> None:
+    """Autosave только pending-строк scope в monthly_plan_drafts / monthly_plan_draft_lines."""
+    project_code = str(project_code or "").strip()
+    month_key = str(month_key or "").strip()
+    if not project_code or not month_key:
+        return
+
+    scope_items = _v2_filter_items_for_scope(load_v2_session_draft_items(), project_code, month_key)
+    pending_items = _v2_pending_draft_items(scope_items)
+    if not pending_items:
+        try:
+            _v2_clear_scope_draft_storage(project_code, month_key)
+            record_autosave_not_needed()
+        except Exception as exc:  # noqa: BLE001
+            record_autosave_error(str(exc))
+        return
+
+    try:
+        save_v2_draft_to_supabase(project_code, month_key, pending_items)
+        record_autosave_success(len(pending_items))
+    except Exception as exc:  # noqa: BLE001
+        record_autosave_error(str(exc))
+
+
+def _v2_clear_scope_draft_storage(project_code: str, month_key: str) -> None:
+    write_client = get_v2_supabase_write_client()
+    if write_client is None:
+        raise RuntimeError("SUPABASE_SECRET_KEY не задан в .env — очистка черновика недоступна.")
+    draft_id = _v2_resolve_scope_draft_id(project_code, month_key)
+    if draft_id:
+        delete_draft_from_supabase(write_client, draft_id)
+    st.session_state.pop(V2_SAVED_DRAFT_ID_KEY, None)
+    clear_autosave_status()
+
+
+def _v2_finalize_draft_after_plan_save(project_code: str, month_key: str) -> None:
+    write_client = get_v2_supabase_write_client()
+    if write_client is None:
+        clear_autosave_status()
+        return
+    draft_id = _v2_resolve_scope_draft_id(project_code, month_key)
+    if draft_id:
+        try:
+            mark_draft_converted(write_client, draft_id)
+        except Exception:  # noqa: BLE001
+            pass
+    st.session_state.pop(V2_SAVED_DRAFT_ID_KEY, None)
+    clear_autosave_status()
+
+
+def render_v2_draft_autosave_status_bar(project_code: str, month_key: str) -> None:
+    """Компактный статус autosave-черновика для модуля месячного плана."""
+    autosave = get_autosave_status()
+    saved_draft = resolve_v2_saved_draft_lookup()
+    draft_meta = saved_draft[0] if saved_draft else None
+
+    error_text = str(autosave.get("error") or "").strip()
+    saved_at = autosave.get("saved_at")
+    not_needed = bool(autosave.get("not_needed"))
+    pending_in_scope, saved_not_in_draft = _v2_scope_plan_row_counts(project_code, month_key)
+
+    if error_text:
+        status_label = "ошибка"
+        status_kind = "error"
+    elif not_needed or (pending_in_scope == 0 and not draft_meta):
+        status_label = "не требуется: несохранённых строк нет"
+        status_kind = "empty"
+    elif saved_at:
+        status_label = "автосохранён"
+        status_kind = "ok"
+    elif draft_meta:
+        status_label = "найден, не восстановлен"
+        status_kind = "found"
+    else:
+        status_label = "не найден"
+        status_kind = "empty"
+
+    draft_pending_count = autosave.get("row_count")
+    if draft_pending_count is None and draft_meta:
+        draft_pending_count = int(draft_meta.get("rows_count") or 0)
+    if draft_pending_count is None:
+        draft_pending_count = pending_in_scope
+
+    saved_display = format_v2_added_at_moscow(saved_at) if saved_at else "—"
+    if saved_display == "—" and draft_meta:
+        saved_display = format_v2_added_at_moscow(draft_meta.get("updated_at")) or "—"
+
+    legacy_draft_rows = int(draft_meta.get("rows_count") or 0) if draft_meta else 0
+    if legacy_draft_rows > pending_in_scope and pending_in_scope == 0:
+        st.warning(
+            "Обнаружен черновик **старого формата** (до патча Фаза 1): в нём могут быть "
+            f"**{legacy_draft_rows}** строк, включая уже сохранённые в план. "
+            "Перед восстановлением нажмите **«Очистить черновик»** или удалите запись в Supabase — "
+            "иначе при восстановлении возможны дубликаты."
+        )
+
+    st.markdown(
+        f"""
+        <div class="v2-draft-autosave-bar v2-draft-autosave-bar--{status_kind}">
+            <span><strong>Черновик:</strong> {status_label}</span>
+            <span><strong>Автосохранение:</strong> {saved_display} МСК</span>
+            <span><strong>Несохранённых в черновике:</strong> {draft_pending_count}</span>
+            <span><strong>Уже сохранённых (не в черновике):</strong> {saved_not_in_draft}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    btn_restore, btn_clear, _ = st.columns([1, 1, 2])
+    with btn_restore:
+        restore_disabled = saved_draft is None
+        if st.button(
+            "Восстановить черновик",
+            key="v2_draft_autosave_restore_btn",
+            disabled=restore_disabled,
+        ):
+            try:
+                meta, restore_project, restore_month = saved_draft  # type: ignore[misc]
+                loaded_count = load_v2_saved_draft_into_session(
+                    meta, restore_project, restore_month
+                )
+                st.session_state[V2_PLAN_DIRTY_KEY] = True
+                record_autosave_success(loaded_count)
+                st.success(f"Восстановлено строк черновика: {loaded_count}")
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                record_autosave_error(str(exc))
+                st.error(f"Не удалось восстановить черновик: {exc}")
+    with btn_clear:
+        clear_disabled = draft_meta is None and not str(saved_at or "").strip()
+        if st.button(
+            "Очистить черновик",
+            key="v2_draft_autosave_clear_btn",
+            disabled=clear_disabled,
+        ):
+            try:
+                _v2_clear_scope_draft_storage(project_code, month_key)
+                st.success("Черновик очищен.")
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                record_autosave_error(str(exc))
+                st.error(f"Не удалось очистить черновик: {exc}")
 
 
 def render_v2_plan_edit_panel(item: dict[str, Any]) -> None:
@@ -4316,6 +4548,10 @@ def render_v2_plan_edit_panel(item: dict[str, Any]) -> None:
                 _v2_replace_plan_item_in_session(row_key, updated)
                 st.session_state[V2_PLAN_DIRTY_KEY] = True
                 st.session_state[V2_PLAN_EDIT_ROW_KEY] = ""
+                _v2_autosave_draft_scope(
+                    str(updated.get("project_code") or "").strip(),
+                    str(updated.get("month_key") or "").strip(),
+                )
                 st.rerun()
             except Exception as exc:  # noqa: BLE001
                 st.error(f"Не удалось применить изменения: {exc}")
@@ -7060,6 +7296,7 @@ def render_module_month_plan() -> None:
 
     project_code, month_key = scope
     hydrate_v2_month_plan_if_needed(project_code, month_key)
+    render_v2_draft_autosave_status_bar(project_code, month_key)
     items = _v2_filter_items_for_scope(load_v2_session_draft_items(), project_code, month_key)
 
     sorted_items = _v2_plan_sort_items(items)

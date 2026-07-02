@@ -10,6 +10,13 @@ import streamlit as st
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
+from services.constraint_display import (
+    constraint_block_substance,
+    is_generic_block_reason,
+    is_insufficient_block_description,
+    registry_specific_block_reason,
+)
+from services.constraints_loader import fetch_all_constraints
 from services.supabase_client import supabase
 
 load_dotenv()
@@ -225,6 +232,40 @@ DIRECT_ADMIT_ROLE_OPTIONS = [
 ]
 
 DIRECT_ADMIT_SEVERITY_OPTIONS = ["LOW", "MEDIUM", "HIGH"]
+
+DIRECT_ADMIT_BLOCK_REASON_HELP = (
+    "Причина должна отвечать на вопрос: **что конкретно мешает выполнить работу?**\n\n"
+    "Примеры:\n"
+    "- отсутствует утверждённая РД по системе Х;\n"
+    "- не поставлены клапаны DN150;\n"
+    "- зона занята смежниками;\n"
+    "- отсутствует решение Технического запроса №45;\n"
+    "- отсутствует допуск к помещению."
+)
+
+DIRECT_ADMIT_BLOCK_DESCRIPTION_HELP = (
+    "**Что требуется сделать для снятия ограничения?**\n\n"
+    "Примеры:\n"
+    "- выпустить РД ревизии 5;\n"
+    "- завершить монтаж кабельных трасс;\n"
+    "- поставить оборудование;\n"
+    "- согласовать ТЗ."
+)
+
+DIRECT_ADMIT_BLOCK_REASON_VALIDATION_ERROR = (
+    "Необходимо указать конкретную причину блокировки.\n"
+    "Пример:\n"
+    "- отсутствует утвержденная РД;\n"
+    "- отсутствует фронт работ;\n"
+    "- отсутствуют МТР;\n"
+    "- зона не передана;\n"
+    "- отсутствует согласование ТЗ;\n"
+    "- отсутствует исполнительная документация."
+)
+
+DIRECT_ADMIT_BLOCK_DESCRIPTION_VALIDATION_ERROR = (
+    "Опишите суть ограничения и требуемое действие."
+)
 
 DIRECT_ADMIT_GENERIC_CRITERIA = [
     "Данные понятны",
@@ -771,59 +812,51 @@ DECISION_REGISTRY_VALUE_COLUMN_RU = "Стоимость под решением"
 
 DECISION_REGISTRY_TABLE_COLUMNS = [
     "check_status",
-    "project_code",
-    "month_key",
-    "queue_display",
-    "discipline_display",
-    "system_display",
-    "iwp_display",
+    "month_display",
     "boq_code",
     "boq_name",
+    "system_display",
+    "iwp_display",
     "responsible_department",
-    "gate_layer",
-    "check_name",
-    "planned_qty_month_display",
-    "plan_value_month_display",
-    "crew_code_display",
-    "required_hours_display",
-    "crew_size_display",
-    "duration_shifts_display",
-    "labor_cost_display",
-    "labor_to_plan_pct_display",
-    "owner_name",
-    "value_at_risk_display",
     "updated_by",
-    "block_clarify_reason_display",
-    "comment",
+    "decision_at_display",
+    "constraint_reason_display",
+    "target_resolution_date",
+    "severity",
+    "owner_name",
 ]
 
 DECISION_REGISTRY_TABLE_COLUMNS_RU = {
     "check_status": "Статус проверки",
-    "project_code": "Проект",
-    "month_key": "Месяц",
-    "queue_display": "Очередь",
-    "discipline_display": "Дисциплина",
-    "system_display": "Система",
-    "iwp_display": "IWP",
+    "month_display": "Месяц",
     "boq_code": "BOQ-код",
-    "boq_name": "Наименование работы",
+    "boq_name": "Наименование",
+    "system_display": "Система",
+    "iwp_display": "Пакет работ / IWP",
     "responsible_department": "Отдел",
-    "gate_layer": "Контур допуска",
-    "check_name": "Проверка",
-    "planned_qty_month_display": "Объём месяца",
-    "plan_value_month_display": "Стоимость объёма",
-    "crew_code_display": "Шифр звена",
-    "required_hours_display": "Трудозатраты, чел·ч",
-    "crew_size_display": "Людей в звене",
-    "duration_shifts_display": "Длительность, смен",
-    "labor_cost_display": "Стоимость труда",
-    "labor_to_plan_pct_display": "Труд / стоимость работ, %",
-    "owner_name": "Владелец решения",
-    "value_at_risk_display": DECISION_REGISTRY_VALUE_COLUMN_RU,
     "updated_by": "Последнее обновление внёс",
-    "block_clarify_reason_display": "Причина блокировки / уточнения",
-    "comment": "Комментарий",
+    "decision_at_display": "Дата решения",
+    "constraint_reason_display": "Причина / суть ограничения",
+    "target_resolution_date": "Срок устранения",
+    "severity": "Критичность",
+    "owner_name": "Владелец решения",
 }
+
+DECISION_REGISTRY_MONTH_FIELDS = ("month_key", "Month_Key", "Year_Quarter_Month_Week_ID")
+
+DECISION_REGISTRY_SYSTEM_FIELDS = (
+    "system",
+    "system_label",
+    "system_label_iwp",
+)
+
+DECISION_REGISTRY_IWP_FIELDS = (
+    "iwp",
+    "iwp_id",
+    "iwp_id_export",
+    "package_name",
+    "work_package",
+)
 
 DECISION_REGISTRY_NUMERIC_COLUMNS = {
     "Объём месяца",
@@ -1537,12 +1570,14 @@ def enrich_decision_registry_with_v2_lines(
         row["plan_value"] = plan_value
         row["queue_display"] = field_display(queue) if queue else "—"
         row["discipline_display"] = field_display(discipline)
-        row["system_display"] = field_display(v2_row.get("system")) if v2_row else "—"
-        row["iwp_display"] = field_display(v2_row.get("iwp")) if v2_row else "—"
+        row["system_display"] = format_registry_system_display(row, v2_row)
+        row["iwp_display"] = format_registry_iwp_display(row, v2_row)
+        row["month_display"] = format_registry_month_display(row, v2_row)
         row["planned_qty_month_display"] = format_qty_display(planned_qty)
         row["plan_value_month_display"] = format_money_display(plan_value)
         row["crew_code_display"] = field_display(crew_code) if crew_code else "—"
-        row["block_clarify_reason_display"] = format_registry_block_clarify_reason_display(row)
+        row["constraint_reason_display"] = format_registry_constraint_reason_display(row)
+        row["decision_at_display"] = format_registry_decision_at_display(row)
         append_v2_labor_display_columns(
             row,
             v2_row,
@@ -2781,15 +2816,69 @@ def combined_constraint_reason(row: pd.Series) -> str:
     return block or root
 
 
-def format_registry_block_clarify_reason_display(row: Dict[str, Any]) -> str:
-    """Display-only: block_reason / root_cause из monthly_plan_constraints."""
-    block = safe_str(row.get("block_reason"))
-    root = safe_str(row.get("root_cause"))
-    if block and root and block != root:
-        text = f"{block} / {root}"
-    else:
-        text = block or root
-    return field_display(text) if text else "—"
+def format_registry_decision_at_display(row: Dict[str, Any]) -> str:
+    for col in ("last_action_at", "updated_at"):
+        if has_meaningful_value(row.get(col)):
+            return format_datetime_moscow(row.get(col))
+    return "—"
+
+
+def _registry_first_field_value(*sources: Dict[str, Any], fields: tuple[str, ...]) -> str:
+    for source in sources:
+        if not source:
+            continue
+        for field in fields:
+            value = safe_str(source.get(field)).strip()
+            if value:
+                return value
+    return ""
+
+
+def format_registry_month_display(
+    constraint_row: Dict[str, Any],
+    v2_row: Dict[str, Any],
+) -> str:
+    month = _registry_first_field_value(
+        constraint_row,
+        v2_row,
+        fields=DECISION_REGISTRY_MONTH_FIELDS,
+    )
+    return field_display(month) if month else "—"
+
+
+def format_registry_system_display(
+    constraint_row: Dict[str, Any],
+    v2_row: Dict[str, Any],
+) -> str:
+    system = _registry_first_field_value(
+        constraint_row,
+        v2_row,
+        fields=DECISION_REGISTRY_SYSTEM_FIELDS,
+    )
+    return field_display(system) if system else "—"
+
+
+def format_registry_iwp_display(
+    constraint_row: Dict[str, Any],
+    v2_row: Dict[str, Any],
+) -> str:
+    iwp = _registry_first_field_value(
+        constraint_row,
+        v2_row,
+        fields=DECISION_REGISTRY_IWP_FIELDS,
+    )
+    return field_display(iwp) if iwp else "—"
+
+
+def format_registry_constraint_reason_display(row: Dict[str, Any]) -> str:
+    """Одна колонка: сначала суть из root_cause/comment, иначе не-generic block_reason."""
+    substance = constraint_block_substance(row)
+    if substance and not is_generic_block_reason(substance):
+        return field_display(substance)
+    specific_block = registry_specific_block_reason(row)
+    if specific_block:
+        return field_display(specific_block)
+    return "—"
 
 
 def constraint_occurrence_date(row: pd.Series) -> date:
@@ -3165,16 +3254,12 @@ def enrich_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def load_constraints() -> pd.DataFrame:
     try:
-        response = (
-            supabase.table(VIEW_DASHBOARD_V2).select("*").limit(10000).execute()
-        )
-        return enrich_dataframe(pd.DataFrame(response.data or []))
+        rows = fetch_all_constraints(supabase, VIEW_DASHBOARD_V2)
+        return enrich_dataframe(pd.DataFrame(rows))
     except Exception:  # noqa: BLE001
         try:
-            response = (
-                supabase.table(TABLE_CONSTRAINTS).select("*").limit(10000).execute()
-            )
-            return enrich_dataframe(pd.DataFrame(response.data or []))
+            rows = fetch_all_constraints(supabase, TABLE_CONSTRAINTS)
+            return enrich_dataframe(pd.DataFrame(rows))
         except Exception as exc:  # noqa: BLE001
             st.error(f"Не удалось загрузить ограничения: {exc}")
             return pd.DataFrame()
@@ -4029,7 +4114,7 @@ def build_direct_admit_decision_draft(
         "cid": cid,
         "action": "block",
         "decision_label": "ЗАБЛОКИРОВАНО",
-        "reason": "Есть блокирующие ограничения",
+        "reason": "",
         "action_text": "Зафиксировать ограничение и назначить корректирующее действие",
         "owner": owner,
         "target_date": date.today(),
@@ -4083,8 +4168,11 @@ def apply_direct_admit_decision_draft_to_gov(
     st.session_state[f"{prefix}_owner"] = draft["owner"]
     st.session_state[f"{prefix}_role"] = draft["owner_role"]
     st.session_state[f"{prefix}_target"] = draft["target_date"]
-    st.session_state[f"{prefix}_block_reason"] = draft["reason"]
-    st.session_state[f"{prefix}_desc"] = summary
+    draft_reason = safe_str(draft.get("reason"))
+    if draft_reason and not is_generic_block_reason(draft_reason):
+        st.session_state[f"{prefix}_block_reason"] = draft_reason
+    else:
+        st.session_state[f"{prefix}_block_reason"] = ""
 
 
 def _da_clear_decision_session() -> None:
@@ -5174,14 +5262,17 @@ def _render_fixation_decision_section(
             "Причина блокировки",
             key=block_reason_key,
             height=140,
-            placeholder="Обязательно",
+            placeholder="Укажите конкретную причину блокировки",
         )
+        st.markdown(DIRECT_ADMIT_BLOCK_REASON_HELP)
     st.text_area(
         "Описание для фиксации",
         key=desc_key,
         height=220,
-        placeholder="Обязательно",
+        placeholder="Опишите суть ограничения и требуемое действие",
     )
+    if pending_action == "block":
+        st.markdown(DIRECT_ADMIT_BLOCK_DESCRIPTION_HELP)
     st.date_input(
         target_label,
         key=target_key,
@@ -5205,6 +5296,53 @@ def _render_fixation_decision_section(
             decision_officer = safe_str(st.session_state.get(f"da_officer_{cid[:8]}")).strip()
         if not decision_officer:
             st.error("Укажите ФИО лица, принимающего решение")
+        elif pending_action == "block":
+            user_block_reason = safe_str(st.session_state.get(f"{prefix}_block_reason")).strip()
+            user_description = safe_str(st.session_state.get(f"{prefix}_desc")).strip()
+            validation_failed = False
+            if not user_block_reason or is_generic_block_reason(user_block_reason):
+                st.error(DIRECT_ADMIT_BLOCK_REASON_VALIDATION_ERROR)
+                validation_failed = True
+            if is_insufficient_block_description(user_description):
+                st.error(DIRECT_ADMIT_BLOCK_DESCRIPTION_VALIDATION_ERROR)
+                validation_failed = True
+            if not validation_failed:
+                save_description = user_description
+                save_block_reason = user_block_reason
+                if draft.get("cid") == cid:
+                    audit = format_direct_admit_audit_trail(
+                        {**draft, "reason": user_block_reason}
+                    )
+                    if audit not in save_description:
+                        save_description = (
+                            f"{audit}\n\n{save_description}" if save_description else audit
+                        )
+                err = save_direct_admission_decision(
+                    row,
+                    pending_action,
+                    decision_officer,
+                    constraint_type=constraint_type,
+                    owner_role=safe_str(st.session_state.get(f"{prefix}_role")),
+                    owner_name=(
+                        safe_str(st.session_state.get(f"{prefix}_owner")).strip()
+                        or safe_str(draft.get("owner"))
+                    ),
+                    description=save_description,
+                    block_reason=save_block_reason,
+                    target_date=st.session_state.get(f"{prefix}_target"),
+                    severity=severity,
+                )
+                if err:
+                    st.warning(err)
+                else:
+                    st.cache_data.clear()
+                    st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
+                    _da_clear_decision_session()
+                    st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = advance_direct_admit_selection(
+                        workbench_df,
+                        cid,
+                    )
+                    st.rerun()
         else:
             save_description = safe_str(st.session_state.get(f"{prefix}_desc")).strip()
             save_block_reason = safe_str(st.session_state.get(f"{prefix}_block_reason")).strip()
@@ -6101,8 +6239,22 @@ def prepare_constraint_display_df(df: pd.DataFrame) -> pd.DataFrame:
         display_df["value_at_risk_display"] = display_df["value_at_risk_display"].apply(money_ru)
     if "target_resolution_date" in display_df.columns:
         display_df["target_resolution_date"] = display_df["target_resolution_date"].apply(
-            lambda v: safe_date(v).isoformat() if safe_date(v) else ""
+            lambda v: safe_date(v).isoformat() if safe_date(v) else "—"
         )
+    return display_df
+
+
+def prepare_decision_registry_display_df(df: pd.DataFrame) -> pd.DataFrame:
+    display_df = prepare_constraint_display_df(df)
+    for col in (
+        "month_display",
+        "system_display",
+        "iwp_display",
+        "decision_at_display",
+        "constraint_reason_display",
+    ):
+        if col in display_df.columns:
+            display_df[col] = display_df[col].apply(display_dash)
     return display_df
 
 
@@ -6730,7 +6882,7 @@ def render_decision_registry_module(
             st.info("По текущему набору фильтров решений не найдено.")
             return
         technical_df = enrich_decision_registry_with_v2_lines(registry_df, v2_lines_df)
-        technical_df = prepare_constraint_display_df(technical_df)
+        technical_df = prepare_decision_registry_display_df(technical_df)
         show_cols = [c for c in DECISION_REGISTRY_TABLE_COLUMNS if c in technical_df.columns]
         table_view = technical_df[show_cols].rename(columns=DECISION_REGISTRY_TABLE_COLUMNS_RU)
         status_col = DECISION_REGISTRY_TABLE_COLUMNS_RU["check_status"]

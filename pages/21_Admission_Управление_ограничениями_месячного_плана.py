@@ -3265,6 +3265,66 @@ def load_constraints() -> pd.DataFrame:
             return pd.DataFrame()
 
 
+def _constraints_rows_signature(df: pd.DataFrame) -> tuple[tuple[str, ...], ...]:
+    if df.empty:
+        return ()
+    sig_cols = [
+        col
+        for col in ("constraint_id", "check_status", "updated_at", "last_action_at", "block_reason")
+        if col in df.columns
+    ]
+    if not sig_cols:
+        return ()
+    rows: list[tuple[str, ...]] = []
+    for _, row in df.iterrows():
+        rows.append(tuple(safe_str(row.get(col)) for col in sig_cols))
+    return tuple(sorted(rows))
+
+
+def clear_admission_constraint_caches() -> None:
+    """Точечная инвалидация read-only кэшей после сохранения решения."""
+    load_constraints.clear()
+    st.session_state.pop("_da_workbench_cache", None)
+    st.session_state.pop("_decision_registry_display_cache", None)
+
+
+def get_cached_workbench_dataframe(
+    queue_df: pd.DataFrame,
+    packages_df: pd.DataFrame,
+) -> pd.DataFrame:
+    pkg_keys: tuple[str, ...] = ()
+    if not packages_df.empty and "package_key" in packages_df.columns:
+        pkg_keys = tuple(sorted(packages_df["package_key"].astype(str).tolist()))
+    patches = tuple(sorted((st.session_state.get(DIRECT_ADMIT_STATUS_PATCHES_KEY) or {}).items()))
+    cache_key = (_constraints_rows_signature(queue_df), pkg_keys, patches)
+    cached = st.session_state.get("_da_workbench_cache")
+    if isinstance(cached, dict) and cached.get("key") == cache_key:
+        return cached["df"].copy()
+    built = build_workbench_dataframe(queue_df, packages_df)
+    st.session_state["_da_workbench_cache"] = {"key": cache_key, "df": built}
+    return built.copy()
+
+
+def get_cached_decision_registry_display_df(
+    registry_df: pd.DataFrame,
+    v2_lines_df: pd.DataFrame,
+) -> pd.DataFrame:
+    v2_sig: tuple[str, ...] = ()
+    if not v2_lines_df.empty and "plan_line_id" in v2_lines_df.columns:
+        v2_sig = tuple(sorted(v2_lines_df["plan_line_id"].astype(str).tolist()))
+    cache_key = (_constraints_rows_signature(registry_df), v2_sig)
+    cached = st.session_state.get("_decision_registry_display_cache")
+    if isinstance(cached, dict) and cached.get("key") == cache_key:
+        return cached["df"].copy()
+    technical_df = enrich_decision_registry_with_v2_lines(registry_df, v2_lines_df)
+    technical_df = prepare_decision_registry_display_df(technical_df)
+    st.session_state["_decision_registry_display_cache"] = {
+        "key": cache_key,
+        "df": technical_df,
+    }
+    return technical_df.copy()
+
+
 def apply_filters(
     df: pd.DataFrame,
     project: str,
@@ -4380,7 +4440,7 @@ def _render_direct_admit_block_c(
                         if err:
                             st.warning(err)
                         else:
-                            st.cache_data.clear()
+                            clear_admission_constraint_caches()
                             st.success("Ограничение сохранено в реестр проверки.")
                             st.rerun()
             with ctrl_col:
@@ -5201,7 +5261,7 @@ def _render_fixation_decision_section(
                 if err:
                     st.error(err)
                 else:
-                    st.cache_data.clear()
+                    clear_admission_constraint_caches()
                     st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
                     _da_clear_decision_session()
                     st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = advance_direct_admit_selection(
@@ -5335,7 +5395,7 @@ def _render_fixation_decision_section(
                 if err:
                     st.warning(err)
                 else:
-                    st.cache_data.clear()
+                    clear_admission_constraint_caches()
                     st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
                     _da_clear_decision_session()
                     st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = advance_direct_admit_selection(
@@ -5370,7 +5430,7 @@ def _render_fixation_decision_section(
             if err:
                 st.warning(err)
             else:
-                st.cache_data.clear()
+                clear_admission_constraint_caches()
                 st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
                 _da_clear_decision_session()
                 st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = advance_direct_admit_selection(
@@ -5557,7 +5617,7 @@ def save_direct_admission_decision(
         err = update_constraint_record(constraint_id, payload)
         if err is None:
             _register_direct_admit_status_patch(constraint_id, action)
-            load_constraints.clear()
+            clear_admission_constraint_caches()
         return err
 
     description = description.strip()
@@ -5612,7 +5672,7 @@ def save_direct_admission_decision(
     err = update_constraint_record(constraint_id, payload)
     if err is None:
         _register_direct_admit_status_patch(constraint_id, action)
-        load_constraints.clear()
+        clear_admission_constraint_caches()
     return err
 
 
@@ -5634,11 +5694,14 @@ def _da_queue_widget_key(select_id: str) -> str:
 def _da_queue_status_display(status_key: str) -> tuple[str, str]:
     """Queue-pane display colors only (does not alter status logic)."""
     label, _, _ = direct_admit_queue_status(status_key)
-    if status_key == "PASS":
+    normalized = norm_check_status_key(status_key)
+    if normalized == "PASS":
         return label, "#2F6B4F"
-    if status_key in ("HOLD", "FAIL"):
+    if normalized in ("HOLD", "FAIL"):
         return label, "#9B3D3D"
-    return label, "#92610E"
+    if normalized == "WARNING":
+        return label, "#92610E"
+    return label, "#2563EB"
 
 
 def _da_queue_select_item(select_id: str) -> None:
@@ -5894,7 +5957,7 @@ def render_direct_admission_by_department_module(
     """Three-pane direct admission: очередь → решение → фиксация."""
     with st.expander("Непосредственный допуск по отделам", expanded=False):
         workbench_df = apply_direct_admit_status_patches(
-            build_workbench_dataframe(queue_df, packages_df)
+            get_cached_workbench_dataframe(queue_df, packages_df)
         )
         if workbench_df.empty:
             with st.container(border=True):
@@ -6881,8 +6944,7 @@ def render_decision_registry_module(
         if registry_df.empty:
             st.info("По текущему набору фильтров решений не найдено.")
             return
-        technical_df = enrich_decision_registry_with_v2_lines(registry_df, v2_lines_df)
-        technical_df = prepare_decision_registry_display_df(technical_df)
+        technical_df = get_cached_decision_registry_display_df(registry_df, v2_lines_df)
         show_cols = [c for c in DECISION_REGISTRY_TABLE_COLUMNS if c in technical_df.columns]
         table_view = technical_df[show_cols].rename(columns=DECISION_REGISTRY_TABLE_COLUMNS_RU)
         status_col = DECISION_REGISTRY_TABLE_COLUMNS_RU["check_status"]
@@ -7018,10 +7080,8 @@ def main() -> None:
         sync_admission_filter_memory_after_widgets()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    packages_work = build_package_dataframe(base_df)
-    packages_work = enrich_packages_with_v2_lines(packages_work, v2_lines_df)
     packages_df = apply_package_filters(
-        packages_work,
+        packages_enriched,
         month_sel,
         project_sel,
         queue_sel,

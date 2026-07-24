@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -358,8 +359,14 @@ V2_PLAN_STATUS_STYLES: dict[str, str] = {
 }
 V2_SAVED_DRAFT_ID_KEY = "v2_saved_draft_id"
 V2_DRAFT_LOAD_DEBUG_KEY = "v2_draft_load_debug"
+V2_DRAFT_RESTORE_SUMMARY_KEY = "v2_draft_restore_summary"
 V2_DRAFT_STATUS_SAVED = "SAVED_DRAFT"
 V2_DRAFT_SOURCE_MARKER = "constructor_v2"
+V2_LINE_ORIGIN_INITIAL = "INITIAL"
+V2_LEGACY_CLIENT_UID_PREFIX = "legacy-plan:"
+_V2_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 DEFAULT_LABOR_RATE_PER_HOUR = 3000.0
 PRODUCTIVE_HOURS_PER_PERSON_SHIFT = 8.0
 NORM_SCENARIO_REALISTIC = "Реалистичная норма"
@@ -2845,6 +2852,57 @@ def _v2_crew_is_valid(crew: str) -> bool:
     return text not in V2_INVALID_CREW_LABELS
 
 
+def _v2_new_client_line_uid() -> str:
+    return str(uuid4())
+
+
+def _v2_normalize_uuid_or_none(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text or not _V2_UUID_RE.fullmatch(text):
+        return None
+    return text
+
+
+def _v2_is_legacy_client_uid(value: Any) -> bool:
+    text = str(value or "").strip()
+    return text.startswith(V2_LEGACY_CLIENT_UID_PREFIX)
+
+
+def _v2_legacy_plan_client_uid(plan_line_id: str) -> str:
+    return f"{V2_LEGACY_CLIENT_UID_PREFIX}{str(plan_line_id).strip()}"
+
+
+def _v2_resolve_session_client_uid(
+    item: dict[str, Any] | None = None,
+    *,
+    db_client_line_uid: Any = None,
+    plan_line_id: Any = None,
+    allow_mint_new: bool = False,
+) -> str:
+    """Стабильный session client_line_uid: UUID из БД/item, иначе legacy-plan:{id}, иначе mint."""
+    for candidate in (
+        db_client_line_uid,
+        (item or {}).get("client_line_uid") if item else None,
+        (item or {}).get("line_uid") if item else None,
+    ):
+        uid = _v2_normalize_uuid_or_none(candidate)
+        if uid:
+            return uid
+        raw = str(candidate or "").strip()
+        if _v2_is_legacy_client_uid(raw):
+            return raw
+
+    pid = _v2_normalize_uuid_or_none(plan_line_id)
+    if not pid and item is not None:
+        pid = _v2_normalize_uuid_or_none(item.get("plan_line_id"))
+    if pid:
+        return _v2_legacy_plan_client_uid(pid)
+
+    # allow_mint_new reserved for call-site clarity; mint is always last resort.
+    _ = allow_mint_new
+    return _v2_new_client_line_uid()
+
+
 def append_v2_month_plan_draft_item(
     item: pd.Series,
     planning_month: str,
@@ -2857,11 +2915,15 @@ def append_v2_month_plan_draft_item(
     planned_by: str,
 ) -> dict[str, Any]:
     planned_at = datetime.now(timezone.utc).isoformat()
+    client_line_uid = _v2_new_client_line_uid()
     draft_item: dict[str, Any] = {
         "plan_line_id": None,
+        "client_line_uid": client_line_uid,
+        "line_uid": client_line_uid,
+        "line_origin": V2_LINE_ORIGIN_INITIAL,
+        "parent_plan_line_id": None,
         "status": V2_PLAN_STATUS_NOT_SENT,
         "is_pending": True,
-        "line_uid": str(uuid4()),
         "project_code": str(item.get("project_code") or "").strip(),
         "construction_queue": _v2_plan_item_queue_from_scope_row(item),
         "facility": str(item.get("facility") or "").strip(),
@@ -3022,11 +3084,21 @@ def map_v2_plan_db_row_to_session_item(row: dict[str, Any]) -> dict[str, Any]:
     if not planned_at:
         planned_at = datetime.now(timezone.utc).isoformat()
     planned_by = str(row.get("planned_by") or "").strip()
+    client_line_uid = _v2_resolve_session_client_uid(
+        db_client_line_uid=row.get("client_line_uid"),
+        plan_line_id=plan_line_id,
+        allow_mint_new=False,
+    )
+    line_origin = str(row.get("line_origin") or V2_LINE_ORIGIN_INITIAL).strip() or V2_LINE_ORIGIN_INITIAL
+    parent_plan_line_id = _v2_normalize_uuid_or_none(row.get("parent_plan_line_id"))
     return {
         "plan_line_id": plan_line_id or None,
+        "client_line_uid": client_line_uid,
+        "line_uid": client_line_uid,
+        "line_origin": line_origin,
+        "parent_plan_line_id": parent_plan_line_id,
         "status": status,
         "is_pending": False,
-        "line_uid": plan_line_id or str(uuid4()),
         "project_code": str(row.get("project_code") or "").strip(),
         "facility": str(row.get("facility") or "").strip(),
         "discipline": str(row.get("discipline") or "").strip(),
@@ -3097,7 +3169,17 @@ def map_v2_session_item_to_plan_db_row(item: dict[str, Any]) -> dict[str, Any]:
         "unit_price": unit_price if unit_price > 0 else None,
         "plan_value": plan_value if plan_value > 0 else None,
         "status": str(item.get("status") or V2_PLAN_STATUS_NOT_SENT),
+        "line_origin": (
+            str(item.get("line_origin") or V2_LINE_ORIGIN_INITIAL).strip()
+            or V2_LINE_ORIGIN_INITIAL
+        ),
     }
+    client_uid = _v2_normalize_uuid_or_none(item.get("client_line_uid"))
+    if client_uid:
+        payload["client_line_uid"] = client_uid
+    parent_uid = _v2_normalize_uuid_or_none(item.get("parent_plan_line_id"))
+    if parent_uid:
+        payload["parent_plan_line_id"] = parent_uid
     planned_by = str(item.get("planned_by") or "").strip()
     planned_at = str(item.get("planned_at") or item.get("added_at") or "").strip()
     if planned_by:
@@ -3132,28 +3214,110 @@ def save_v2_month_plan(
 
     inserted = 0
     updated = 0
+    linked = 0
     for item in to_save:
         status = str(item.get("status") or V2_PLAN_STATUS_NOT_SENT)
         if status == V2_PLAN_STATUS_SENT:
             continue
 
+        plan_line_id = _v2_normalize_uuid_or_none(item.get("plan_line_id"))
+        client_uid = _v2_normalize_uuid_or_none(item.get("client_line_uid"))
+        if not client_uid and not plan_line_id:
+            client_uid = _v2_new_client_line_uid()
+            item["client_line_uid"] = client_uid
+            item["line_uid"] = client_uid
+        elif client_uid:
+            item["client_line_uid"] = client_uid
+            item["line_uid"] = client_uid
+
+        if not str(item.get("line_origin") or "").strip():
+            item["line_origin"] = V2_LINE_ORIGIN_INITIAL
+
         payload = _v2_plan_db_payload_from_item(item)
-        plan_line_id = str(item.get("plan_line_id") or "").strip()
 
         if plan_line_id:
             write_client.table(V2_PLAN_LINES_TABLE).update(payload).eq(
                 "plan_line_id", plan_line_id
             ).eq("status", V2_PLAN_STATUS_NOT_SENT).execute()
+            item["plan_line_id"] = plan_line_id
+            item["is_pending"] = False
             updated += 1
-        else:
-            resp = write_client.table(V2_PLAN_LINES_TABLE).insert(payload).execute()
-            if not resp.data:
-                raise RuntimeError("Не удалось вставить строку monthly_plan_lines_v2.")
-            inserted += 1
+            continue
+
+        if not client_uid:
+            raise RuntimeError(
+                "Не удалось определить client_line_uid для INSERT строки плана."
+            )
+
+        existing_resp = (
+            write_client.table(V2_PLAN_LINES_TABLE)
+            .select("plan_line_id,status,client_line_uid")
+            .eq("client_line_uid", client_uid)
+            .limit(1)
+            .execute()
+        )
+        existing_rows = list(existing_resp.data or [])
+        if existing_rows:
+            found_id = _v2_normalize_uuid_or_none(existing_rows[0].get("plan_line_id"))
+            found_status = str(existing_rows[0].get("status") or V2_PLAN_STATUS_NOT_SENT).strip()
+            if not found_id:
+                raise RuntimeError(
+                    f"Найдена plan-строка по client_line_uid={client_uid} без plan_line_id."
+                )
+            item["plan_line_id"] = found_id
+            item["client_line_uid"] = client_uid
+            item["line_uid"] = client_uid
+            if found_status == V2_PLAN_STATUS_SENT:
+                item["is_pending"] = False
+                linked += 1
+                continue
+            write_client.table(V2_PLAN_LINES_TABLE).update(payload).eq(
+                "plan_line_id", found_id
+            ).eq("status", V2_PLAN_STATUS_NOT_SENT).execute()
+            item["is_pending"] = False
+            linked += 1
+            updated += 1
+            continue
+
+        resp = write_client.table(V2_PLAN_LINES_TABLE).insert(payload).execute()
+        if not resp.data:
+            # Timeout / lost response recovery: row may already exist by client_line_uid.
+            recovery = (
+                write_client.table(V2_PLAN_LINES_TABLE)
+                .select("plan_line_id,client_line_uid")
+                .eq("client_line_uid", client_uid)
+                .limit(1)
+                .execute()
+            )
+            recovery_rows = list(recovery.data or [])
+            if recovery_rows:
+                found_id = _v2_normalize_uuid_or_none(recovery_rows[0].get("plan_line_id"))
+                if found_id:
+                    item["plan_line_id"] = found_id
+                    item["client_line_uid"] = client_uid
+                    item["line_uid"] = client_uid
+                    item["is_pending"] = False
+                    linked += 1
+                    continue
+            raise RuntimeError("Не удалось вставить строку monthly_plan_lines_v2.")
+
+        new_id = _v2_normalize_uuid_or_none(resp.data[0].get("plan_line_id"))
+        if not new_id:
+            raise RuntimeError("INSERT monthly_plan_lines_v2 не вернул plan_line_id.")
+        item["plan_line_id"] = new_id
+        item["client_line_uid"] = client_uid
+        item["line_uid"] = client_uid
+        item["is_pending"] = False
+        inserted += 1
 
     hydrate_v2_month_plan_if_needed(project_code, month_key, force=True)
     _v2_finalize_draft_after_plan_save(project_code, month_key)
-    return {"inserted": inserted, "updated": updated, "total": len(scope_items)}
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "linked": linked,
+        "total": len(scope_items),
+    }
 
 
 def hydrate_v2_month_plan_if_needed(
@@ -3436,7 +3600,20 @@ def _v2_map_session_item_to_db_line(draft_id: str, item: dict[str, Any]) -> dict
         "labor_cost": _v2_safe_num(item.get("labor_cost")) or (required_hours * labor_rate),
         "line_status": "DRAFT",
         "comment": comment or None,
+        "line_origin": (
+            str(item.get("line_origin") or V2_LINE_ORIGIN_INITIAL).strip()
+            or V2_LINE_ORIGIN_INITIAL
+        ),
     }
+    client_uid = _v2_normalize_uuid_or_none(item.get("client_line_uid"))
+    if client_uid:
+        payload["client_line_uid"] = client_uid
+    plan_line_id = _v2_normalize_uuid_or_none(item.get("plan_line_id"))
+    if plan_line_id:
+        payload["plan_line_id"] = plan_line_id
+    parent_uid = _v2_normalize_uuid_or_none(item.get("parent_plan_line_id"))
+    if parent_uid:
+        payload["parent_plan_line_id"] = parent_uid
     if _cached_v2_plan_lines_support_planner_columns():
         planned_by = str(item.get("planned_by") or "").strip()
         planned_at = str(item.get("planned_at") or item.get("added_at") or "").strip()
@@ -3519,8 +3696,24 @@ def map_v2_db_line_to_session_item(line: dict[str, Any], header_updated_at: str)
     if not planned_at:
         planned_at = datetime.now(timezone.utc).isoformat()
     planned_by = str(line.get("planned_by") or "").strip()
+    plan_line_id = _v2_normalize_uuid_or_none(line.get("plan_line_id"))
+    had_db_client_uid = _v2_normalize_uuid_or_none(line.get("client_line_uid")) is not None
+    client_line_uid = _v2_resolve_session_client_uid(
+        db_client_line_uid=line.get("client_line_uid"),
+        plan_line_id=plan_line_id,
+        allow_mint_new=True,
+    )
+    line_origin = str(line.get("line_origin") or V2_LINE_ORIGIN_INITIAL).strip() or V2_LINE_ORIGIN_INITIAL
+    parent_plan_line_id = _v2_normalize_uuid_or_none(line.get("parent_plan_line_id"))
     return {
-        "line_uid": str(uuid4()),
+        "line_uid": client_line_uid,
+        "client_line_uid": client_line_uid,
+        "plan_line_id": plan_line_id,
+        "line_origin": line_origin,
+        "parent_plan_line_id": parent_plan_line_id,
+        "status": V2_PLAN_STATUS_NOT_SENT,
+        "is_pending": plan_line_id is None,
+        "_legacy_draft_without_id": not had_db_client_uid and plan_line_id is None,
         "project_code": str(line.get("project_code") or "").strip(),
         "facility": str(line.get("facility_building") or "").strip(),
         "discipline": str(line.get("construction_discipline") or "").strip(),
@@ -3600,22 +3793,104 @@ def apply_v2_loaded_draft_to_session(
     project_code: str,
     month_key: str,
     draft_id: str,
-) -> None:
+) -> dict[str, int]:
+    """Merge draft into session: plan rows stay canonical; only truly-new pending added."""
     kept = [
         item
         for item in load_v2_session_draft_items()
         if not _v2_item_matches_scope(item, project_code, month_key)
     ]
     existing_plan = load_v2_month_plan_lines(project_code, month_key)
-    st.session_state[V2_DRAFT_ITEMS_KEY] = kept + existing_plan + loaded_items
+
+    by_plan_id: dict[str, dict[str, Any]] = {}
+    by_client_uid: dict[str, dict[str, Any]] = {}
+    for plan_item in existing_plan:
+        pid = _v2_normalize_uuid_or_none(plan_item.get("plan_line_id"))
+        if pid:
+            by_plan_id[pid] = plan_item
+        cuid = str(plan_item.get("client_line_uid") or "").strip()
+        if cuid:
+            by_client_uid[cuid] = plan_item
+        uuid_cuid = _v2_normalize_uuid_or_none(plan_item.get("client_line_uid"))
+        if uuid_cuid:
+            by_client_uid[uuid_cuid] = plan_item
+
+    linked = 0
+    new_pending: list[dict[str, Any]] = []
+    legacy_without_id = 0
+    seen_pending_uids: set[str] = set()
+
+    for draft_item in loaded_items:
+        row = dict(draft_item)
+        plan_id = _v2_normalize_uuid_or_none(row.get("plan_line_id"))
+        client_uid_raw = str(row.get("client_line_uid") or row.get("line_uid") or "").strip()
+        client_uid = _v2_normalize_uuid_or_none(client_uid_raw)
+
+        matched: dict[str, Any] | None = None
+        if plan_id and plan_id in by_plan_id:
+            matched = by_plan_id[plan_id]
+        elif client_uid and client_uid in by_client_uid:
+            matched = by_client_uid[client_uid]
+        elif client_uid_raw and client_uid_raw in by_client_uid:
+            matched = by_client_uid[client_uid_raw]
+
+        if matched is not None:
+            linked += 1
+            continue
+
+        had_stable_id = bool(plan_id or client_uid)
+        if bool(row.get("_legacy_draft_without_id")) or not had_stable_id:
+            legacy_without_id += 1
+            if not client_uid_raw:
+                minted = _v2_new_client_line_uid()
+                row["client_line_uid"] = minted
+                row["line_uid"] = minted
+                client_uid_raw = minted
+            else:
+                row["client_line_uid"] = client_uid_raw
+                row["line_uid"] = client_uid_raw
+        else:
+            stable = client_uid or client_uid_raw or _v2_new_client_line_uid()
+            row["client_line_uid"] = stable
+            row["line_uid"] = stable
+            client_uid_raw = stable
+
+        row.pop("_legacy_draft_without_id", None)
+
+        dedupe_key = client_uid_raw or _v2_plan_row_key(row)
+        if dedupe_key in seen_pending_uids:
+            continue
+        seen_pending_uids.add(dedupe_key)
+
+        row["plan_line_id"] = None
+        row["is_pending"] = True
+        row["status"] = V2_PLAN_STATUS_NOT_SENT
+        row["read_only"] = False
+        row["line_source_ui"] = "Черновик"
+        if not str(row.get("line_origin") or "").strip():
+            row["line_origin"] = V2_LINE_ORIGIN_INITIAL
+        if "parent_plan_line_id" not in row:
+            row["parent_plan_line_id"] = None
+        new_pending.append(row)
+
+    st.session_state[V2_DRAFT_ITEMS_KEY] = kept + existing_plan + new_pending
     st.session_state[V2_SAVED_DRAFT_ID_KEY] = draft_id
+    summary = {
+        "linked": linked,
+        "new": len(new_pending),
+        "legacy": legacy_without_id,
+        "draft_rows": len(loaded_items),
+        "plan_rows": len(existing_plan),
+    }
+    st.session_state[V2_DRAFT_RESTORE_SUMMARY_KEY] = summary
+    return summary
 
 
 def load_v2_saved_draft_into_session(
     meta: dict[str, Any],
     project_code: str,
     month_key: str,
-) -> int:
+) -> dict[str, int]:
     """Загрузить lines по draft_id из meta (без повторного lookup header)."""
     draft_id = str(meta.get("draft_id") or "").strip()
     if not draft_id:
@@ -3629,7 +3904,9 @@ def load_v2_saved_draft_into_session(
 
     apply_project = str(meta.get("project_code") or project_code).strip()
     apply_month = str(meta.get("month_key") or month_key).strip()
-    apply_v2_loaded_draft_to_session(loaded_items, apply_project, apply_month, draft_id)
+    summary = apply_v2_loaded_draft_to_session(
+        loaded_items, apply_project, apply_month, draft_id
+    )
 
     session_count = len(load_v2_session_draft_items())
     st.session_state[V2_DRAFT_LOAD_DEBUG_KEY] = {
@@ -3640,6 +3917,9 @@ def load_v2_saved_draft_into_session(
         "lines_db": len(raw_rows),
         "mapped_items": len(loaded_items),
         "session_items": session_count,
+        "restore_linked": summary["linked"],
+        "restore_new": summary["new"],
+        "restore_legacy": summary["legacy"],
     }
 
     if not loaded_items and int(meta.get("rows_count") or 0) > 0:
@@ -3650,7 +3930,15 @@ def load_v2_saved_draft_into_session(
     if not loaded_items:
         raise RuntimeError("Строки черновика не найдены в monthly_plan_draft_lines.")
 
-    return len(loaded_items)
+    return summary
+
+
+def _v2_format_restore_summary(summary: dict[str, int]) -> str:
+    return (
+        f"Уже находятся в плане: **{int(summary.get('linked') or 0)}**; "
+        f"восстановлены как новые: **{int(summary.get('new') or 0)}**; "
+        f"legacy без идентификатора: **{int(summary.get('legacy') or 0)}**."
+    )
 
 
 def render_v2_saved_draft_banner(
@@ -3685,9 +3973,9 @@ def render_v2_saved_draft_banner(
 
     if st.button("Загрузить сохранённый черновик", key="v2_load_saved_draft"):
         try:
-            loaded_count = load_v2_saved_draft_into_session(meta, project_code, month_key)
-            if loaded_count > 0:
-                st.success(f"Загружено строк: {loaded_count}")
+            summary = load_v2_saved_draft_into_session(meta, project_code, month_key)
+            if int(summary.get("draft_rows") or 0) > 0:
+                st.success(_v2_format_restore_summary(summary))
                 st.rerun()
             else:
                 st.error("Строки черновика не загружены в session.")
@@ -4005,6 +4293,9 @@ def _v2_plan_row_key(item: dict[str, Any]) -> str:
     plan_line_id = str(item.get("plan_line_id") or "").strip()
     if plan_line_id:
         return plan_line_id
+    client_line_uid = str(item.get("client_line_uid") or "").strip()
+    if client_line_uid:
+        return client_line_uid
     line_uid = str(item.get("line_uid") or "").strip()
     if line_uid:
         return line_uid
@@ -4301,15 +4592,31 @@ def _v2_scope_plan_row_counts(
 
 
 def _v2_prepare_restored_draft_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Pending-строки из draft → session (без plan_line_id, только NOT_SENT)."""
+    """Нормализовать draft → session identifiers без silent wipe plan_line_id."""
     prepared: list[dict[str, Any]] = []
     for item in items:
         row = dict(item)
-        row["is_pending"] = True
-        row["plan_line_id"] = None
+        plan_line_id = _v2_normalize_uuid_or_none(row.get("plan_line_id"))
+        legacy_without_id = bool(row.get("_legacy_draft_without_id"))
+        client_line_uid = _v2_resolve_session_client_uid(
+            row,
+            db_client_line_uid=row.get("client_line_uid"),
+            plan_line_id=plan_line_id,
+            allow_mint_new=True,
+        )
+        row["plan_line_id"] = plan_line_id
+        row["client_line_uid"] = client_line_uid
+        row["line_uid"] = client_line_uid
+        row["line_origin"] = (
+            str(row.get("line_origin") or V2_LINE_ORIGIN_INITIAL).strip()
+            or V2_LINE_ORIGIN_INITIAL
+        )
+        row["parent_plan_line_id"] = _v2_normalize_uuid_or_none(row.get("parent_plan_line_id"))
         row["status"] = V2_PLAN_STATUS_NOT_SENT
+        row["is_pending"] = plan_line_id is None
         row["read_only"] = False
         row["line_source_ui"] = "Черновик"
+        row["_legacy_draft_without_id"] = legacy_without_id
         prepared.append(row)
     return prepared
 
@@ -4439,12 +4746,12 @@ def render_v2_draft_autosave_status_bar(project_code: str, month_key: str) -> No
         ):
             try:
                 meta, restore_project, restore_month = saved_draft  # type: ignore[misc]
-                loaded_count = load_v2_saved_draft_into_session(
+                summary = load_v2_saved_draft_into_session(
                     meta, restore_project, restore_month
                 )
-                st.session_state[V2_PLAN_DIRTY_KEY] = True
-                record_autosave_success(loaded_count)
-                st.success(f"Восстановлено строк черновика: {loaded_count}")
+                st.session_state[V2_PLAN_DIRTY_KEY] = bool(int(summary.get("new") or 0))
+                record_autosave_success(int(summary.get("new") or 0))
+                st.success(_v2_format_restore_summary(summary))
                 st.rerun()
             except Exception as exc:  # noqa: BLE001
                 record_autosave_error(str(exc))

@@ -1,0 +1,102 @@
+*** Begin Patch
+*** Update File: pages/10B_Конструктор_месячного_плана.py
+@@
+         plan_line_id = _v2_normalize_uuid_or_none(item.get("plan_line_id"))
+         client_uid = _v2_normalize_uuid_or_none(item.get("client_line_uid"))
+         line_origin = str(item.get("line_origin") or V2_LINE_ORIGIN_INITIAL).strip() or V2_LINE_ORIGIN_INITIAL
+         parent_plan_line_id = _v2_normalize_uuid_or_none(item.get("parent_plan_line_id"))
+         if not client_uid and not plan_line_id:
+             client_uid = _v2_new_client_line_uid()
+             item["client_line_uid"] = client_uid
+             item["line_uid"] = client_uid
+         elif client_uid:
+             item["client_line_uid"] = client_uid
+             item["line_uid"] = client_uid
+@@
+         if plan_line_id:
+             write_client.table(V2_PLAN_LINES_TABLE).update(payload).eq(
+                 "plan_line_id", plan_line_id
+             ).eq("status", V2_PLAN_STATUS_NOT_SENT).execute()
+             item["plan_line_id"] = plan_line_id
+             item["is_pending"] = False
+             updated += 1
+             continue
+ 
+         if not client_uid:
+             raise RuntimeError(
+-                "Не удалось определить client_line_uid для INSERT строки плана."
++                "Не удалось определить client_line_uid для UPSERT строки плана."
+             )
++        # Payload must always carry the stable uid used for on_conflict.
++        payload["client_line_uid"] = client_uid
+ 
+         existing_resp = (
+             write_client.table(V2_PLAN_LINES_TABLE)
+             .select("plan_line_id,status,client_line_uid")
+             .eq("client_line_uid", client_uid)
+             .limit(1)
+             .execute()
+         )
+         existing_rows = list(existing_resp.data or [])
+         if existing_rows:
+             found_id = _v2_normalize_uuid_or_none(existing_rows[0].get("plan_line_id"))
+             found_status = str(existing_rows[0].get("status") or V2_PLAN_STATUS_NOT_SENT).strip()
+             if not found_id:
+                 raise RuntimeError(
+                     f"Найдена plan-строка по client_line_uid={client_uid} без plan_line_id."
+                 )
+             item["plan_line_id"] = found_id
+             item["client_line_uid"] = client_uid
+             item["line_uid"] = client_uid
+             if found_status == V2_PLAN_STATUS_SENT:
+                 item["is_pending"] = False
+                 linked += 1
+                 continue
+             write_client.table(V2_PLAN_LINES_TABLE).update(payload).eq(
+                 "plan_line_id", found_id
+             ).eq("status", V2_PLAN_STATUS_NOT_SENT).execute()
+             item["is_pending"] = False
+             linked += 1
+             updated += 1
+             continue
+ 
+-        resp = write_client.table(V2_PLAN_LINES_TABLE).insert(payload).execute()
++        # Requires UNIQUE(client_line_uid). Retry/double-save cannot create a 2nd row.
++        resp = (
++            write_client.table(V2_PLAN_LINES_TABLE)
++            .upsert(payload, on_conflict="client_line_uid")
++            .execute()
++        )
+         if not resp.data:
+-            # Timeout / lost response recovery: row may already exist by client_line_uid.
++            # Timeout / lost response recovery by stable client_line_uid.
+             recovery = (
+                 write_client.table(V2_PLAN_LINES_TABLE)
+                 .select("plan_line_id,client_line_uid")
+                 .eq("client_line_uid", client_uid)
+                 .limit(1)
+                 .execute()
+             )
+             recovery_rows = list(recovery.data or [])
+             if recovery_rows:
+                 found_id = _v2_normalize_uuid_or_none(recovery_rows[0].get("plan_line_id"))
+                 if found_id:
+                     item["plan_line_id"] = found_id
+                     item["client_line_uid"] = client_uid
+                     item["line_uid"] = client_uid
+                     item["is_pending"] = False
+                     linked += 1
+                     continue
+-            raise RuntimeError("Не удалось вставить строку monthly_plan_lines_v2.")
++            raise RuntimeError("Не удалось выполнить UPSERT строки monthly_plan_lines_v2.")
+ 
+         new_id = _v2_normalize_uuid_or_none(resp.data[0].get("plan_line_id"))
+         if not new_id:
+-            raise RuntimeError("INSERT monthly_plan_lines_v2 не вернул plan_line_id.")
++            raise RuntimeError("UPSERT monthly_plan_lines_v2 не вернул plan_line_id.")
+         item["plan_line_id"] = new_id
+         item["client_line_uid"] = client_uid
+         item["line_uid"] = client_uid
+         item["is_pending"] = False
+         inserted += 1
+*** End Patch

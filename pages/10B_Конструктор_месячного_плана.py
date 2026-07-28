@@ -3412,8 +3412,10 @@ def save_v2_month_plan(
 
         if not client_uid:
             raise RuntimeError(
-                "Не удалось определить client_line_uid для INSERT строки плана."
+                "Не удалось определить client_line_uid для UPSERT строки плана."
             )
+        # Payload must always carry the stable uid used for on_conflict.
+        payload["client_line_uid"] = client_uid
 
         existing_resp = (
             write_client.table(V2_PLAN_LINES_TABLE)
@@ -3445,9 +3447,14 @@ def save_v2_month_plan(
             updated += 1
             continue
 
-        resp = write_client.table(V2_PLAN_LINES_TABLE).insert(payload).execute()
+        # Requires UNIQUE(client_line_uid). Retry/double-save cannot create a 2nd row.
+        resp = (
+            write_client.table(V2_PLAN_LINES_TABLE)
+            .upsert(payload, on_conflict="client_line_uid")
+            .execute()
+        )
         if not resp.data:
-            # Timeout / lost response recovery: row may already exist by client_line_uid.
+            # Timeout / lost response recovery by stable client_line_uid.
             recovery = (
                 write_client.table(V2_PLAN_LINES_TABLE)
                 .select("plan_line_id,client_line_uid")
@@ -3465,11 +3472,11 @@ def save_v2_month_plan(
                     item["is_pending"] = False
                     linked += 1
                     continue
-            raise RuntimeError("Не удалось вставить строку monthly_plan_lines_v2.")
+            raise RuntimeError("Не удалось выполнить UPSERT строки monthly_plan_lines_v2.")
 
         new_id = _v2_normalize_uuid_or_none(resp.data[0].get("plan_line_id"))
         if not new_id:
-            raise RuntimeError("INSERT monthly_plan_lines_v2 не вернул plan_line_id.")
+            raise RuntimeError("UPSERT monthly_plan_lines_v2 не вернул plan_line_id.")
         item["plan_line_id"] = new_id
         item["client_line_uid"] = client_uid
         item["line_uid"] = client_uid

@@ -1,0 +1,74 @@
+DIAGNOSTIC TEST — client_line_uid upsert idempotency
+=====================================================
+Prerequisites (in order):
+  1) Apply sql/monthly_plan_lines_v2_client_line_uid_hardening_20260728.sql
+  2) Apply patches/save_v2_month_plan_client_uid_upsert.diff to
+     pages/10B_Конструктор_месячного_плана.py
+  3) Restart local Streamlit
+
+DO NOT run this test before both SQL and Python are applied.
+
+-------------------------------------------------------------------------------
+Manual Streamlit scenario
+-------------------------------------------------------------------------------
+A. Baseline count (Supabase SQL Editor):
+
+  select count(*) as rows_before
+  from public.monthly_plan_lines_v2
+  where project_code = 'PRJ_001_БХК'
+    and month_key = 'июль-2026';
+  -- expect: 95 (current cleaned baseline)
+
+B. In Page 10B constructor:
+  1. Open project PRJ_001_БХК / month июль-2026
+  2. Add ONE new plan line via «Добавить в месячный план»
+     (choose a BOQ/scope that does not already have NOT_SENT in session)
+  3. Do NOT send to admission
+  4. From session / browser debug or TEMP DEBUG, copy client_line_uid
+     of the new pending row → call it <UID>
+  5. Click «Сохранить план» once (Save #1)
+  6. Change qty (or hours-affecting field) on the same NOT_SENT row
+     so is_pending becomes true again / row is dirty for save
+     OR force a second save of the same session item with same <UID>
+  7. Click «Сохранить план» again (Save #2)
+
+C. DB checks (replace <UID>):
+
+  -- must stay exactly 1
+  select count(*) as rows_for_uid
+  from public.monthly_plan_lines_v2
+  where client_line_uid = '<UID>'::uuid;
+
+  -- capture plan_line_id after Save #1 and compare after Save #2
+  select plan_line_id, planned_qty, labor_hours, plan_value,
+         client_line_uid, status, updated_at
+  from public.monthly_plan_lines_v2
+  where client_line_uid = '<UID>'::uuid;
+
+  select count(*) as rows_after
+  from public.monthly_plan_lines_v2
+  where project_code = 'PRJ_001_БХК'
+    and month_key = 'июль-2026';
+
+Expected:
+  - rows_for_uid = 1 after Save #1 and after Save #2
+  - plan_line_id unchanged between Save #1 and Save #2
+  - planned_qty / labor_hours / plan_value reflect latest edit
+  - no second row with same business fields and different plan_line_id
+  - rows_after = rows_before + 1   (only the first save adds a row;
+                                    second save must NOT increase count)
+
+-------------------------------------------------------------------------------
+Optional API-level check (same semantics as save_v2_month_plan branch)
+-------------------------------------------------------------------------------
+After Python patch is applied, a one-off local script may:
+  1) build one session item with fixed client_line_uid
+  2) call save_v2_month_plan twice
+  3) assert count(*) by client_line_uid == 1
+Do not automate against production without approval.
+
+-------------------------------------------------------------------------------
+Pass / Fail
+-------------------------------------------------------------------------------
+PASS if all Expected bullets hold.
+FAIL if Save #2 increases count(*) for <UID> or creates a new plan_line_id.

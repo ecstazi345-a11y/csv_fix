@@ -363,6 +363,7 @@ V2_DRAFT_RESTORE_SUMMARY_KEY = "v2_draft_restore_summary"
 V2_DRAFT_STATUS_SAVED = "SAVED_DRAFT"
 V2_DRAFT_SOURCE_MARKER = "constructor_v2"
 V2_LINE_ORIGIN_INITIAL = "INITIAL"
+V2_LINE_ORIGIN_ADDITIONAL = "ADDITIONAL"
 V2_LEGACY_CLIENT_UID_PREFIX = "legacy-plan:"
 _V2_UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -2903,6 +2904,106 @@ def _v2_resolve_session_client_uid(
     return _v2_new_client_line_uid()
 
 
+def _v2_normalize_scope_text(value: Any, *, lower: bool = False) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:  # noqa: BLE001
+        pass
+    text = str(value).strip()
+    if not text:
+        return ""
+    if text.casefold() in {"nan", "<na>", "none"}:
+        return ""
+    return text.lower() if lower else text.upper()
+
+
+def _v2_plan_scope_identity_key(
+    *,
+    project_code: Any,
+    month_key: Any,
+    facility: Any,
+    discipline: Any,
+    system: Any,
+    iwp: Any,
+    crew_code: Any,
+    boq_code: Any,
+) -> tuple[str, str, str, str, str, str, str, str]:
+    return (
+        _v2_normalize_scope_text(project_code),
+        _v2_normalize_scope_text(month_key, lower=True),
+        _v2_normalize_scope_text(facility),
+        _v2_normalize_scope_text(discipline),
+        _v2_normalize_scope_text(system),
+        _v2_normalize_scope_text(iwp),
+        _v2_normalize_scope_text(crew_code),
+        _v2_normalize_scope_text(boq_code),
+    )
+
+
+def _v2_plan_scope_identity_key_from_item(item: dict[str, Any]) -> tuple[str, str, str, str, str, str, str, str]:
+    return _v2_plan_scope_identity_key(
+        project_code=item.get("project_code"),
+        month_key=item.get("month_key"),
+        facility=item.get("facility"),
+        discipline=item.get("discipline"),
+        system=item.get("system"),
+        iwp=item.get("iwp"),
+        crew_code=item.get("crew_code"),
+        boq_code=item.get("boq_code"),
+    )
+
+
+def _v2_scope_match_candidates(
+    scope_items: list[dict[str, Any]],
+    *,
+    project_code: str,
+    month_key: str,
+    facility: Any,
+    discipline: Any,
+    system: Any,
+    iwp: Any,
+    crew_code: Any,
+    boq_code: Any,
+) -> list[dict[str, Any]]:
+    target = _v2_plan_scope_identity_key(
+        project_code=project_code,
+        month_key=month_key,
+        facility=facility,
+        discipline=discipline,
+        system=system,
+        iwp=iwp,
+        crew_code=crew_code,
+        boq_code=boq_code,
+    )
+    return [
+        row
+        for row in scope_items
+        if _v2_plan_scope_identity_key_from_item(row) == target
+    ]
+
+
+def _v2_choose_sent_parent(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
+    sent_rows = [
+        row
+        for row in candidates
+        if str(row.get("status") or V2_PLAN_STATUS_NOT_SENT) == V2_PLAN_STATUS_SENT
+        and _v2_normalize_uuid_or_none(row.get("plan_line_id"))
+    ]
+    return sent_rows[0] if len(sent_rows) == 1 else None
+
+
+def _v2_plan_display_parent_label(item: dict[str, Any]) -> str:
+    parent_plan_line_id = _v2_normalize_uuid_or_none(item.get("parent_plan_line_id"))
+    if not parent_plan_line_id:
+        return ""
+    boq = str(item.get("boq_code") or "—").strip() or "—"
+    short_id = parent_plan_line_id[:8]
+    return f"ДОПОЛНИТЕЛЬНО К: {boq} / {short_id}"
+
+
 def append_v2_month_plan_draft_item(
     item: pd.Series,
     planning_month: str,
@@ -2913,6 +3014,10 @@ def append_v2_month_plan_draft_item(
     comment: str,
     preview: dict[str, Any],
     planned_by: str,
+    *,
+    line_origin: str = V2_LINE_ORIGIN_INITIAL,
+    parent_plan_line_id: str | None = None,
+    line_source_ui: str = "Новый код",
 ) -> dict[str, Any]:
     planned_at = datetime.now(timezone.utc).isoformat()
     client_line_uid = _v2_new_client_line_uid()
@@ -2920,8 +3025,8 @@ def append_v2_month_plan_draft_item(
         "plan_line_id": None,
         "client_line_uid": client_line_uid,
         "line_uid": client_line_uid,
-        "line_origin": V2_LINE_ORIGIN_INITIAL,
-        "parent_plan_line_id": None,
+        "line_origin": str(line_origin or V2_LINE_ORIGIN_INITIAL).strip() or V2_LINE_ORIGIN_INITIAL,
+        "parent_plan_line_id": _v2_normalize_uuid_or_none(parent_plan_line_id),
         "status": V2_PLAN_STATUS_NOT_SENT,
         "is_pending": True,
         "project_code": str(item.get("project_code") or "").strip(),
@@ -2952,7 +3057,7 @@ def append_v2_month_plan_draft_item(
         "planned_by": str(planned_by or "").strip(),
         "planned_at": planned_at,
         "added_at": planned_at,
-        "line_source_ui": "Новый код",
+        "line_source_ui": line_source_ui,
         "read_only": False,
     }
     items: list[dict[str, Any]] = list(st.session_state.get(V2_DRAFT_ITEMS_KEY) or [])
@@ -3129,7 +3234,11 @@ def map_v2_plan_db_row_to_session_item(row: dict[str, Any]) -> dict[str, Any]:
         "planned_by": planned_by,
         "planned_at": planned_at,
         "added_at": planned_at,
-        "line_source_ui": "Месячный план",
+        "line_source_ui": (
+            "Дополнительный объём"
+            if line_origin == V2_LINE_ORIGIN_ADDITIONAL
+            else "Месячный план"
+        ),
         "read_only": status == V2_PLAN_STATUS_SENT,
         "sent_to_constraints_at": row.get("sent_to_constraints_at"),
     }
@@ -3168,7 +3277,9 @@ def map_v2_session_item_to_plan_db_row(item: dict[str, Any]) -> dict[str, Any]:
         "labor_cost": labor_cost,
         "unit_price": unit_price if unit_price > 0 else None,
         "plan_value": plan_value if plan_value > 0 else None,
-        "status": str(item.get("status") or V2_PLAN_STATUS_NOT_SENT),
+        "status": V2_PLAN_STATUS_NOT_SENT
+        if str(item.get("line_origin") or V2_LINE_ORIGIN_INITIAL).strip() == V2_LINE_ORIGIN_ADDITIONAL
+        else str(item.get("status") or V2_PLAN_STATUS_NOT_SENT),
         "line_origin": (
             str(item.get("line_origin") or V2_LINE_ORIGIN_INITIAL).strip()
             or V2_LINE_ORIGIN_INITIAL
@@ -3187,6 +3298,50 @@ def map_v2_session_item_to_plan_db_row(item: dict[str, Any]) -> dict[str, Any]:
     if planned_at:
         payload["planned_at"] = planned_at
     return payload
+
+
+def _v2_validate_additional_parent(
+    write_client: Client,
+    item: dict[str, Any],
+    *,
+    plan_line_id: str | None,
+    client_uid: str | None,
+    parent_plan_line_id: str | None,
+) -> None:
+    if not parent_plan_line_id:
+        raise RuntimeError(
+            "Для дополнительного обязательства не указан parent_plan_line_id."
+        )
+    if plan_line_id and plan_line_id == parent_plan_line_id:
+        raise RuntimeError(
+            "plan_line_id дополнительного обязательства совпадает с parent_plan_line_id."
+        )
+
+    parent_resp = (
+        write_client.table(V2_PLAN_LINES_TABLE)
+        .select("plan_line_id,status,client_line_uid,line_origin")
+        .eq("plan_line_id", parent_plan_line_id)
+        .limit(1)
+        .execute()
+    )
+    parent_rows = list(parent_resp.data or [])
+    if not parent_rows:
+        raise RuntimeError(
+            "Исходное обязательство для дополнительного объёма не найдено."
+        )
+
+    parent_row = parent_rows[0]
+    parent_status = str(parent_row.get("status") or V2_PLAN_STATUS_NOT_SENT).strip()
+    if parent_status != V2_PLAN_STATUS_SENT:
+        raise RuntimeError(
+            "Дополнительное обязательство может ссылаться только на ранее отправленное обязательство."
+        )
+
+    parent_client_uid = _v2_normalize_uuid_or_none(parent_row.get("client_line_uid"))
+    if client_uid and parent_client_uid and client_uid == parent_client_uid:
+        raise RuntimeError(
+            "client_line_uid дополнительного обязательства не может совпадать с client_line_uid исходной строки."
+        )
 
 
 def save_v2_month_plan(
@@ -3222,6 +3377,8 @@ def save_v2_month_plan(
 
         plan_line_id = _v2_normalize_uuid_or_none(item.get("plan_line_id"))
         client_uid = _v2_normalize_uuid_or_none(item.get("client_line_uid"))
+        line_origin = str(item.get("line_origin") or V2_LINE_ORIGIN_INITIAL).strip() or V2_LINE_ORIGIN_INITIAL
+        parent_plan_line_id = _v2_normalize_uuid_or_none(item.get("parent_plan_line_id"))
         if not client_uid and not plan_line_id:
             client_uid = _v2_new_client_line_uid()
             item["client_line_uid"] = client_uid
@@ -3232,6 +3389,15 @@ def save_v2_month_plan(
 
         if not str(item.get("line_origin") or "").strip():
             item["line_origin"] = V2_LINE_ORIGIN_INITIAL
+
+        if line_origin == V2_LINE_ORIGIN_ADDITIONAL:
+            _v2_validate_additional_parent(
+                write_client,
+                item,
+                plan_line_id=plan_line_id,
+                client_uid=client_uid,
+                parent_plan_line_id=parent_plan_line_id,
+            )
 
         payload = _v2_plan_db_payload_from_item(item)
 
@@ -3743,7 +3909,11 @@ def map_v2_db_line_to_session_item(line: dict[str, Any], header_updated_at: str)
         "planned_by": planned_by,
         "planned_at": planned_at,
         "added_at": planned_at,
-        "line_source_ui": "Загружено из Supabase",
+        "line_source_ui": (
+            "Дополнительный объём"
+            if line_origin == V2_LINE_ORIGIN_ADDITIONAL
+            else "Загружено из Supabase"
+        ),
         "read_only": False,
     }
 
@@ -3939,6 +4109,29 @@ def _v2_format_restore_summary(summary: dict[str, int]) -> str:
         f"восстановлены как новые: **{int(summary.get('new') or 0)}**; "
         f"legacy без идентификатора: **{int(summary.get('legacy') or 0)}**."
     )
+
+
+def _v2_format_scope_match_warning(item: dict[str, Any]) -> str:
+    qty = _v2_format_qty_display_str(item.get("planned_qty"))
+    unit = str(item.get("unit") or "ед.").strip() or "ед."
+    row_id = str(item.get("plan_line_id") or _v2_plan_row_key(item))[:8]
+    return f"Текущий объём: {qty} {unit}. Строка: {row_id}."
+
+
+def _v2_format_scope_match_row_summary(item: dict[str, Any]) -> str:
+    boq = str(item.get("boq_code") or "—").strip() or "—"
+    origin = str(item.get("line_origin") or V2_LINE_ORIGIN_INITIAL).strip() or V2_LINE_ORIGIN_INITIAL
+    qty = _v2_format_qty_display_str(item.get("planned_qty"))
+    row_id = str(item.get("plan_line_id") or item.get("client_line_uid") or _v2_plan_row_key(item))[:8]
+    return f"- `{boq}` · {origin} · {qty} · `{row_id}`"
+
+
+def _v2_format_sent_scope_match_row_summary(item: dict[str, Any]) -> str:
+    boq = str(item.get("boq_code") or "—").strip() or "—"
+    qty = _v2_format_qty_display_str(item.get("planned_qty"))
+    sent_at = format_v2_added_at_moscow(item.get("sent_to_constraints_at")) or "—"
+    row_id = str(item.get("plan_line_id") or _v2_plan_row_key(item))[:8]
+    return f"- `{boq}` · {qty} · {sent_at} · `{row_id}`"
 
 
 def render_v2_saved_draft_banner(
@@ -4213,6 +4406,10 @@ def map_v2_session_draft_to_display_df(items: list[dict[str, Any]]) -> pd.DataFr
         facility = str(item.get("facility") or "").strip() or "—"
         discipline = str(item.get("discipline") or "").strip() or "—"
         planned_at = item.get("planned_at") or item.get("added_at")
+        work_name = str(item.get("boq_name") or "—")
+        parent_label = _v2_plan_display_parent_label(item)
+        if parent_label:
+            work_name = f"{work_name} [{parent_label}]"
         rows.append(
             {
                 "Статус": _v2_plan_status_display(item.get("status")),
@@ -4226,7 +4423,7 @@ def map_v2_session_draft_to_display_df(items: list[dict[str, Any]]) -> pd.DataFr
                 "Система": _v2_plan_display_optional_text(item.get("system")),
                 "IWP": _v2_plan_display_optional_text(item.get("iwp")),
                 "BOQ код": str(item.get("boq_code") or "—"),
-                "Наименование работ": str(item.get("boq_name") or "—"),
+                "Наименование работ": work_name,
                 "Объём": _v2_format_qty_display_str(item.get("planned_qty")),
                 "Ед.": str(item.get("unit") or "—"),
                 "Звено": str(item.get("crew_code") or "—"),
@@ -4781,11 +4978,16 @@ def render_v2_plan_edit_panel(item: dict[str, Any]) -> None:
     meta_col1.caption(f"Проект: {item.get('project_code') or '—'}")
     meta_col2.caption(f"Месяц: {item.get('month_key') or '—'}")
     meta_col3.caption(f"Статус: {_v2_plan_status_display(item.get('status'))}")
+    parent_label = _v2_plan_display_parent_label(item)
+    if parent_label:
+        st.caption(parent_label)
     st.caption(
         f"BOQ {item.get('boq_code') or '—'} · "
         f"{item.get('boq_name') or '—'} · "
         f"{item.get('facility') or '—'} / {item.get('discipline') or '—'}"
     )
+    if str(item.get("line_origin") or V2_LINE_ORIGIN_INITIAL) == V2_LINE_ORIGIN_ADDITIONAL:
+        st.info("Дополнительный объём редактируется как отдельное NOT_SENT обязательство.")
 
     crew_options = load_v2_crew_options()
     current_crew = str(item.get("crew_code") or "Звено не выбрано").strip()
@@ -5579,6 +5781,36 @@ def _render_add_to_month_plan_content(item: pd.Series) -> None:
         )
 
     plan_qty_f = float(plan_qty)
+    project_code = str(item.get("project_code") or "").strip()
+    scope_items = _v2_filter_items_for_scope(
+        load_v2_session_draft_items(),
+        project_code,
+        planning_month,
+    )
+    matching_rows = _v2_scope_match_candidates(
+        scope_items,
+        project_code=project_code,
+        month_key=planning_month,
+        facility=item.get("facility"),
+        discipline=item.get("discipline"),
+        system=item.get("system"),
+        iwp=item.get("iwp"),
+        crew_code=str(crew).strip(),
+        boq_code=item.get("boq_code"),
+    )
+    not_sent_rows = [
+        row
+        for row in matching_rows
+        if str(row.get("status") or V2_PLAN_STATUS_NOT_SENT) == V2_PLAN_STATUS_NOT_SENT
+    ]
+    sent_rows = [
+        row
+        for row in matching_rows
+        if str(row.get("status") or V2_PLAN_STATUS_NOT_SENT) == V2_PLAN_STATUS_SENT
+        and _v2_normalize_uuid_or_none(row.get("plan_line_id"))
+    ]
+    not_sent_match = not_sent_rows[0] if len(not_sent_rows) == 1 else None
+    sent_parent = sent_rows[0] if len(sent_rows) == 1 else None
     crew_valid = _v2_crew_is_valid(crew)
     manual_ok = norm_scenario != NORM_SCENARIO_MANUAL or float(manual_norm) > 0
     qty_ok = plan_qty_f > 0 and plan_qty_f <= available_qty
@@ -5591,6 +5823,41 @@ def _render_add_to_month_plan_content(item: pd.Series) -> None:
     if not has_available:
         st.caption("Нет доступного остатка для планирования.")
 
+    if len(not_sent_rows) > 1:
+        st.error(
+            "По одному производственному контуру найдено несколько неотправленных обязательств. "
+            "Требуется сначала устранить дубли или вручную выбрать строку для редактирования."
+        )
+        st.markdown("\n".join(_v2_format_scope_match_row_summary(row) for row in not_sent_rows))
+    elif not_sent_match is not None:
+        st.info(
+            "Такое обязательство уже находится в текущем плане и ещё не отправлено в допуск."
+        )
+        st.caption(_v2_format_scope_match_warning(not_sent_match))
+        st.caption(
+            "Перейдите к существующей строке и измените количество вместо создания второй INITIAL."
+        )
+    elif len(sent_rows) > 1:
+        st.error(
+            "По одному производственному контуру найдено несколько отправленных обязательств. "
+            "Нельзя безопасно определить исходное обязательство для дополнительного объёма. "
+            "Сначала требуется устранить дубли."
+        )
+        st.markdown("\n".join(_v2_format_sent_scope_match_row_summary(row) for row in sent_rows))
+    elif sent_parent is not None:
+        st.warning(
+            "По этому производственному контуру уже существует отправленное обязательство. "
+            "Новый объём будет создан как дополнительное обязательство."
+        )
+        st.caption(
+            "Исходный объём: "
+            f"{_v2_format_qty_display_str(sent_parent.get('planned_qty'))} {item.get('unit', '')} · "
+            "Новый дополнительный объём: "
+            f"{_v2_format_qty_display_str(plan_qty_f)} {item.get('unit', '')} · "
+            f"Исходная строка: {str(sent_parent.get('plan_line_id') or '')[:8]} · "
+            "Пометка: «Дополнительный объём»."
+        )
+
     add_disabled = (
         not has_available
         or not qty_ok
@@ -5602,13 +5869,36 @@ def _render_add_to_month_plan_content(item: pd.Series) -> None:
 
     btn_col, _ = st.columns([1, 2])
     with btn_col:
+        add_button_label = (
+            "Требуется выбрать строку вручную"
+            if len(not_sent_rows) > 1
+            else "Требуется устранить дубли SENT"
+            if len(sent_rows) > 1
+            else
+            "Перейти к существующей строке"
+            if not_sent_match is not None
+            else "Добавить дополнительное обязательство"
+            if sent_parent is not None
+            else "Добавить в месячный план"
+        )
+        action_disabled = (
+            True
+            if len(not_sent_rows) > 1 or len(sent_rows) > 1
+            else False if not_sent_match is not None else add_disabled
+        )
         if st.button(
-            "Добавить в месячный план",
+            add_button_label,
             type="primary",
-            disabled=add_disabled,
+            disabled=action_disabled,
             key=f"v2_plan_add_{boq_code}",
         ):
-            if not planner_ok:
+            if not_sent_match is not None:
+                row_key = _v2_plan_row_key(not_sent_match)
+                st.session_state[V2_PLAN_EDIT_ROW_KEY] = row_key
+                st.session_state[V2_PLAN_SELECTED_KEYS] = [row_key]
+                st.info("Открываю существующую строку для изменения количества.")
+                st.rerun()
+            elif not planner_ok:
                 st.error("Укажите ФИО планировщика")
             else:
                 append_v2_month_plan_draft_item(
@@ -5621,8 +5911,26 @@ def _render_add_to_month_plan_content(item: pd.Series) -> None:
                     comment,
                     preview,
                     planner_name,
+                    line_origin=(
+                        V2_LINE_ORIGIN_ADDITIONAL
+                        if sent_parent is not None
+                        else V2_LINE_ORIGIN_INITIAL
+                    ),
+                    parent_plan_line_id=(
+                        _v2_normalize_uuid_or_none(sent_parent.get("plan_line_id"))
+                        if sent_parent is not None
+                        else None
+                    ),
+                    line_source_ui=(
+                        "Дополнительный объём"
+                        if sent_parent is not None
+                        else "Новый код"
+                    ),
                 )
-                st.success("Строка добавлена в месячный план")
+                if sent_parent is not None:
+                    st.success("Создано дополнительное обязательство.")
+                else:
+                    st.success("Строка добавлена в месячный план")
                 st.rerun()
 
     st.markdown(

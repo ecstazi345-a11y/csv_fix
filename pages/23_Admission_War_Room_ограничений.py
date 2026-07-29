@@ -1,5 +1,5 @@
 from datetime import date, datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
@@ -13,6 +13,7 @@ from services.constraint_display import (
 from services.monthly_passport_service import create_monthly_passport
 import services.monthly_passport_service as monthly_passport_service
 from services.constraints_loader import fetch_all_constraints
+from services.perf_audit import finish_page, stage, start_page
 from services.supabase_client import supabase
 
 st.set_page_config(layout="wide")
@@ -265,6 +266,9 @@ WR2_MGMT_OPTIONS = [
 
 WR2_PASSPORT_DECISIONS = frozenset({WR2_MGMT_INCLUDE, WR2_MGMT_INCLUDE_RISK})
 
+WR2_AUTO_INCLUDE_BASIS = "Авто: чистый допуск"
+WR2_BLANK_REASON_MARKERS = frozenset({"", "—", "-", "–", "nan", "None"})
+
 # Обратная совместимость внутренних проверок
 WR2_MGMT_LEAVE_REWORK = WR2_MGMT_POSTPONE
 WR2_MGMT_NON_CLEAN_OPTIONS = [
@@ -283,6 +287,7 @@ WR2_SESSION_COMPOSITION = "wr2_passport_composition"
 WR2_SESSION_AUDIT = "wr2_decision_audit_log"
 WR2_SESSION_DRAFT = "wr2_passport_is_draft"
 WR2_SESSION_FORMED = "wr2_passport_is_formed"
+WR2_SESSION_FORMING = "wr2_passport_forming_lock"
 WR2_SESSION_SELECTED = "wr2_selected_plan_line_id"
 WR2_SESSION_DEFERRED = "wr2_deferred_decisions"
 WR2_SESSION_EXCLUDED = "wr2_excluded_decisions"
@@ -545,11 +550,19 @@ def enrich_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(ttl=300)
 def load_review_queue() -> pd.DataFrame:
+    import time as _time
+
+    from services.perf_audit import log_supabase_query, perf_audit_enabled
+
     try:
+        t0 = _time.perf_counter()
         response = (
             supabase.table(TABLE_REVIEW_QUEUE).select("*").limit(10000).execute()
         )
-        return pd.DataFrame(response.data or [])
+        data = response.data or []
+        if perf_audit_enabled():
+            log_supabase_query(TABLE_REVIEW_QUEUE, _time.perf_counter() - t0, len(data))
+        return pd.DataFrame(data)
     except Exception:  # noqa: BLE001
         return pd.DataFrame()
 
@@ -569,11 +582,19 @@ def load_constraints() -> pd.DataFrame:
 
 @st.cache_data(ttl=300)
 def load_v2_plan_lines() -> pd.DataFrame:
+    import time as _time
+
+    from services.perf_audit import log_supabase_query, perf_audit_enabled
+
     try:
+        t0 = _time.perf_counter()
         response = (
             supabase.table(TABLE_V2_PLAN_LINES).select("*").limit(10000).execute()
         )
-        return pd.DataFrame(response.data or [])
+        data = response.data or []
+        if perf_audit_enabled():
+            log_supabase_query(TABLE_V2_PLAN_LINES, _time.perf_counter() - t0, len(data))
+        return pd.DataFrame(data)
     except Exception:  # noqa: BLE001
         return pd.DataFrame()
 
@@ -805,6 +826,7 @@ def wr2_init_passport_session() -> None:
     st.session_state.setdefault(WR2_SESSION_AUDIT, [])
     st.session_state.setdefault(WR2_SESSION_DRAFT, False)
     st.session_state.setdefault(WR2_SESSION_FORMED, False)
+    st.session_state.setdefault(WR2_SESSION_FORMING, False)
     st.session_state.setdefault(WR2_SESSION_DEFERRED, {})
     st.session_state.setdefault(WR2_SESSION_EXCLUDED, {})
 
@@ -1020,7 +1042,7 @@ def wr2_sync_auto_admitted_composition(board_df: pd.DataFrame) -> None:
             "decision": WR2_MGMT_INCLUDE,
             "outcome": safe_str(row.get("outcome")),
             "override": False,
-            "basis": "Авто: чистый допуск",
+            "basis": WR2_AUTO_INCLUDE_BASIS,
             "responsible": "—",
             "review_deadline": "—",
             "risk_deadline": "—",
@@ -1316,12 +1338,15 @@ def wr2_format_constraint_age_days(constraint_row: Optional[pd.Series]) -> str:
     return f"{days} дн."
 
 
-def wr2_build_unified_registry_df(board_df: pd.DataFrame) -> pd.DataFrame:
+def wr2_build_unified_registry_df(
+    board_df: pd.DataFrame,
+    constraints_df: pd.DataFrame,
+) -> pd.DataFrame:
     """Полный реестр кодов месяца для War Room (1 строка = 1 plan_line_id)."""
     if board_df.empty:
         return pd.DataFrame()
 
-    constraints_by_line = build_constraints_by_line_id(load_constraints())
+    constraints_by_line = build_constraints_by_line_id(constraints_df)
     display_rows: List[Dict[str, Any]] = []
     for _, row in board_df.iterrows():
         pid = safe_str(row.get("plan_line_id"))
@@ -1663,38 +1688,180 @@ def wr2_validate_management_decisions(
     return errors
 
 
-def wr2_build_passport_override_payload(
+def wr2_is_blank_reason(value: Any) -> bool:
+    text = safe_str(value).strip()
+    return text in WR2_BLANK_REASON_MARKERS
+
+
+def wr2_line_is_fully_admitted(row: pd.Series) -> bool:
+    return safe_str(row.get("outcome")) == WR2_OUTCOME_OK
+
+
+def wr2_writer_needs_override_for_row(row: pd.Series) -> bool:
+    """True when create_monthly_passport would skip the line without management override."""
+    outcome = safe_str(row.get("outcome"))
+    if wr2_line_is_fully_admitted(row):
+        return False
+    # RISK → READY_WITH_RISK enters passport without override.
+    if outcome == WR2_OUTCOME_RISK:
+        return False
+    return True
+
+
+def wr2_composition_record(plan_line_id: str) -> Dict[str, Any]:
+    comp = st.session_state.get(WR2_SESSION_COMPOSITION, {})
+    record = comp.get(plan_line_id) if plan_line_id else None
+    return dict(record) if isinstance(record, dict) else {}
+
+
+def wr2_manual_include_override_reason(plan_line_id: str) -> Tuple[str, str, str]:
+    """Return (reason, comment, basis_text) from existing War Room decision fields."""
+    record = wr2_composition_record(plan_line_id)
+    reason = wr2_get_decision_basis(plan_line_id) or safe_str(record.get("basis"))
+    comment = wr2_get_decision_comment(plan_line_id) or safe_str(record.get("comment"))
+    responsible = wr2_get_decision_responsible(plan_line_id) or safe_str(
+        record.get("responsible")
+    )
+    deadline = wr2_get_decision_review_deadline(plan_line_id) or safe_str(
+        record.get("review_deadline") or record.get("risk_deadline")
+    )
+    basis_parts = [part for part in (reason, comment) if not wr2_is_blank_reason(part)]
+    if responsible and not wr2_is_blank_reason(responsible):
+        basis_parts.append(f"Ответственный: {responsible}")
+    if deadline and not wr2_is_blank_reason(deadline):
+        basis_parts.append(f"Срок: {deadline}")
+    basis_text = " | ".join(basis_parts) if basis_parts else reason
+    return reason, comment, basis_text
+
+
+def wr2_collect_passport_override_errors(
     board_df: pd.DataFrame,
-    created_by: str,
-) -> Dict[str, Dict[str, Any]]:
-    now_iso = datetime.now(timezone.utc).isoformat()
-    overrides: Dict[str, Dict[str, Any]] = {}
+    *,
+    allow_risk: bool = True,
+) -> List[str]:
+    """Validate that forced draft inclusions have a decision basis before passport write."""
+    errors: List[str] = []
     for _, row in board_df.iterrows():
-        if not wr2_row_in_passport_inclusion(row):
+        if not wr2_row_in_passport_inclusion(row, allow_risk=allow_risk):
             continue
         pid = safe_str(row.get("plan_line_id"))
         if not pid:
             continue
-        outcome = safe_str(row.get("outcome"))
+        if not wr2_writer_needs_override_for_row(row):
+            continue
         decision = wr2_get_mgmt_decision(row)
-        if outcome == WR2_OUTCOME_OK and decision == WR2_MGMT_INCLUDE:
+        boq = display_dash(row.get("boq_code"))
+        outcome = safe_str(row.get("outcome"))
+        if decision == WR2_MGMT_INCLUDE_RISK:
+            if not wr2_risk_fields_complete(pid):
+                errors.append(
+                    f"{boq}: для включения с риском заполните основание, "
+                    "ответственного, срок и комментарий."
+                )
             continue
-        if decision != WR2_MGMT_INCLUDE_RISK:
+        if decision != WR2_MGMT_INCLUDE:
             continue
-        reason = wr2_get_risk_reason_text(pid)
-        comment = wr2_get_risk_comment(pid)
+        reason, _comment, _basis = wr2_manual_include_override_reason(pid)
+        if wr2_is_blank_reason(reason):
+            if outcome == WR2_OUTCOME_BLOCKED:
+                errors.append(
+                    "Для принудительного включения заблокированной строки "
+                    f"укажите основание решения ({boq})."
+                )
+            else:
+                errors.append(
+                    f"{boq}: для принудительного включения укажите основание "
+                    "управленческого решения."
+                )
+    return errors
+
+
+def wr2_build_passport_override_payload(
+    board_df: pd.DataFrame,
+    created_by: str,
+    *,
+    allow_risk: bool = True,
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Build management_override patches keyed by plan_line_id.
+
+    - Fully admitted INCLUDE → no override.
+    - INCLUDE_RISK → existing risk metadata.
+    - Manual INCLUDE of incomplete admission → override from composition/session fields.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+    overrides: Dict[str, Dict[str, Any]] = {}
+    for _, row in board_df.iterrows():
+        if not wr2_row_in_passport_inclusion(row, allow_risk=allow_risk):
+            continue
+        pid = safe_str(row.get("plan_line_id"))
+        if not pid:
+            continue
+        # Only draft composition rows (board_df is already the passport scope/draft).
+        if pid not in st.session_state.get(WR2_SESSION_COMPOSITION, {}):
+            continue
+        decision = wr2_get_mgmt_decision(row)
+
+        if decision == WR2_MGMT_INCLUDE and wr2_line_is_fully_admitted(row):
+            continue
+
+        if decision == WR2_MGMT_INCLUDE_RISK:
+            reason = wr2_get_risk_reason_text(pid)
+            comment = wr2_get_risk_comment(pid)
+            overrides[pid] = {
+                "management_override": True,
+                "override_by": created_by,
+                "override_at": now_iso,
+                "override_reason": reason,
+                "override_risk_comment": comment or reason,
+                "override_basis": (
+                    f"{reason} | Ответственный: {wr2_get_risk_responsible(pid)} | "
+                    f"Срок: {wr2_get_risk_deadline(pid)}"
+                ),
+            }
+            continue
+
+        if decision != WR2_MGMT_INCLUDE:
+            continue
+
+        # Manual INCLUDE of incomplete admission (WAITING/BLOCKED/…) must carry override.
+        if not wr2_writer_needs_override_for_row(row):
+            continue
+
+        reason, comment, basis_text = wr2_manual_include_override_reason(pid)
+        if wr2_is_blank_reason(reason):
+            continue
         overrides[pid] = {
             "management_override": True,
             "override_by": created_by,
             "override_at": now_iso,
             "override_reason": reason,
             "override_risk_comment": comment or reason,
-            "override_basis": (
-                f"{reason} | Ответственный: {wr2_get_risk_responsible(pid)} | "
-                f"Срок: {wr2_get_risk_deadline(pid)}"
-            ),
+            "override_basis": basis_text or reason,
         }
     return overrides
+
+
+def wr2_passport_draft_coverage_gaps(
+    board_df: pd.DataFrame,
+    overrides_by_line: Dict[str, Dict[str, Any]],
+    *,
+    allow_risk: bool = True,
+) -> List[str]:
+    """BOQ codes that are in draft but would be skipped by writer without coverage."""
+    gaps: List[str] = []
+    for _, row in board_df.iterrows():
+        if not wr2_row_in_passport_inclusion(row, allow_risk=allow_risk):
+            continue
+        pid = safe_str(row.get("plan_line_id"))
+        if not pid:
+            continue
+        if not wr2_writer_needs_override_for_row(row):
+            continue
+        if pid in overrides_by_line:
+            continue
+        gaps.append(display_dash(row.get("boq_code")))
+    return gaps
 
 
 def wr2_compute_passport_composition_table(board_df: pd.DataFrame) -> pd.DataFrame:
@@ -1759,13 +1926,79 @@ def wr2_create_monthly_passport_with_overrides(
     *,
     allow_risk: bool = True,
 ) -> Dict[str, Any]:
-    overrides_by_line = wr2_build_passport_override_payload(board_df, created_by)
-    inclusion_ids = {
-        safe_str(row.get("plan_line_id"))
+    if st.session_state.get(WR2_SESSION_FORMING):
+        return {
+            "status": "error",
+            "passport_id": None,
+            "created_lines": 0,
+            "skipped_blocked": 0,
+            "blocked_without_override": 0,
+            "override_included_rows": 0,
+            "skipped_waiting": 0,
+            "total_value": 0.0,
+            "total_hours": 0.0,
+            "errors": [
+                "Формирование паспорта уже выполняется. Дождитесь завершения текущего вызова."
+            ],
+            "warnings": [],
+            "source_kind": None,
+            "expected_included_count": 0,
+            "previous_rows": 0,
+            "current_rows": 0,
+        }
+
+    inclusion_rows = [
+        row
         for _, row in board_df.iterrows()
         if wr2_row_in_passport_inclusion(row, allow_risk=allow_risk)
         and safe_str(row.get("plan_line_id"))
+    ]
+    inclusion_ids = {
+        safe_str(row.get("plan_line_id")) for row in inclusion_rows
     }
+    expected_included_count = len(inclusion_ids)
+
+    empty_summary: Dict[str, Any] = {
+        "status": "error",
+        "passport_id": None,
+        "created_lines": 0,
+        "skipped_blocked": 0,
+        "blocked_without_override": 0,
+        "override_included_rows": 0,
+        "skipped_waiting": 0,
+        "total_value": 0.0,
+        "total_hours": 0.0,
+        "errors": [],
+        "warnings": [],
+        "source_kind": None,
+        "expected_included_count": expected_included_count,
+        "previous_rows": 0,
+        "current_rows": 0,
+    }
+
+    validation_errors = wr2_collect_passport_override_errors(
+        board_df, allow_risk=allow_risk
+    )
+    if validation_errors:
+        empty_summary["errors"] = validation_errors
+        return empty_summary
+
+    overrides_by_line = wr2_build_passport_override_payload(
+        board_df, created_by, allow_risk=allow_risk
+    )
+
+    coverage_gaps = wr2_passport_draft_coverage_gaps(
+        board_df, overrides_by_line, allow_risk=allow_risk
+    )
+    if coverage_gaps:
+        codes = ", ".join(coverage_gaps)
+        empty_summary["errors"] = [
+            "Формирование остановлено: в драфте обязательства есть коды без "
+            "полного допуска и без management override. "
+            f"BOQ: {codes}. Укажите основание решения или включите с риском."
+        ]
+        return empty_summary
+
     original_read = monthly_passport_service._read_override_from_queue
     original_resolve = monthly_passport_service._resolve_admission_status
     ctx: Dict[str, str] = {"line_id": ""}
@@ -1789,10 +2022,11 @@ def wr2_create_monthly_passport_with_overrides(
             return "APPROVED_BY_OVERRIDE"
         return status
 
+    st.session_state[WR2_SESSION_FORMING] = True
     monthly_passport_service._read_override_from_queue = _patched_read_override
     monthly_passport_service._resolve_admission_status = _patched_resolve
     try:
-        return create_monthly_passport(
+        summary = create_monthly_passport(
             project_code=project_code,
             month_key=month_key,
             created_by=created_by,
@@ -1800,14 +2034,41 @@ def wr2_create_monthly_passport_with_overrides(
     finally:
         monthly_passport_service._read_override_from_queue = original_read
         monthly_passport_service._resolve_admission_status = original_resolve
+        st.session_state[WR2_SESSION_FORMING] = False
+
+    if not isinstance(summary, dict):
+        return empty_summary
+
+    summary.setdefault("warnings", [])
+    summary["expected_included_count"] = expected_included_count
+    created_lines = int(summary.get("created_lines") or summary.get("current_rows") or 0)
+    if summary.get("status") in ("created", "rebuilt") and created_lines != expected_included_count:
+        included_boqs = {
+            display_dash(row.get("boq_code"))
+            for row in inclusion_rows
+        }
+        missing_hint = (
+            f"Ожидалось строк драфта: {expected_included_count}, "
+            f"в паспорт записано: {created_lines}. "
+            f"BOQ в драфте: {', '.join(sorted(included_boqs))}."
+        )
+        summary["warnings"].append(
+            "Расхождение состава драфта и паспорта. " + missing_hint
+        )
+    return summary
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def build_war_room_read_model(
     constraints_df: pd.DataFrame,
     v2_df: pd.DataFrame,
     queue_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    """1 строка = 1 plan_line_id. v2 first, legacy queue fallback."""
+    """1 строка = 1 plan_line_id. v2 first, legacy queue fallback.
+
+    Pure read-model builder (no session_state, no Supabase writes).
+    Cached for Streamlit reruns; invalidate via clear_war_room_data_caches().
+    """
     constraints_by_line = build_constraints_by_line_id(constraints_df)
     plan_meta: Dict[str, Dict[str, Any]] = {}
 
@@ -1935,7 +2196,17 @@ def build_war_room_read_model(
     if not rows:
         return pd.DataFrame()
     result = pd.DataFrame(rows)
-    return result.sort_values(["_sort", "plan_value_num"], ascending=[True, False])
+    return result.sort_values(
+        ["_sort", "plan_value_num"], ascending=[True, False]
+    ).copy()
+
+
+def clear_war_room_data_caches() -> None:
+    """Точечная инвалидация read-model / loader caches (без глобального clear)."""
+    load_constraints.clear()
+    load_v2_plan_lines.clear()
+    load_review_queue.clear()
+    build_war_room_read_model.clear()
 
 
 def apply_war_room_plan_filters(
@@ -2386,7 +2657,10 @@ def render_war_room_v3_filters(
     }
 
 
-def render_war_room_v3_unified_registry(board_df: pd.DataFrame) -> Optional[str]:
+def render_war_room_v3_unified_registry(
+    board_df: pd.DataFrame,
+    constraints_df: pd.DataFrame,
+) -> Optional[str]:
     st.markdown("### Единый реестр кодов месяца")
     st.caption(
         "Полный реестр месячного плана по итогу допуска. "
@@ -2397,7 +2671,7 @@ def render_war_room_v3_unified_registry(board_df: pd.DataFrame) -> Optional[str]
         st.info("Нет кодов по выбранным фильтрам.")
         return st.session_state.get(WR2_SESSION_SELECTED)
 
-    registry_df = wr2_build_unified_registry_df(board_df)
+    registry_df = wr2_build_unified_registry_df(board_df, constraints_df)
     if registry_df.empty:
         st.info("Нет кодов по выбранным фильтрам.")
         return st.session_state.get(WR2_SESSION_SELECTED)
@@ -3223,7 +3497,8 @@ def render_war_room_v3(
     v2_df: pd.DataFrame,
     queue_df: pd.DataFrame,
 ) -> None:
-    full_board = build_war_room_read_model(constraints_df, v2_df, queue_df)
+    with stage("build war room read model"):
+        full_board = build_war_room_read_model(constraints_df, v2_df, queue_df)
     if full_board.empty:
         st.info(
             "Нет кодов для управленческих решений. Отправьте план из конструктора "
@@ -3232,33 +3507,37 @@ def render_war_room_v3(
         return
 
     wr2_init_passport_session()
-    filters = render_war_room_v3_filters(full_board, constraints_df, v2_df)
-    board_df = apply_war_room_plan_filters(
-        full_board,
-        project=filters["project"],
-        month=filters["month"],
-        queue=filters["queue"],
-        title=filters["title"],
-        discipline=filters["discipline"],
-        department=filters["department"],
-        outcome=filters["outcome"],
-        check_status=filters["check_status"],
-        overdue_only=filters["overdue_only"],
-        search_boq=filters["search_boq"],
-    )
-    wr2_sync_auto_admitted_composition(board_df)
-    st.session_state["wr2_passport_board_df"] = board_df.copy()
+    with stage("filters + apply filters"):
+        filters = render_war_room_v3_filters(full_board, constraints_df, v2_df)
+        board_df = apply_war_room_plan_filters(
+            full_board,
+            project=filters["project"],
+            month=filters["month"],
+            queue=filters["queue"],
+            title=filters["title"],
+            discipline=filters["discipline"],
+            department=filters["department"],
+            outcome=filters["outcome"],
+            check_status=filters["check_status"],
+            overdue_only=filters["overdue_only"],
+            search_boq=filters["search_boq"],
+        )
+        wr2_sync_auto_admitted_composition(board_df)
+        st.session_state["wr2_passport_board_df"] = board_df.copy()
 
-    render_war_room_v3_summary(board_df)
-    selected_pid = render_war_room_v3_unified_registry(board_df)
+    with stage("render summary + registry"):
+        render_war_room_v3_summary(board_df)
+        selected_pid = render_war_room_v3_unified_registry(board_df, constraints_df)
     st.markdown("---")
-    render_war_room_v3_management_workspace(board_df, selected_pid)
+    with stage("render management workspace"):
+        render_war_room_v3_management_workspace(board_df, selected_pid)
     st.markdown("---")
-    render_war_room_v3_obligation_draft(
-        filters["project"],
-        filters["month"],
-        board_df,
-    )
+    with stage("render obligation draft"):
+        render_war_room_v3_obligation_draft(
+            filters["project"],
+            filters["month"],
+            board_df,
+        )
 
 
 def filter_options(df: pd.DataFrame, col: str) -> List[str]:
@@ -4046,20 +4325,28 @@ def _render_passport_summary(
     project_display = project_code or "—"
     month_display = month_key or "—"
 
-    if status == "created":
+    if status in ("created", "rebuilt"):
         st.session_state[WR2_SESSION_FORMED] = True
         st.session_state[WR2_SESSION_DRAFT] = False
-        st.success("Месячное обязательство сформировано и передано в паспорт месяца.")
+        if status == "rebuilt":
+            st.success("Паспорт месяца актуализирован.")
+        else:
+            st.success("Месячное обязательство сформировано и передано в паспорт месяца.")
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("passport_id", passport_id)
         c2.metric("project_code", project_display)
         c3.metric("month_key", month_display)
-        c4.metric("Строк включено", summary.get("created_lines", 0))
-        c5, c6 = st.columns(2)
-        c5.metric("Стоимость", money_ru(summary.get("total_value")))
-        c6.metric(
-            "Трудозатраты, ч",
-            f"{safe_num(summary.get('total_hours')):,.1f}".replace(",", " "),
+        c4.metric(
+            "Строк включено",
+            summary.get("current_rows", summary.get("created_lines", 0)),
+        )
+        c5, c6, c7 = st.columns(3)
+        c5.metric("Было строк", summary.get("previous_rows", 0))
+        c6.metric("Стало строк", summary.get("current_rows", summary.get("created_lines", 0)))
+        c7.metric("Стоимость", money_ru(summary.get("total_value")))
+        st.caption(
+            f"Трудозатраты, ч: "
+            f"{safe_num(summary.get('total_hours')):,.1f}".replace(",", " ")
         )
         st.info(
             "Данные переданы в Page 12 «Паспорт месяца». Следующий этап — итоговая "
@@ -4067,16 +4354,22 @@ def _render_passport_summary(
         )
         st.caption(
             "Откройте Page 12 «Паспорт месяца» в боковом меню и выберите тот же "
-            f"проект ({project_display}) и месяц ({month_display})."
+            f"проект ({project_display}) и месяц ({month_display}). "
+            "Кэш Page 12 может обновляться до ~5 минут (ttl=300)."
         )
         if passport_id != "—" and project_code and month_key:
             for check in wr2_verify_passport_in_storage(
                 passport_id, project_code, month_key
             ):
                 st.success(f"✓ {check}")
-        st.cache_data.clear()
+        # No global st.cache_data.clear(); War Room loaders unchanged by passport write.
+        # Page 12 load_passport_dataset is not imported here (avoid circular coupling).
     elif status == "already_exists":
-        st.info("Паспорт месяца для этого проекта и месяца уже существует.")
+        st.info(
+            "Паспорт месяца уже существует. Повторное формирование должно "
+            "актуализировать состав (rebuilt). Если видите это сообщение — "
+            "проверьте, что migration replace_monthly_passport применена."
+        )
         c1, c2, c3 = st.columns(3)
         c1.metric("passport_id", passport_id)
         c2.metric("project_code", project_display)
@@ -4084,10 +4377,15 @@ def _render_passport_summary(
         st.caption(
             "Откройте Page 12 «Паспорт месяца» и выберите проект и месяц для просмотра."
         )
-    elif status in ("no_eligible_lines", "no_source_rows", "no_approved_lines"):
+    elif status in ("no_eligible_lines", "no_source_rows", "no_approved_lines", "validation_error"):
         st.warning("Нет строк, готовых для формирования паспорта месяца")
     else:
         st.error(f"Не удалось сформировать паспорт (status={status}).")
+
+    warnings = summary.get("warnings") or []
+    if warnings:
+        for warn in warnings:
+            st.warning(warn)
 
     errors = summary.get("errors") or []
     if errors:
@@ -4345,6 +4643,7 @@ def render_legacy_war_room(
 
 
 def main() -> None:
+    start_page("23 War Room")
     st.title("Управление решениями по месячному плану")
     st.caption(
         "Управленческий контур после допуска отделов. "
@@ -4352,15 +4651,20 @@ def main() -> None:
         "здесь принимаются решения по включению кодов в паспорт месяца."
     )
 
-    base_df = load_constraints()
+    with stage("load constraints"):
+        base_df = load_constraints()
     if base_df.empty:
         st.info(EMPTY_MSG)
+        finish_page()
         return
 
-    v2_df = load_v2_plan_lines()
-    queue_df = load_review_queue()
+    with stage("load v2 plan lines"):
+        v2_df = load_v2_plan_lines()
+    with stage("load review queue"):
+        queue_df = load_review_queue()
 
-    render_war_room_v3(base_df, v2_df, queue_df)
+    with stage("render war room v3"):
+        render_war_room_v3(base_df, v2_df, queue_df)
 
     with st.expander(
         "Аналитика ограничений",
@@ -4428,6 +4732,9 @@ def main() -> None:
             resolution_sel,
             overdue_only,
         )
+
+
+    finish_page()
 
 
 if __name__ == "__main__":

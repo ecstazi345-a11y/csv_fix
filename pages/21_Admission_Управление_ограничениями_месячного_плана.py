@@ -17,6 +17,7 @@ from services.constraint_display import (
     registry_specific_block_reason,
 )
 from services.constraints_loader import fetch_all_constraints
+from services.perf_audit import finish_page, stage, start_page
 from services.supabase_client import supabase
 
 load_dotenv()
@@ -1423,32 +1424,98 @@ def load_v2_plan_lines_for_constraints(line_ids: Tuple[str, ...]) -> pd.DataFram
 
     merged: Dict[str, Dict[str, Any]] = {}
     chunk_size = 200
+    candidate_columns = list(
+        dict.fromkeys(V2_PLAN_LINE_BASE_COLUMNS + V2_PLAN_LINE_OPTIONAL_COLUMNS)
+    )
+
+    def _fetch_chunk(select_cols: List[str], chunk: List[str], label: str) -> List[Dict[str, Any]]:
+        import time as _time
+
+        from services.perf_audit import log_supabase_query, perf_audit_enabled
+
+        t0 = _time.perf_counter()
+        response = (
+            supabase.table(V2_PLAN_LINES_TABLE)
+            .select(",".join(select_cols))
+            .in_("plan_line_id", chunk)
+            .execute()
+        )
+        batch = response.data or []
+        if perf_audit_enabled():
+            log_supabase_query(
+                label,
+                _time.perf_counter() - t0,
+                len(batch),
+            )
+        return batch
+
+    def _probe_select_columns() -> List[str]:
+        """Resolve a single working select list (avoid 5 sequential queries per chunk)."""
+        try:
+            (
+                supabase.table(V2_PLAN_LINES_TABLE)
+                .select(",".join(candidate_columns))
+                .limit(1)
+                .execute()
+            )
+            return candidate_columns
+        except Exception:  # noqa: BLE001
+            pass
+
+        working = list(V2_PLAN_LINE_BASE_COLUMNS)
+        try:
+            (
+                supabase.table(V2_PLAN_LINES_TABLE)
+                .select(",".join(working))
+                .limit(1)
+                .execute()
+            )
+        except Exception:  # noqa: BLE001
+            return working
+
+        for optional_col in V2_PLAN_LINE_OPTIONAL_COLUMNS:
+            trial = working + [optional_col]
+            try:
+                (
+                    supabase.table(V2_PLAN_LINES_TABLE)
+                    .select(",".join(trial))
+                    .limit(1)
+                    .execute()
+                )
+                working = trial
+            except Exception:  # noqa: BLE001
+                # TODO v2 persistence: system/iwp must be saved from 10B to monthly_plan_lines_v2.
+                continue
+        return working
+
+    select_columns = _probe_select_columns()
 
     for offset in range(0, len(unique_ids), chunk_size):
         chunk = unique_ids[offset : offset + chunk_size]
         try:
-            response = (
-                supabase.table(V2_PLAN_LINES_TABLE)
-                .select(",".join(V2_PLAN_LINE_BASE_COLUMNS))
-                .in_("plan_line_id", chunk)
-                .execute()
-            )
-            _merge_v2_plan_line_rows(merged, response.data or [])
+            batch = _fetch_chunk(select_columns, chunk, V2_PLAN_LINES_TABLE)
+            _merge_v2_plan_line_rows(merged, batch)
         except Exception:  # noqa: BLE001
-            continue
-
-        for optional_col in V2_PLAN_LINE_OPTIONAL_COLUMNS:
+            # Last-resort fallback: base then optional columns one-by-one.
             try:
-                response = (
-                    supabase.table(V2_PLAN_LINES_TABLE)
-                    .select(f"plan_line_id,{optional_col}")
-                    .in_("plan_line_id", chunk)
-                    .execute()
+                batch = _fetch_chunk(
+                    list(V2_PLAN_LINE_BASE_COLUMNS),
+                    chunk,
+                    V2_PLAN_LINES_TABLE,
                 )
-                _merge_v2_plan_line_rows(merged, response.data or [])
+                _merge_v2_plan_line_rows(merged, batch)
             except Exception:  # noqa: BLE001
-                # TODO v2 persistence: system/iwp must be saved from 10B to monthly_plan_lines_v2.
                 continue
+            for optional_col in V2_PLAN_LINE_OPTIONAL_COLUMNS:
+                try:
+                    batch = _fetch_chunk(
+                        ["plan_line_id", optional_col],
+                        chunk,
+                        f"{V2_PLAN_LINES_TABLE}({optional_col})",
+                    )
+                    _merge_v2_plan_line_rows(merged, batch)
+                except Exception:  # noqa: BLE001
+                    continue
 
     if not merged:
         return pd.DataFrame()
@@ -6137,14 +6204,14 @@ def render_workbench_queue_row(
             if err:
                 st.error(err)
             else:
-                st.cache_data.clear()
+                clear_admission_constraint_caches()
                 st.rerun()
         if ar2.button("Заблокировать", key=f"{prefix}_hold", use_container_width=True):
             err = apply_check_quick_action(row, "hold", saver_name, action_comment)
             if err:
                 st.warning(err)
             else:
-                st.cache_data.clear()
+                clear_admission_constraint_caches()
                 st.rerun()
         ar3, ar4 = st.columns(2)
         if ar3.button("Уточнить", key=f"{prefix}_warn", use_container_width=True):
@@ -6152,7 +6219,7 @@ def render_workbench_queue_row(
             if err:
                 st.warning(err)
             else:
-                st.cache_data.clear()
+                clear_admission_constraint_caches()
                 st.rerun()
         detail_open = st.session_state.get(WORKBENCH_DETAIL_CID_KEY) == constraint_id
         detail_label = "Скрыть" if detail_open else "Подробнее"
@@ -6788,7 +6855,7 @@ def render_edit_card(row: pd.Series) -> None:
             st.error(err)
         else:
             st.success("Ограничение обновлено")
-            st.cache_data.clear()
+            clear_admission_constraint_caches()
             st.rerun()
 
 
@@ -6974,6 +7041,7 @@ def render_admission_secondary_panels(
 
 
 def main() -> None:
+    start_page("21 Admission")
     inject_admission_page_styles()
 
     st.title("Контур допуска месячного плана")
@@ -6982,22 +7050,27 @@ def main() -> None:
         "Каждый отдел допускает строки в своей зоне ответственности перед передачей в War Room."
     )
 
-    base_df = load_constraints()
+    with stage("load constraints"):
+        base_df = load_constraints()
     if base_df.empty:
         st.info(
             "Строк в допуске пока нет. Отправьте план из "
             "10B Конструктора месячного плана v2."
         )
+        finish_page()
         return
 
-    packages_base = build_package_dataframe(base_df)
+    with stage("build package dataframe"):
+        packages_base = build_package_dataframe(base_df)
     line_ids = tuple(
         safe_str(line_id)
         for line_id in packages_base.get("line_id", pd.Series(dtype=str)).tolist()
         if safe_str(line_id)
     )
-    v2_lines_df = load_v2_plan_lines_for_constraints(line_ids)
-    packages_enriched = enrich_packages_with_v2_lines(packages_base, v2_lines_df)
+    with stage("load v2 plan lines for packages"):
+        v2_lines_df = load_v2_plan_lines_for_constraints(line_ids)
+    with stage("enrich packages with v2"):
+        packages_enriched = enrich_packages_with_v2_lines(packages_base, v2_lines_df)
 
     check_status_opts = filter_options_ru(base_df, "check_status", CHECK_STATUS_RU)
 
@@ -7101,14 +7174,17 @@ def main() -> None:
         overdue_only,
     )
 
-    render_admission_plan_list_module(packages_df, scope_df)
-    render_direct_admission_by_department_module(queue_df, packages_df, department_sel)
+    with stage("render admission modules"):
+        render_admission_plan_list_module(packages_df, scope_df)
+        render_direct_admission_by_department_module(queue_df, packages_df, department_sel)
 
-    # Legacy-блок деталей и ручного редактирования проверки временно скрыт из UI.
-    # Основной контур допуска — «Непосредственный допуск по отделам».
-    # render_admission_secondary_panels(packages_df, scope_df, queue_df, department_sel)
+        # Legacy-блок деталей и ручного редактирования проверки временно скрыт из UI.
+        # Основной контур допуска — «Непосредственный допуск по отделам».
+        # render_admission_secondary_panels(packages_df, scope_df, queue_df, department_sel)
 
-    render_decision_registry_module(queue_df, v2_lines_df)
+        render_decision_registry_module(queue_df, v2_lines_df)
+
+    finish_page()
 
 
 if __name__ == "__main__":

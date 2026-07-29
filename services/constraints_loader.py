@@ -20,7 +20,13 @@ def fetch_all_constraints(
 
     rows: list[dict[str, Any]] = []
     offset = 0
+    page_num = 0
+    import time as _time
+    from services.perf_audit import log_supabase_query, perf_audit_enabled
+
+    t_all = _time.perf_counter() if perf_audit_enabled() else 0.0
     while True:
+        t_batch = _time.perf_counter()
         response = (
             client.table(table)
             .select("*")
@@ -28,8 +34,18 @@ def fetch_all_constraints(
             .execute()
         )
         batch = list(response.data or [])
+        page_num += 1
+        if perf_audit_enabled():
+            log_supabase_query(
+                table,
+                _time.perf_counter() - t_batch,
+                len(batch),
+                pages=page_num,
+            )
         rows.extend(batch)
         if len(batch) < page_size:
             break
         offset += page_size
+    if perf_audit_enabled() and page_num > 1:
+        log_supabase_query(table, _time.perf_counter() - t_all, len(rows), pages=page_num)
     return rows

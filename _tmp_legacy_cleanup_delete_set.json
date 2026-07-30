@@ -1,0 +1,495 @@
+{
+  "draft_id": "661d5ffe-5851-4a27-8b4b-e01d16929798",
+  "keep_line_id": "c90c5f21-e9e5-45c8-93e2-940dbc4fe862",
+  "delete_set": [
+    {
+      "label": "B1",
+      "legacy_index": 1,
+      "group": "B",
+      "line_id": "4280dbdc-aebb-4256-a731-098065edf19c",
+      "boq": "2041-01-26-22",
+      "qty": 71.21,
+      "crew": "АСИ-12",
+      "facility": "16160-13",
+      "reason": "Group B business audit M3: exact/near match already SENT in plan; save/restore technical tail",
+      "related_plan_line_ids": [
+        "21088d49-f180-4623-8e8d-1247489356e6",
+        "376fa0ec-dd52-4087-9656-a5f8d3acba6e",
+        "ddd4584e-c9da-47ce-83d5-13a00cf26164",
+        "5c982a12-5cac-4aa1-96bf-ac6d93fff6dc"
+      ]
+    },
+    {
+      "label": "A2",
+      "legacy_index": 2,
+      "group": "A",
+      "line_id": "481363ed-955f-46ff-8969-475c1c3deecc",
+      "boq": "1500-02-04-02",
+      "qty": 300.0,
+      "crew": "АСИ-8",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "b6471349-e0d3-4285-9328-e8ead01cee4b"
+      ]
+    },
+    {
+      "label": "A3",
+      "legacy_index": 3,
+      "group": "A",
+      "line_id": "8898f66f-7f55-4ae4-b146-57a1ac998f6a",
+      "boq": "1500-05-09-01",
+      "qty": 500.0,
+      "crew": "АСИ-9",
+      "facility": "16160-17",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "2ac41948-3913-4dbb-931a-447e23c87b5f"
+      ]
+    },
+    {
+      "label": "D4",
+      "legacy_index": 4,
+      "group": "D",
+      "line_id": "9c548492-628a-4179-a644-62ac420b65a3",
+      "boq": "1500-03-01-02",
+      "qty": 520.0,
+      "crew": "АСИ-13",
+      "facility": "16160-13",
+      "reason": "Group D: ambiguous multi-match plan duplicates; legacy tail, do not restore",
+      "related_plan_line_ids": [
+        "9eb2ed48-ecb4-4033-b095-3a646d4c2402",
+        "6937aa11-8a42-46eb-ae6c-d730e57a91d5"
+      ]
+    },
+    {
+      "label": "B5",
+      "legacy_index": 5,
+      "group": "B",
+      "line_id": "49362e64-d137-4f95-b6eb-669ac68a45af",
+      "boq": "1500-02-05-02",
+      "qty": 299.0,
+      "crew": "АСИ-13",
+      "facility": "16160-13",
+      "reason": "Group B business audit M3: exact/near match already SENT in plan; save/restore technical tail",
+      "related_plan_line_ids": [
+        "8ac44357-9683-4aa5-be34-ef4322b3cb3a"
+      ]
+    },
+    {
+      "label": "B6",
+      "legacy_index": 6,
+      "group": "B",
+      "line_id": "5677541c-1e70-4431-9093-0d374ed58bf0",
+      "boq": "1500-02-05-03",
+      "qty": 178.0,
+      "crew": "АСИ-13",
+      "facility": "16160-13",
+      "reason": "Group B business audit M3: exact/near match already SENT in plan; save/restore technical tail",
+      "related_plan_line_ids": [
+        "d4618bf2-611a-43bc-b7ce-2b49da54647a"
+      ]
+    },
+    {
+      "label": "B7",
+      "legacy_index": 7,
+      "group": "B",
+      "line_id": "f1bf6b49-e80a-4f84-9f55-614428106cd6",
+      "boq": "1500-03-01-01",
+      "qty": 2365.0,
+      "crew": "АСИ-13",
+      "facility": "16160-13",
+      "reason": "Group B business audit M3: exact/near match already SENT in plan; save/restore technical tail",
+      "related_plan_line_ids": [
+        "9170760c-c15c-46fd-9974-7da7a1ad57c8"
+      ]
+    },
+    {
+      "label": "B8",
+      "legacy_index": 8,
+      "group": "B",
+      "line_id": "a72017cc-e9fd-4aad-ab1a-75c349d47f85",
+      "boq": "1500-05-02-04",
+      "qty": 10.0,
+      "crew": "АСИ-19",
+      "facility": "16160-13",
+      "reason": "Group B exact-duplicate draft twin of B9; technical legacy tail; related plan already SENT (same scope as B9)",
+      "related_plan_line_ids": [
+        "63b2a399-3278-4fe3-8633-7e6ae106b871",
+        "c79d3aa9-2fc0-408a-aab7-8ebbd14f1182"
+      ]
+    },
+    {
+      "label": "B9",
+      "legacy_index": 9,
+      "group": "B",
+      "line_id": "16486e86-d338-401c-9daf-ee7d7d17f933",
+      "boq": "1500-05-02-04",
+      "qty": 10.0,
+      "crew": "АСИ-19",
+      "facility": "16160-13",
+      "reason": "Group B business audit M3: exact/near match already SENT in plan; save/restore technical tail",
+      "related_plan_line_ids": [
+        "63b2a399-3278-4fe3-8633-7e6ae106b871",
+        "c79d3aa9-2fc0-408a-aab7-8ebbd14f1182"
+      ]
+    },
+    {
+      "label": "B10",
+      "legacy_index": 10,
+      "group": "B",
+      "line_id": "c65de2cc-8fd7-466e-8494-c98c0c126a64",
+      "boq": "1500-05-03-03",
+      "qty": 11.0,
+      "crew": "АСИ-19",
+      "facility": "16160-13",
+      "reason": "Group B business audit M3: exact/near match already SENT in plan; save/restore technical tail",
+      "related_plan_line_ids": [
+        "cfde5650-c99d-4c6d-89f6-3ca4ea54cfeb"
+      ]
+    },
+    {
+      "label": "B11",
+      "legacy_index": 11,
+      "group": "B",
+      "line_id": "5136b0f9-d585-4e84-b849-56b6c3bbcb52",
+      "boq": "1500-05-09-01",
+      "qty": 104.0,
+      "crew": "АСИ-19",
+      "facility": "16160-13",
+      "reason": "Group B business audit M3: exact/near match already SENT in plan; save/restore technical tail",
+      "related_plan_line_ids": [
+        "5f880e8a-34cf-4406-863e-bc9647491d19",
+        "2ac41948-3913-4dbb-931a-447e23c87b5f"
+      ]
+    },
+    {
+      "label": "A12",
+      "legacy_index": 12,
+      "group": "A",
+      "line_id": "347c03a2-08ad-4f42-b50f-8181de569b86",
+      "boq": "1500-02-02-04",
+      "qty": 15.0,
+      "crew": "АСИ-15",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "5f0e6c1a-359f-497a-addc-7d9c1f8563fd"
+      ]
+    },
+    {
+      "label": "A13",
+      "legacy_index": 13,
+      "group": "A",
+      "line_id": "1c82d05b-5d7b-4783-b110-a9bfce6eb62f",
+      "boq": "1500-02-04-02",
+      "qty": 231.0,
+      "crew": "АСИ-15",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "1edee268-7f33-4876-9f2f-52e50c960dd2"
+      ]
+    },
+    {
+      "label": "A14",
+      "legacy_index": 14,
+      "group": "A",
+      "line_id": "560015f8-dac8-4722-a155-a684ae5fe484",
+      "boq": "1500-03-10-09",
+      "qty": 12.0,
+      "crew": "АСИ-19",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "8d9a0313-cbb2-475a-bcab-1df9af4400c9"
+      ]
+    },
+    {
+      "label": "A15",
+      "legacy_index": 15,
+      "group": "A",
+      "line_id": "4d06523c-b440-417e-b3fc-86ed0a77170c",
+      "boq": "1500-03-10-01",
+      "qty": 4.0,
+      "crew": "АСИ-19",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "cc3720d4-c449-49d4-a5b3-f394cf256c0f"
+      ]
+    },
+    {
+      "label": "A16",
+      "legacy_index": 16,
+      "group": "A",
+      "line_id": "4df3ec69-fb65-4d5a-a3c4-b8a4d5c2561c",
+      "boq": "1500-09-06-02",
+      "qty": 14.0,
+      "crew": "АСИ-19",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "f2e56ad0-5a34-411c-bb43-edeb808cd293"
+      ]
+    },
+    {
+      "label": "A17",
+      "legacy_index": 17,
+      "group": "A",
+      "line_id": "eda4baa9-786b-409e-a89c-ba9fdb495dd9",
+      "boq": "1500-05-03-06",
+      "qty": 3.0,
+      "crew": "АСИ-19",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "39f7e231-3938-44a5-9cc2-cb80e293db60"
+      ]
+    },
+    {
+      "label": "A18",
+      "legacy_index": 18,
+      "group": "A",
+      "line_id": "668f12ff-4983-49b9-9bb0-9528079fbf43",
+      "boq": "1500-07-02-09",
+      "qty": 8.0,
+      "crew": "АСИ-13",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "def621cf-2662-4d91-8c49-803690e3e0ec"
+      ]
+    },
+    {
+      "label": "A19",
+      "legacy_index": 19,
+      "group": "A",
+      "line_id": "6e2db03b-1a2f-45a6-83ee-46247db1affa",
+      "boq": "1500-05-01-02",
+      "qty": 48.0,
+      "crew": "АСИ-15",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "c70ee054-78c3-4c31-b8f5-4f2c03e56e98"
+      ]
+    },
+    {
+      "label": "A20",
+      "legacy_index": 20,
+      "group": "A",
+      "line_id": "07f40fa8-5ac8-4c22-a19f-1d37ee7c6448",
+      "boq": "1500-02-04-01",
+      "qty": 342.0,
+      "crew": "АСИ-15",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "2e0cc716-ddc5-4c36-af64-6debda7fec7c"
+      ]
+    },
+    {
+      "label": "A21",
+      "legacy_index": 21,
+      "group": "A",
+      "line_id": "ac775cb4-70f8-4d3a-94cb-f0c0abe55c4c",
+      "boq": "1500-03-10-10",
+      "qty": 4.0,
+      "crew": "АСИ-19",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "37b409ce-ff39-41be-a312-6b7593669f10"
+      ]
+    },
+    {
+      "label": "D22",
+      "legacy_index": 22,
+      "group": "D",
+      "line_id": "ad554cc7-eb4d-4c39-b56d-ef78235e0c7c",
+      "boq": "1500-03-01-02",
+      "qty": 520.0,
+      "crew": "АСИ-13",
+      "facility": "16160-13",
+      "reason": "Group D: ambiguous multi-match plan duplicates; legacy tail, do not restore",
+      "related_plan_line_ids": [
+        "9eb2ed48-ecb4-4033-b095-3a646d4c2402",
+        "6937aa11-8a42-46eb-ae6c-d730e57a91d5"
+      ]
+    },
+    {
+      "label": "A23",
+      "legacy_index": 23,
+      "group": "A",
+      "line_id": "9854d163-4a79-45d8-ac79-eb50ab81cc7a",
+      "boq": "1500-03-02-04",
+      "qty": 100.0,
+      "crew": "АСИ-13",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "05d5b267-75d6-48df-a7d0-8465382c4b70"
+      ]
+    },
+    {
+      "label": "A24",
+      "legacy_index": 24,
+      "group": "A",
+      "line_id": "767909e7-e358-4cba-b7b0-b6723b715b30",
+      "boq": "1500-06-01-12",
+      "qty": 9.0,
+      "crew": "СУБпо-20",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "f458adab-4f77-4426-8072-73a64562b65e"
+      ]
+    },
+    {
+      "label": "A25",
+      "legacy_index": 25,
+      "group": "A",
+      "line_id": "4d98829f-b027-48a0-a858-01a634eaba5c",
+      "boq": "1500-04-06-02",
+      "qty": 347.0,
+      "crew": "АСИ-15",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "0bec2868-c24a-4988-98eb-257f874da52e"
+      ]
+    },
+    {
+      "label": "A26",
+      "legacy_index": 26,
+      "group": "A",
+      "line_id": "46f439bb-a829-4d4f-be2e-af630be55cc9",
+      "boq": "1500-03-10-07",
+      "qty": 186.0,
+      "crew": "АСИ-19",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "2ce1de69-83af-4377-a8d2-8a78da4323dd"
+      ]
+    },
+    {
+      "label": "A27",
+      "legacy_index": 27,
+      "group": "A",
+      "line_id": "8c17d045-30bf-4930-98e9-b9189952fbf0",
+      "boq": "1500-04-01-04",
+      "qty": 112.0,
+      "crew": "АСИ-13",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "41330c13-be9e-43ec-9bdd-cb25a04c6d28"
+      ]
+    },
+    {
+      "label": "A28",
+      "legacy_index": 28,
+      "group": "A",
+      "line_id": "f75774ee-b54d-4213-a07e-0b98c61155d5",
+      "boq": "1500-03-10-02",
+      "qty": 5.0,
+      "crew": "АСИ-19",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "89bc4103-41d5-47e3-a5c0-578daf4aa562"
+      ]
+    },
+    {
+      "label": "A29",
+      "legacy_index": 29,
+      "group": "A",
+      "line_id": "5b0496b7-126d-412f-b052-44e2751648a2",
+      "boq": "1500-05-03-08",
+      "qty": 22.0,
+      "crew": "СУБпо-20",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "10cdd80e-8016-41f2-9064-3f691900fef1"
+      ]
+    },
+    {
+      "label": "A30",
+      "legacy_index": 30,
+      "group": "A",
+      "line_id": "f856d039-5bc3-4f1d-92dd-6d11eb1b1c06",
+      "boq": "1500-04-01-01",
+      "qty": 568.0,
+      "crew": "АСИ-15",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "be70e576-854b-46ce-8503-88375eaca3da"
+      ]
+    },
+    {
+      "label": "A31",
+      "legacy_index": 31,
+      "group": "A",
+      "line_id": "0d0bf5c0-a5c1-4c9a-bdd2-ffbe655c3568",
+      "boq": "1500-02-04-03",
+      "qty": 78.0,
+      "crew": "АСИ-13",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "05eef51d-6238-4710-95fa-9fe28b831b43"
+      ]
+    },
+    {
+      "label": "A32",
+      "legacy_index": 32,
+      "group": "A",
+      "line_id": "1eb63335-91e0-4b5d-a933-cb42046a62a5",
+      "boq": "1500-03-10-08",
+      "qty": 178.0,
+      "crew": "АСИ-19",
+      "facility": "16160-13",
+      "reason": "Group A: already saved in monthly_plan_lines_v2 (exact match); legacy restore tail",
+      "related_plan_line_ids": [
+        "81c0902a-0d95-49d3-9f68-6f4c50bdf23e"
+      ]
+    },
+    {
+      "label": "B33",
+      "legacy_index": 33,
+      "group": "B",
+      "line_id": "b148f69b-5375-4ccc-825c-5c0589b4300a",
+      "boq": "2041-01-26-22",
+      "qty": 69.45,
+      "crew": "АСИ-17",
+      "facility": "16160-13",
+      "reason": "Group B business audit M3: exact/near match already SENT in plan; save/restore technical tail",
+      "related_plan_line_ids": [
+        "21088d49-f180-4623-8e8d-1247489356e6",
+        "376fa0ec-dd52-4087-9656-a5f8d3acba6e",
+        "ddd4584e-c9da-47ce-83d5-13a00cf26164",
+        "5c982a12-5cac-4aa1-96bf-ac6d93fff6dc"
+      ]
+    },
+    {
+      "label": "B34",
+      "legacy_index": 34,
+      "group": "B",
+      "line_id": "366ba576-2b4f-43c0-9708-d24bf458c5d7",
+      "boq": "2041-01-27-02",
+      "qty": 12.25,
+      "crew": "СУБпо-22",
+      "facility": "16160-13",
+      "reason": "Group B business audit M3: exact/near match already SENT in plan; save/restore technical tail",
+      "related_plan_line_ids": [
+        "b5805f25-f3e9-4bbe-8812-b7a9de99b25c",
+        "d168bf9c-c9f9-48ce-9ce1-9a56b8359013"
+      ]
+    }
+  ],
+  "live_count": 35
+}

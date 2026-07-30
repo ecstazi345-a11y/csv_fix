@@ -1,0 +1,244 @@
+{
+  "boq_master_api": {
+    "count": 0,
+    "sample_keys": [],
+    "n_data": 0
+  },
+  "boq_master": {
+    "error": "{'message': \"Could not find the table 'public.boq_master' in the schema cache\", 'code': 'PGRST205', 'hint': \"Perhaps you meant the table 'public.boq_master_api'\", 'details': None}"
+  },
+  "monthly_scope_picker_view": {
+    "count": 664,
+    "sample_keys": [
+      "project_code",
+      "facility_building",
+      "construction_discipline",
+      "boq_code",
+      "boq_name",
+      "unit_of_measure",
+      "total_project_qty",
+      "executed_qty_all_time",
+      "manual_executed_before_system",
+      "system_remaining_qty",
+      "manual_verified_remaining_qty",
+      "planning_remaining_qty",
+      "remaining_qty_source",
+      "unit_price",
+      "total_project_value",
+      "executed_value_all_time",
+      "planning_remaining_value",
+      "p50_hours_per_unit",
+      "p80_hours_per_unit",
+      "weighted_avg_hours_per_unit",
+      "confidence_level",
+      "manual_adjustment_reason",
+      "manual_adjustment_comment",
+      "norm_status",
+      "estimated_hours_p50_remaining",
+      "estimated_hours_p80_remaining",
+      "system_label",
+      "iwp_id"
+    ],
+    "n_data": 1
+  },
+  "cons_dp_intersection_top": [
+    [
+      "1500-03-01-01",
+      128,
+      28
+    ],
+    [
+      "2041-01-26-22",
+      96,
+      28
+    ],
+    [
+      "1470-01-04-01.О",
+      67,
+      7
+    ],
+    [
+      "2041-01-27-02",
+      60,
+      28
+    ],
+    [
+      "1470-01-12-01",
+      39,
+      28
+    ],
+    [
+      "2041-02-06-02",
+      35,
+      42
+    ],
+    [
+      "1470-03-02-01.О",
+      34,
+      7
+    ],
+    [
+      "1500-05-02-04",
+      30,
+      21
+    ],
+    [
+      "2041-02-06-01",
+      28,
+      49
+    ],
+    [
+      "1500-05-03-03",
+      28,
+      7
+    ],
+    [
+      "1800-01-02-01",
+      25,
+      14
+    ],
+    [
+      "1470-03-02-01",
+      23,
+      7
+    ],
+    [
+      "1500-02-05-03",
+      22,
+      28
+    ],
+    [
+      "1470-01-04-03",
+      20,
+      7
+    ],
+    [
+      "1470-01-04-02.ТС",
+      20,
+      7
+    ],
+    [
+      "1500-05-03-09",
+      17,
+      7
+    ],
+    [
+      "1500-05-09-01",
+      15,
+      28
+    ],
+    [
+      "1500-04-01-01",
+      14,
+      21
+    ],
+    [
+      "1500-05-02-07",
+      14,
+      14
+    ],
+    [
+      "1500-02-05-02",
+      13,
+      7
+    ]
+  ],
+  "cons_boq_n": 76,
+  "dp_boq_n": 106,
+  "inter_n": 37,
+  "pilot_boq": "1500-03-01-01",
+  "pilot_cons_raw": [
+    {
+      "project_code": "PRJ_001_БХК",
+      "boq_code": "1500-03-01-01",
+      "facility_building": "16160-13",
+      "construction_discipline": "Автоматизация"
+    }
+  ],
+  "pilot_dp_raw": [
+    {
+      "project_code": "PRJ_001_БХК",
+      "boq": "1500-03-01-01",
+      "facility_building": "16160-17 ",
+      "construction_discipline": "Автоматизация",
+      "unit_of_measure": "м / m"
+    },
+    {
+      "project_code": "PRJ_001_БХК",
+      "boq": "1500-03-01-01",
+      "facility_building": "16160-13 ",
+      "construction_discipline": "Автоматизация",
+      "unit_of_measure": "м / m"
+    }
+  ],
+  "scope_for_pilot": [
+    {
+      "project_code": "PRJ_001_БХК",
+      "boq_code": "1500-03-01-01",
+      "facility_building": "16160-13",
+      "construction_discipline": "Автоматизация",
+      "total_project_qty": 14402,
+      "total_project_value": 6636441.600000001,
+      "unit_of_measure": "м / m",
+      "executed_qty_all_time": 10426
+    },
+    {
+      "project_code": "PRJ_001_БХК",
+      "boq_code": "1500-03-01-01",
+      "facility_building": "16160-17",
+      "construction_discipline": "Автоматизация",
+      "total_project_qty": 23531,
+      "total_project_value": 10843084.8,
+      "unit_of_measure": "м / m",
+      "executed_qty_all_time": 15435
+    }
+  ],
+  "has_secret": true,
+  "master_secret": {
+    "count": 684,
+    "keys": [
+      "id",
+      "created_at",
+      "boq_code",
+      "description",
+      "facility_building",
+      "construction_discipline",
+      "unit_of_measure",
+      "project_qty",
+      "unit_price",
+      "total_value",
+      "name",
+      "project_name",
+      "unit_price_num",
+      "project_qty_num",
+      "total_value_num",
+      "airtable_record_id",
+      "is_deleted",
+      "last_synced_at",
+      "project_code"
+    ],
+    "sample": [
+      {
+        "id": 9529,
+        "created_at": "2026-05-14T09:14:13.405777+00:00",
+        "boq_code": "9000-00-16-005",
+        "description": "Испытание трубопроводов отопления",
+        "facility_building": "16160-13",
+        "construction_discipline": "Испытания трубопроводов",
+        "unit_of_measure": "м3",
+        "project_qty": "2",
+        "unit_price": null,
+        "total_value": null,
+        "name": "9000-00-16-005 – Испытание трубопроводов отопления",
+        "project_name": "БХК",
+        "unit_price_num": null,
+        "project_qty_num": 2,
+        "total_value_num": null,
+        "airtable_record_id": "recVs8pU78A7YDDe3",
+        "is_deleted": false,
+        "last_synced_at": "2026-07-30T11:08:35.746467+00:00",
+        "project_code": "PRJ_001_БХК"
+      }
+    ]
+  }
+}

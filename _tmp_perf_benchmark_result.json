@@ -1,0 +1,52 @@
+{
+  "supabase_by_table": {
+    "monthly_plan_constraints_dashboard_v2": {
+      "seconds": 1.224,
+      "rows": 1141,
+      "requests": 2
+    },
+    "monthly_plan_lines_v2": {
+      "seconds": 0.131,
+      "rows": 105,
+      "requests": 1
+    },
+    "monthly_plan_review_queue": {
+      "seconds": 0.131,
+      "rows": 35,
+      "requests": 1
+    }
+  },
+  "supabase_total_seconds": 1.486,
+  "pandas_seconds": {
+    "21 enrich_dataframe": 0.713,
+    "21 build_package_dataframe": 0.936,
+    "21 load_v2_plan_lines_for_constraints": 1.164,
+    "21 enrich_packages_with_v2_lines": 0.132,
+    "23 build_war_room_read_model (cold)": 13.263,
+    "23 build_war_room_read_model (warm/cache)": 0.0,
+    "23 wr2_build_unified_registry_df": 0.409
+  },
+  "pandas_total_seconds_cold_war_room_path": 14.385,
+  "pandas_total_seconds_warm_war_room_path": 0.409,
+  "estimated_cold_server_seconds": 15.871,
+  "estimated_warm_rerun_server_seconds": 0.409,
+  "notes": [
+    "Streamlit widget render not measured",
+    "21 v2 loader uses 1 select/chunk (fallback to multi if column missing)",
+    "wr2_build_unified_registry_df no longer re-fetches constraints",
+    "build_war_room_read_model cached via @st.cache_data (stub caches by id)"
+  ],
+  "before_snapshot": {
+    "estimated_cold_server_seconds": 18.947,
+    "pandas_seconds": {
+      "21 enrich_dataframe": 0.683,
+      "21 build_package_dataframe": 1.066,
+      "21 load_v2_plan_lines_for_constraints": 1.615,
+      "21 enrich_packages_with_v2_lines": 0.161,
+      "23 build_war_room_read_model (cold)": 15.392,
+      "23 build_war_room_read_model (warm/cache)": 0.0,
+      "23 wr2_build_unified_registry_df": 0.52
+    },
+    "supabase_total_seconds": 2.353
+  }
+}

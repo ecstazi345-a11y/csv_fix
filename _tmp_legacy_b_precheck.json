@@ -1,0 +1,829 @@
+{
+  "migration_batch_id": "6409a57e-fa8c-41ff-8edc-96e495caf348",
+  "migration_reason": "legacy_group_b_client_line_uid_backfill",
+  "backed_up_at": "2026-07-28T10:01:37.293508Z",
+  "draft_id": "661d5ffe-5851-4a27-8b4b-e01d16929798",
+  "b8_b9": {
+    "exact_duplicate": true,
+    "diff_cols": [
+      "line_id",
+      "planned_at"
+    ],
+    "keeper_label": "B9",
+    "keeper_line_id": "16486e86-d338-401c-9daf-ee7d7d17f933",
+    "skip_label": "B8",
+    "skip_line_id": "a72017cc-e9fd-4aad-ab1a-75c349d47f85",
+    "same_created_at": true,
+    "selection_rule": "created_at equal -> min(line_id)"
+  },
+  "MIGRATE_B": [
+    {
+      "legacy_index": 1,
+      "line_id": "4280dbdc-aebb-4256-a731-098065edf19c",
+      "row": {
+        "line_id": "4280dbdc-aebb-4256-a731-098065edf19c",
+        "draft_id": "661d5ffe-5851-4a27-8b4b-e01d16929798",
+        "created_at": "2026-06-30T17:08:41.974508+00:00",
+        "updated_at": "2026-06-30T17:08:41.974508+00:00",
+        "project_code": "PRJ_001_БХК",
+        "month_key": "июль-2026",
+        "facility_building": "16160-13",
+        "construction_discipline": "Вентиляция",
+        "boq_code": "2041-01-26-22",
+        "boq_name": "Прокладка воздуховодов из листовой и оцинкованной стали класса Н (нормальные) и П (плотные)",
+        "unit_of_measure": "м2 / m2",
+        "crew_id": "АСИ-12",
+        "planned_qty": 71.21,
+        "unit_price": 6716.56,
+        "plan_value": 478286.2376,
+        "norm_scenario": "Реалистичная норма",
+        "selected_hours_per_unit": 2.85714285714286,
+        "required_hours": 203.45714285714303,
+        "planning_remaining_qty": null,
+        "already_reserved_qty": null,
+        "available_qty_before_add": null,
+        "customer_accepted_qty": null,
+        "line_status": "DRAFT",
+        "comment": null,
+        "labor_rate_per_hour": 3000.0,
+        "labor_cost": 610371.4285714291,
+        "planned_by": null,
+        "planned_at": "2026-06-12T13:16:00.435637+00:00",
+        "client_line_uid": null,
+        "plan_line_id": null,
+        "parent_plan_line_id": null,
+        "line_origin": "INITIAL"
+      }
+    },
+    {
+      "legacy_index": 5,
+      "line_id": "49362e64-d137-4f95-b6eb-669ac68a45af",
+      "row": {
+        "line_id": "49362e64-d137-4f95-b6eb-669ac68a45af",
+        "draft_id": "661d5ffe-5851-4a27-8b4b-e01d16929798",
+        "created_at": "2026-06-30T17:08:41.974508+00:00",
+        "updated_at": "2026-06-30T17:08:41.974508+00:00",
+        "project_code": "PRJ_001_БХК",
+        "month_key": "июль-2026",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация",
+        "boq_code": "1500-02-05-02",
+        "boq_name": "Трубы стальные гофрированные (металлорукава) от М20 до М32",
+        "unit_of_measure": "м / m",
+        "crew_id": "АСИ-13",
+        "planned_qty": 299.0,
+        "unit_price": 785.0,
+        "plan_value": 234715.0,
+        "norm_scenario": "Реалистичная норма",
+        "selected_hours_per_unit": 0.711538461538462,
+        "required_hours": 212.75000000000014,
+        "planning_remaining_qty": null,
+        "already_reserved_qty": null,
+        "available_qty_before_add": null,
+        "customer_accepted_qty": null,
+        "line_status": "DRAFT",
+        "comment": null,
+        "labor_rate_per_hour": 3000.0,
+        "labor_cost": 638250.0000000005,
+        "planned_by": "Шарыпин Вадим",
+        "planned_at": "2026-06-25T06:13:22.371177+00:00",
+        "client_line_uid": null,
+        "plan_line_id": null,
+        "parent_plan_line_id": null,
+        "line_origin": "INITIAL"
+      }
+    },
+    {
+      "legacy_index": 6,
+      "line_id": "5677541c-1e70-4431-9093-0d374ed58bf0",
+      "row": {
+        "line_id": "5677541c-1e70-4431-9093-0d374ed58bf0",
+        "draft_id": "661d5ffe-5851-4a27-8b4b-e01d16929798",
+        "created_at": "2026-06-30T17:08:41.974508+00:00",
+        "updated_at": "2026-06-30T17:08:41.974508+00:00",
+        "project_code": "PRJ_001_БХК",
+        "month_key": "июль-2026",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация",
+        "boq_code": "1500-02-05-03",
+        "boq_name": "Трубы ПВХ гофрированные до М20",
+        "unit_of_measure": "м / m",
+        "crew_id": "АСИ-13",
+        "planned_qty": 178.0,
+        "unit_price": 732.75,
+        "plan_value": 130429.5,
+        "norm_scenario": "Реалистичная норма",
+        "selected_hours_per_unit": 0.250980392156863,
+        "required_hours": 44.674509803921616,
+        "planning_remaining_qty": null,
+        "already_reserved_qty": null,
+        "available_qty_before_add": null,
+        "customer_accepted_qty": null,
+        "line_status": "DRAFT",
+        "comment": null,
+        "labor_rate_per_hour": 3000.0,
+        "labor_cost": 134023.52941176484,
+        "planned_by": "Шарыпин Вадим",
+        "planned_at": "2026-06-25T06:14:37.321713+00:00",
+        "client_line_uid": null,
+        "plan_line_id": null,
+        "parent_plan_line_id": null,
+        "line_origin": "INITIAL"
+      }
+    },
+    {
+      "legacy_index": 7,
+      "line_id": "f1bf6b49-e80a-4f84-9f55-614428106cd6",
+      "row": {
+        "line_id": "f1bf6b49-e80a-4f84-9f55-614428106cd6",
+        "draft_id": "661d5ffe-5851-4a27-8b4b-e01d16929798",
+        "created_at": "2026-06-30T17:08:41.974508+00:00",
+        "updated_at": "2026-06-30T17:08:41.974508+00:00",
+        "project_code": "PRJ_001_БХК",
+        "month_key": "июль-2026",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация",
+        "boq_code": "1500-03-01-01",
+        "boq_name": "Монтаж контрольного кабеля, не бронированного, надземная прокладка, с медными жилами и весом до 1 кг на 1 м.п.",
+        "unit_of_measure": "м / m",
+        "crew_id": "АСИ-13",
+        "planned_qty": 2365.0,
+        "unit_price": 460.8,
+        "plan_value": 1089792.0,
+        "norm_scenario": "Реалистичная норма",
+        "selected_hours_per_unit": 0.0590405904059041,
+        "required_hours": 139.6309963099632,
+        "planning_remaining_qty": null,
+        "already_reserved_qty": null,
+        "available_qty_before_add": null,
+        "customer_accepted_qty": null,
+        "line_status": "DRAFT",
+        "comment": null,
+        "labor_rate_per_hour": 3000.0,
+        "labor_cost": 418892.9889298896,
+        "planned_by": "Шарыпин Вадим",
+        "planned_at": "2026-06-25T06:16:09.477567+00:00",
+        "client_line_uid": null,
+        "plan_line_id": null,
+        "parent_plan_line_id": null,
+        "line_origin": "INITIAL"
+      }
+    },
+    {
+      "legacy_index": 9,
+      "line_id": "16486e86-d338-401c-9daf-ee7d7d17f933",
+      "row": {
+        "line_id": "16486e86-d338-401c-9daf-ee7d7d17f933",
+        "draft_id": "661d5ffe-5851-4a27-8b4b-e01d16929798",
+        "created_at": "2026-06-30T17:08:41.974508+00:00",
+        "updated_at": "2026-06-30T17:08:41.974508+00:00",
+        "project_code": "PRJ_001_БХК",
+        "month_key": "июль-2026",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация",
+        "boq_code": "1500-05-02-04",
+        "boq_name": "Преобразователь /датчик дифференциального давления (с импульсной трубкой)",
+        "unit_of_measure": "шт. / pcs",
+        "crew_id": "АСИ-19",
+        "planned_qty": 10.0,
+        "unit_price": 21752.02,
+        "plan_value": 217520.2,
+        "norm_scenario": "Реалистичная норма",
+        "selected_hours_per_unit": 1.33333333333333,
+        "required_hours": 13.3333333333333,
+        "planning_remaining_qty": null,
+        "already_reserved_qty": null,
+        "available_qty_before_add": null,
+        "customer_accepted_qty": null,
+        "line_status": "DRAFT",
+        "comment": null,
+        "labor_rate_per_hour": 3000.0,
+        "labor_cost": 39999.9999999999,
+        "planned_by": "Шарыпин Вадим",
+        "planned_at": "2026-06-25T06:21:25.610033+00:00",
+        "client_line_uid": null,
+        "plan_line_id": null,
+        "parent_plan_line_id": null,
+        "line_origin": "INITIAL"
+      }
+    },
+    {
+      "legacy_index": 10,
+      "line_id": "c65de2cc-8fd7-466e-8494-c98c0c126a64",
+      "row": {
+        "line_id": "c65de2cc-8fd7-466e-8494-c98c0c126a64",
+        "draft_id": "661d5ffe-5851-4a27-8b4b-e01d16929798",
+        "created_at": "2026-06-30T17:08:41.974508+00:00",
+        "updated_at": "2026-06-30T17:08:41.974508+00:00",
+        "project_code": "PRJ_001_БХК",
+        "month_key": "июль-2026",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация",
+        "boq_code": "1500-05-03-03",
+        "boq_name": "Датчики температуры (электронный датчик, преобразователь температуры) на резьбовом соединении",
+        "unit_of_measure": "шт. / pcs",
+        "crew_id": "АСИ-19",
+        "planned_qty": 11.0,
+        "unit_price": 14678.5,
+        "plan_value": 161463.5,
+        "norm_scenario": "Реалистичная норма",
+        "selected_hours_per_unit": 2.0,
+        "required_hours": 22.0,
+        "planning_remaining_qty": null,
+        "already_reserved_qty": null,
+        "available_qty_before_add": null,
+        "customer_accepted_qty": null,
+        "line_status": "DRAFT",
+        "comment": null,
+        "labor_rate_per_hour": 3000.0,
+        "labor_cost": 66000.0,
+        "planned_by": "Шарыпин Вадим",
+        "planned_at": "2026-06-25T06:22:26.777803+00:00",
+        "client_line_uid": null,
+        "plan_line_id": null,
+        "parent_plan_line_id": null,
+        "line_origin": "INITIAL"
+      }
+    },
+    {
+      "legacy_index": 11,
+      "line_id": "5136b0f9-d585-4e84-b849-56b6c3bbcb52",
+      "row": {
+        "line_id": "5136b0f9-d585-4e84-b849-56b6c3bbcb52",
+        "draft_id": "661d5ffe-5851-4a27-8b4b-e01d16929798",
+        "created_at": "2026-06-30T17:08:41.974508+00:00",
+        "updated_at": "2026-06-30T17:08:41.974508+00:00",
+        "project_code": "PRJ_001_БХК",
+        "month_key": "июль-2026",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация",
+        "boq_code": "1500-05-09-01",
+        "boq_name": "Малогабаритная металлоконструкция, оцинкованная сталь",
+        "unit_of_measure": "кг / kg",
+        "crew_id": "АСИ-19",
+        "planned_qty": 104.0,
+        "unit_price": 424.02,
+        "plan_value": 44098.08,
+        "norm_scenario": "Реалистичная норма",
+        "selected_hours_per_unit": 0.260247234873129,
+        "required_hours": 27.065712426805415,
+        "planning_remaining_qty": null,
+        "already_reserved_qty": null,
+        "available_qty_before_add": null,
+        "customer_accepted_qty": null,
+        "line_status": "DRAFT",
+        "comment": null,
+        "labor_rate_per_hour": 3000.0,
+        "labor_cost": 81197.13728041625,
+        "planned_by": "Шарыпин Вадим",
+        "planned_at": "2026-06-25T06:24:12.308295+00:00",
+        "client_line_uid": null,
+        "plan_line_id": null,
+        "parent_plan_line_id": null,
+        "line_origin": "INITIAL"
+      }
+    },
+    {
+      "legacy_index": 33,
+      "line_id": "b148f69b-5375-4ccc-825c-5c0589b4300a",
+      "row": {
+        "line_id": "b148f69b-5375-4ccc-825c-5c0589b4300a",
+        "draft_id": "661d5ffe-5851-4a27-8b4b-e01d16929798",
+        "created_at": "2026-06-30T17:08:41.974508+00:00",
+        "updated_at": "2026-06-30T17:08:41.974508+00:00",
+        "project_code": "PRJ_001_БХК",
+        "month_key": "июль-2026",
+        "facility_building": "16160-13",
+        "construction_discipline": "Вентиляция",
+        "boq_code": "2041-01-26-22",
+        "boq_name": "Прокладка воздуховодов из листовой и оцинкованной стали класса Н (нормальные) и П (плотные)",
+        "unit_of_measure": "м2 / m2",
+        "crew_id": "АСИ-17",
+        "planned_qty": 69.45,
+        "unit_price": 6716.56,
+        "plan_value": 466465.09200000006,
+        "norm_scenario": "Реалистичная норма",
+        "selected_hours_per_unit": 7.41590909090909,
+        "required_hours": 515.0348863636364,
+        "planning_remaining_qty": null,
+        "already_reserved_qty": null,
+        "available_qty_before_add": null,
+        "customer_accepted_qty": null,
+        "line_status": "DRAFT",
+        "comment": null,
+        "labor_rate_per_hour": 3000.0,
+        "labor_cost": 1545104.6590909092,
+        "planned_by": "Тронин Виталий Андреевич",
+        "planned_at": "2026-06-30T16:20:51.238514+00:00",
+        "client_line_uid": null,
+        "plan_line_id": null,
+        "parent_plan_line_id": null,
+        "line_origin": "INITIAL"
+      }
+    },
+    {
+      "legacy_index": 34,
+      "line_id": "366ba576-2b4f-43c0-9708-d24bf458c5d7",
+      "row": {
+        "line_id": "366ba576-2b4f-43c0-9708-d24bf458c5d7",
+        "draft_id": "661d5ffe-5851-4a27-8b4b-e01d16929798",
+        "created_at": "2026-06-30T17:08:41.974508+00:00",
+        "updated_at": "2026-06-30T17:08:41.974508+00:00",
+        "project_code": "PRJ_001_БХК",
+        "month_key": "июль-2026",
+        "facility_building": "16160-13",
+        "construction_discipline": "Вентиляция",
+        "boq_code": "2041-01-27-02",
+        "boq_name": "Изоляция воздуховодов матами минераловатными из каменной ваты, с односторонним покрытием сеткой из стальной гальванизированной проволоки",
+        "unit_of_measure": "м3 / m3",
+        "crew_id": "СУБпо-22",
+        "planned_qty": 12.25,
+        "unit_price": 29424.79,
+        "plan_value": 360453.6775,
+        "norm_scenario": "Реалистичная норма",
+        "selected_hours_per_unit": 20.0,
+        "required_hours": 245.0,
+        "planning_remaining_qty": null,
+        "already_reserved_qty": null,
+        "available_qty_before_add": null,
+        "customer_accepted_qty": null,
+        "line_status": "DRAFT",
+        "comment": null,
+        "labor_rate_per_hour": 3000.0,
+        "labor_cost": 735000.0,
+        "planned_by": "Тронин Виталий Андреевич",
+        "planned_at": "2026-06-30T16:43:13.775389+00:00",
+        "client_line_uid": null,
+        "plan_line_id": null,
+        "parent_plan_line_id": null,
+        "line_origin": "INITIAL"
+      }
+    },
+    {
+      "legacy_index": 35,
+      "line_id": "c90c5f21-e9e5-45c8-93e2-940dbc4fe862",
+      "row": {
+        "line_id": "c90c5f21-e9e5-45c8-93e2-940dbc4fe862",
+        "draft_id": "661d5ffe-5851-4a27-8b4b-e01d16929798",
+        "created_at": "2026-06-30T17:08:41.974508+00:00",
+        "updated_at": "2026-06-30T17:08:41.974508+00:00",
+        "project_code": "PRJ_001_БХК",
+        "month_key": "июль-2026",
+        "facility_building": "16160-13",
+        "construction_discipline": "Теплоснабжение",
+        "boq_code": "1470-01-04-03",
+        "boq_name": "Трубы из углеродистой стали, до Ду 100, включая все фитинги",
+        "unit_of_measure": "м / m",
+        "crew_id": "АСИ-10",
+        "planned_qty": 132.6,
+        "unit_price": 8125.0,
+        "plan_value": 1077375.0,
+        "norm_scenario": "Реалистичная норма",
+        "selected_hours_per_unit": 3.0,
+        "required_hours": 397.79999999999995,
+        "planning_remaining_qty": null,
+        "already_reserved_qty": null,
+        "available_qty_before_add": null,
+        "customer_accepted_qty": null,
+        "line_status": "DRAFT",
+        "comment": null,
+        "labor_rate_per_hour": 3000.0,
+        "labor_cost": 1193399.9999999998,
+        "planned_by": "Тест драйв",
+        "planned_at": "2026-06-30T17:08:39.734592+00:00",
+        "client_line_uid": null,
+        "plan_line_id": null,
+        "parent_plan_line_id": null,
+        "line_origin": "INITIAL"
+      }
+    }
+  ],
+  "SKIP_B": [
+    {
+      "legacy_index": 8,
+      "line_id": "a72017cc-e9fd-4aad-ab1a-75c349d47f85",
+      "row": {
+        "line_id": "a72017cc-e9fd-4aad-ab1a-75c349d47f85",
+        "draft_id": "661d5ffe-5851-4a27-8b4b-e01d16929798",
+        "created_at": "2026-06-30T17:08:41.974508+00:00",
+        "updated_at": "2026-06-30T17:08:41.974508+00:00",
+        "project_code": "PRJ_001_БХК",
+        "month_key": "июль-2026",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация",
+        "boq_code": "1500-05-02-04",
+        "boq_name": "Преобразователь /датчик дифференциального давления (с импульсной трубкой)",
+        "unit_of_measure": "шт. / pcs",
+        "crew_id": "АСИ-19",
+        "planned_qty": 10.0,
+        "unit_price": 21752.02,
+        "plan_value": 217520.2,
+        "norm_scenario": "Реалистичная норма",
+        "selected_hours_per_unit": 1.33333333333333,
+        "required_hours": 13.3333333333333,
+        "planning_remaining_qty": null,
+        "already_reserved_qty": null,
+        "available_qty_before_add": null,
+        "customer_accepted_qty": null,
+        "line_status": "DRAFT",
+        "comment": null,
+        "labor_rate_per_hour": 3000.0,
+        "labor_cost": 39999.9999999999,
+        "planned_by": "Шарыпин Вадим",
+        "planned_at": "2026-06-25T06:19:43.509796+00:00",
+        "client_line_uid": null,
+        "plan_line_id": null,
+        "parent_plan_line_id": null,
+        "line_origin": "INITIAL"
+      }
+    }
+  ],
+  "LEGACY_DRAFT_DUPLICATES": [
+    {
+      "legacy_index": 8,
+      "line_id": "a72017cc-e9fd-4aad-ab1a-75c349d47f85",
+      "pair_keeper": "16486e86-d338-401c-9daf-ee7d7d17f933",
+      "reason": "exact_duplicate_of_B8_B9"
+    }
+  ],
+  "UNTOUCHED": {
+    "group_a": [
+      {
+        "legacy_index": 2,
+        "line_id": "481363ed-955f-46ff-8969-475c1c3deecc"
+      },
+      {
+        "legacy_index": 3,
+        "line_id": "8898f66f-7f55-4ae4-b146-57a1ac998f6a"
+      },
+      {
+        "legacy_index": 12,
+        "line_id": "347c03a2-08ad-4f42-b50f-8181de569b86"
+      },
+      {
+        "legacy_index": 13,
+        "line_id": "1c82d05b-5d7b-4783-b110-a9bfce6eb62f"
+      },
+      {
+        "legacy_index": 14,
+        "line_id": "560015f8-dac8-4722-a155-a684ae5fe484"
+      },
+      {
+        "legacy_index": 15,
+        "line_id": "4d06523c-b440-417e-b3fc-86ed0a77170c"
+      },
+      {
+        "legacy_index": 16,
+        "line_id": "4df3ec69-fb65-4d5a-a3c4-b8a4d5c2561c"
+      },
+      {
+        "legacy_index": 17,
+        "line_id": "eda4baa9-786b-409e-a89c-ba9fdb495dd9"
+      },
+      {
+        "legacy_index": 18,
+        "line_id": "668f12ff-4983-49b9-9bb0-9528079fbf43"
+      },
+      {
+        "legacy_index": 19,
+        "line_id": "6e2db03b-1a2f-45a6-83ee-46247db1affa"
+      },
+      {
+        "legacy_index": 20,
+        "line_id": "07f40fa8-5ac8-4c22-a19f-1d37ee7c6448"
+      },
+      {
+        "legacy_index": 21,
+        "line_id": "ac775cb4-70f8-4d3a-94cb-f0c0abe55c4c"
+      },
+      {
+        "legacy_index": 23,
+        "line_id": "9854d163-4a79-45d8-ac79-eb50ab81cc7a"
+      },
+      {
+        "legacy_index": 24,
+        "line_id": "767909e7-e358-4cba-b7b0-b6723b715b30"
+      },
+      {
+        "legacy_index": 25,
+        "line_id": "4d98829f-b027-48a0-a858-01a634eaba5c"
+      },
+      {
+        "legacy_index": 26,
+        "line_id": "46f439bb-a829-4d4f-be2e-af630be55cc9"
+      },
+      {
+        "legacy_index": 27,
+        "line_id": "8c17d045-30bf-4930-98e9-b9189952fbf0"
+      },
+      {
+        "legacy_index": 28,
+        "line_id": "f75774ee-b54d-4213-a07e-0b98c61155d5"
+      },
+      {
+        "legacy_index": 29,
+        "line_id": "5b0496b7-126d-412f-b052-44e2751648a2"
+      },
+      {
+        "legacy_index": 30,
+        "line_id": "f856d039-5bc3-4f1d-92dd-6d11eb1b1c06"
+      },
+      {
+        "legacy_index": 31,
+        "line_id": "0d0bf5c0-a5c1-4c9a-bdd2-ffbe655c3568"
+      },
+      {
+        "legacy_index": 32,
+        "line_id": "1eb63335-91e0-4b5d-a933-cb42046a62a5"
+      }
+    ],
+    "group_d": [
+      {
+        "legacy_index": 4,
+        "line_id": "9c548492-628a-4179-a644-62ac420b65a3"
+      },
+      {
+        "legacy_index": 22,
+        "line_id": "ad554cc7-eb4d-4c39-b56d-ef78235e0c7c"
+      }
+    ],
+    "snapshot": [
+      {
+        "line_id": "481363ed-955f-46ff-8969-475c1c3deecc",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-02-04-02",
+        "planned_qty": 300.0,
+        "crew_id": "АСИ-8"
+      },
+      {
+        "line_id": "8898f66f-7f55-4ae4-b146-57a1ac998f6a",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-05-09-01",
+        "planned_qty": 500.0,
+        "crew_id": "АСИ-9"
+      },
+      {
+        "line_id": "347c03a2-08ad-4f42-b50f-8181de569b86",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-02-02-04",
+        "planned_qty": 15.0,
+        "crew_id": "АСИ-15"
+      },
+      {
+        "line_id": "1c82d05b-5d7b-4783-b110-a9bfce6eb62f",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-02-04-02",
+        "planned_qty": 231.0,
+        "crew_id": "АСИ-15"
+      },
+      {
+        "line_id": "560015f8-dac8-4722-a155-a684ae5fe484",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-03-10-09",
+        "planned_qty": 12.0,
+        "crew_id": "АСИ-19"
+      },
+      {
+        "line_id": "4d06523c-b440-417e-b3fc-86ed0a77170c",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-03-10-01",
+        "planned_qty": 4.0,
+        "crew_id": "АСИ-19"
+      },
+      {
+        "line_id": "4df3ec69-fb65-4d5a-a3c4-b8a4d5c2561c",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-09-06-02",
+        "planned_qty": 14.0,
+        "crew_id": "АСИ-19"
+      },
+      {
+        "line_id": "eda4baa9-786b-409e-a89c-ba9fdb495dd9",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-05-03-06",
+        "planned_qty": 3.0,
+        "crew_id": "АСИ-19"
+      },
+      {
+        "line_id": "668f12ff-4983-49b9-9bb0-9528079fbf43",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-07-02-09",
+        "planned_qty": 8.0,
+        "crew_id": "АСИ-13"
+      },
+      {
+        "line_id": "6e2db03b-1a2f-45a6-83ee-46247db1affa",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-05-01-02",
+        "planned_qty": 48.0,
+        "crew_id": "АСИ-15"
+      },
+      {
+        "line_id": "07f40fa8-5ac8-4c22-a19f-1d37ee7c6448",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-02-04-01",
+        "planned_qty": 342.0,
+        "crew_id": "АСИ-15"
+      },
+      {
+        "line_id": "ac775cb4-70f8-4d3a-94cb-f0c0abe55c4c",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-03-10-10",
+        "planned_qty": 4.0,
+        "crew_id": "АСИ-19"
+      },
+      {
+        "line_id": "9854d163-4a79-45d8-ac79-eb50ab81cc7a",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-03-02-04",
+        "planned_qty": 100.0,
+        "crew_id": "АСИ-13"
+      },
+      {
+        "line_id": "767909e7-e358-4cba-b7b0-b6723b715b30",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-06-01-12",
+        "planned_qty": 9.0,
+        "crew_id": "СУБпо-20"
+      },
+      {
+        "line_id": "4d98829f-b027-48a0-a858-01a634eaba5c",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-04-06-02",
+        "planned_qty": 347.0,
+        "crew_id": "АСИ-15"
+      },
+      {
+        "line_id": "46f439bb-a829-4d4f-be2e-af630be55cc9",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-03-10-07",
+        "planned_qty": 186.0,
+        "crew_id": "АСИ-19"
+      },
+      {
+        "line_id": "8c17d045-30bf-4930-98e9-b9189952fbf0",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-04-01-04",
+        "planned_qty": 112.0,
+        "crew_id": "АСИ-13"
+      },
+      {
+        "line_id": "f75774ee-b54d-4213-a07e-0b98c61155d5",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-03-10-02",
+        "planned_qty": 5.0,
+        "crew_id": "АСИ-19"
+      },
+      {
+        "line_id": "5b0496b7-126d-412f-b052-44e2751648a2",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-05-03-08",
+        "planned_qty": 22.0,
+        "crew_id": "СУБпо-20"
+      },
+      {
+        "line_id": "f856d039-5bc3-4f1d-92dd-6d11eb1b1c06",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-04-01-01",
+        "planned_qty": 568.0,
+        "crew_id": "АСИ-15"
+      },
+      {
+        "line_id": "0d0bf5c0-a5c1-4c9a-bdd2-ffbe655c3568",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-02-04-03",
+        "planned_qty": 78.0,
+        "crew_id": "АСИ-13"
+      },
+      {
+        "line_id": "1eb63335-91e0-4b5d-a933-cb42046a62a5",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-03-10-08",
+        "planned_qty": 178.0,
+        "crew_id": "АСИ-19"
+      },
+      {
+        "line_id": "9c548492-628a-4179-a644-62ac420b65a3",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-03-01-02",
+        "planned_qty": 520.0,
+        "crew_id": "АСИ-13"
+      },
+      {
+        "line_id": "ad554cc7-eb4d-4c39-b56d-ef78235e0c7c",
+        "client_line_uid": null,
+        "line_origin": "INITIAL",
+        "parent_plan_line_id": null,
+        "plan_line_id": null,
+        "line_status": "DRAFT",
+        "boq_code": "1500-03-01-02",
+        "planned_qty": 520.0,
+        "crew_id": "АСИ-13"
+      }
+    ]
+  },
+  "plan_rows_prj_month_before": 124,
+  "ref_report": {
+    "a72017cc-e9fd-4aad-ab1a-75c349d47f85": {
+      "draft_lines_self_count": 1
+    },
+    "16486e86-d338-401c-9daf-ee7d7d17f933": {
+      "draft_lines_self_count": 1
+    },
+    "4280dbdc-aebb-4256-a731-098065edf19c": {
+      "draft_lines_self_count": 1
+    }
+  }
+}

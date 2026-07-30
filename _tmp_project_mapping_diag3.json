@@ -1,0 +1,558 @@
+{
+  "master_total": 684,
+  "master_active": 681,
+  "master_project_code_counts": {
+    "PRJ_001_БХК": 677,
+    "null": 4
+  },
+  "master_project_name_counts": {
+    "БХК": 681
+  },
+  "master_project_code_name_pairs": [
+    {
+      "project_code": "PRJ_001_БХК",
+      "project_name": "БХК",
+      "n": 677
+    },
+    {
+      "project_code": null,
+      "project_name": "БХК",
+      "n": 4
+    }
+  ],
+  "pilot_master_raw_rows": [
+    {
+      "project_code": "PRJ_001_БХК",
+      "project_name": "БХК",
+      "boq_code": "1500-03-01-01",
+      "facility_building": "16160-17",
+      "construction_discipline": "Автоматизация",
+      "project_qty_num": 23531,
+      "total_value_num": 10843084.8,
+      "unit_price_num": 460.8,
+      "unit_of_measure": "м / m"
+    },
+    {
+      "project_code": "PRJ_001_БХК",
+      "project_name": "БХК",
+      "boq_code": "1500-03-01-01",
+      "facility_building": "16160-13",
+      "construction_discipline": "Автоматизация",
+      "project_qty_num": 14402,
+      "total_value_num": 6636441.600000001,
+      "unit_price_num": 460.8,
+      "unit_of_measure": "м / m"
+    }
+  ],
+  "pilot_cons_raw_distinct": [
+    {
+      "project_code": "PRJ_001_БХК",
+      "boq_code": "1500-03-01-01",
+      "facility_building": "16160-13",
+      "construction_discipline": "Автоматизация",
+      "boq_name": "Монтаж контрольного кабеля, не бронированного, надземная прокладка, с медными жилами и весом до 1 кг на 1 м.п.",
+      "n_constraint_rows": 28
+    }
+  ],
+  "pilot_dp_raw_key_variants": [
+    {
+      "project_code": "PRJ_001_БХК",
+      "boq": "1500-03-01-01",
+      "facility_building": "16160-17 ",
+      "construction_discipline": "Автоматизация",
+      "unit_of_measure": "м / m"
+    },
+    {
+      "project_code": "PRJ_001_БХК",
+      "boq": "1500-03-01-01",
+      "facility_building": "16160-13 ",
+      "construction_discipline": "Автоматизация",
+      "unit_of_measure": "м / m"
+    }
+  ],
+  "join_matrix": [
+    {
+      "admission_grain": {
+        "project_code": "PRJ_001_БХК",
+        "boq_code": "1500-03-01-01",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация"
+      },
+      "proj_mode": "project_code exact",
+      "join_mode": "v1_proj_boq",
+      "master_rows": 2,
+      "dp_rows": 128,
+      "match_both": true,
+      "sum_project_qty_num": 37933.0,
+      "sum_total_value_num": 17479526.400000002,
+      "sum_quantity_today": 25861.0,
+      "sum_direct_work_hours": 2088.0,
+      "sum_ac_day_value": 6264000.0,
+      "ac_zero_or_null_rows": 1,
+      "master_uoms": [
+        "М / M"
+      ],
+      "dp_uoms": [
+        "М / M"
+      ],
+      "crews": [
+        "АСИ-13",
+        "АСИ-15",
+        "АСИ-28",
+        "СУБпо-18",
+        "СУБпо-20"
+      ],
+      "min_work_date": "2026-05-01",
+      "max_work_date": "2026-07-28"
+    },
+    {
+      "admission_grain": {
+        "project_code": "PRJ_001_БХК",
+        "boq_code": "1500-03-01-01",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация"
+      },
+      "proj_mode": "project_code exact",
+      "join_mode": "v2_proj_boq_fac",
+      "master_rows": 1,
+      "dp_rows": 69,
+      "match_both": true,
+      "sum_project_qty_num": 14402.0,
+      "sum_total_value_num": 6636441.600000001,
+      "sum_quantity_today": 10426.0,
+      "sum_direct_work_hours": 1056.0,
+      "sum_ac_day_value": 3168000.0,
+      "ac_zero_or_null_rows": 0,
+      "master_uoms": [
+        "М / M"
+      ],
+      "dp_uoms": [
+        "М / M"
+      ],
+      "crews": [
+        "АСИ-13",
+        "АСИ-15",
+        "АСИ-28",
+        "СУБпо-18"
+      ],
+      "min_work_date": "2026-05-01",
+      "max_work_date": "2026-07-27"
+    },
+    {
+      "admission_grain": {
+        "project_code": "PRJ_001_БХК",
+        "boq_code": "1500-03-01-01",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация"
+      },
+      "proj_mode": "project_code exact",
+      "join_mode": "v3_full",
+      "master_rows": 1,
+      "dp_rows": 69,
+      "match_both": true,
+      "sum_project_qty_num": 14402.0,
+      "sum_total_value_num": 6636441.600000001,
+      "sum_quantity_today": 10426.0,
+      "sum_direct_work_hours": 1056.0,
+      "sum_ac_day_value": 3168000.0,
+      "ac_zero_or_null_rows": 0,
+      "master_uoms": [
+        "М / M"
+      ],
+      "dp_uoms": [
+        "М / M"
+      ],
+      "crews": [
+        "АСИ-13",
+        "АСИ-15",
+        "АСИ-28",
+        "СУБпо-18"
+      ],
+      "min_work_date": "2026-05-01",
+      "max_work_date": "2026-07-27"
+    },
+    {
+      "admission_grain": {
+        "project_code": "PRJ_001_БХК",
+        "boq_code": "1500-03-01-01",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация"
+      },
+      "proj_mode": "project_name == admission project_code",
+      "join_mode": "v1_proj_boq",
+      "master_rows": 0,
+      "dp_rows": 128,
+      "match_both": false,
+      "sum_project_qty_num": 0,
+      "sum_total_value_num": 0,
+      "sum_quantity_today": 25861.0,
+      "sum_direct_work_hours": 2088.0,
+      "sum_ac_day_value": 6264000.0,
+      "ac_zero_or_null_rows": 1,
+      "master_uoms": [],
+      "dp_uoms": [
+        "М / M"
+      ],
+      "crews": [
+        "АСИ-13",
+        "АСИ-15",
+        "АСИ-28",
+        "СУБпо-18",
+        "СУБпо-20"
+      ],
+      "min_work_date": "2026-05-01",
+      "max_work_date": "2026-07-28"
+    },
+    {
+      "admission_grain": {
+        "project_code": "PRJ_001_БХК",
+        "boq_code": "1500-03-01-01",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация"
+      },
+      "proj_mode": "project_name == admission project_code",
+      "join_mode": "v2_proj_boq_fac",
+      "master_rows": 0,
+      "dp_rows": 69,
+      "match_both": false,
+      "sum_project_qty_num": 0,
+      "sum_total_value_num": 0,
+      "sum_quantity_today": 10426.0,
+      "sum_direct_work_hours": 1056.0,
+      "sum_ac_day_value": 3168000.0,
+      "ac_zero_or_null_rows": 0,
+      "master_uoms": [],
+      "dp_uoms": [
+        "М / M"
+      ],
+      "crews": [
+        "АСИ-13",
+        "АСИ-15",
+        "АСИ-28",
+        "СУБпо-18"
+      ],
+      "min_work_date": "2026-05-01",
+      "max_work_date": "2026-07-27"
+    },
+    {
+      "admission_grain": {
+        "project_code": "PRJ_001_БХК",
+        "boq_code": "1500-03-01-01",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация"
+      },
+      "proj_mode": "project_name == admission project_code",
+      "join_mode": "v3_full",
+      "master_rows": 0,
+      "dp_rows": 69,
+      "match_both": false,
+      "sum_project_qty_num": 0,
+      "sum_total_value_num": 0,
+      "sum_quantity_today": 10426.0,
+      "sum_direct_work_hours": 1056.0,
+      "sum_ac_day_value": 3168000.0,
+      "ac_zero_or_null_rows": 0,
+      "master_uoms": [],
+      "dp_uoms": [
+        "М / M"
+      ],
+      "crews": [
+        "АСИ-13",
+        "АСИ-15",
+        "АСИ-28",
+        "СУБпо-18"
+      ],
+      "min_work_date": "2026-05-01",
+      "max_work_date": "2026-07-27"
+    },
+    {
+      "admission_grain": {
+        "project_code": "PRJ_001_БХК",
+        "boq_code": "1500-03-01-01",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация"
+      },
+      "proj_mode": "boq only (diagnostic)",
+      "join_mode": "v1_proj_boq",
+      "master_rows": 2,
+      "dp_rows": 128,
+      "match_both": true,
+      "sum_project_qty_num": 37933.0,
+      "sum_total_value_num": 17479526.400000002,
+      "sum_quantity_today": 25861.0,
+      "sum_direct_work_hours": 2088.0,
+      "sum_ac_day_value": 6264000.0,
+      "ac_zero_or_null_rows": 1,
+      "master_uoms": [
+        "М / M"
+      ],
+      "dp_uoms": [
+        "М / M"
+      ],
+      "crews": [
+        "АСИ-13",
+        "АСИ-15",
+        "АСИ-28",
+        "СУБпо-18",
+        "СУБпо-20"
+      ],
+      "min_work_date": "2026-05-01",
+      "max_work_date": "2026-07-28"
+    },
+    {
+      "admission_grain": {
+        "project_code": "PRJ_001_БХК",
+        "boq_code": "1500-03-01-01",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация"
+      },
+      "proj_mode": "boq only (diagnostic)",
+      "join_mode": "v2_proj_boq_fac",
+      "master_rows": 1,
+      "dp_rows": 69,
+      "match_both": true,
+      "sum_project_qty_num": 14402.0,
+      "sum_total_value_num": 6636441.600000001,
+      "sum_quantity_today": 10426.0,
+      "sum_direct_work_hours": 1056.0,
+      "sum_ac_day_value": 3168000.0,
+      "ac_zero_or_null_rows": 0,
+      "master_uoms": [
+        "М / M"
+      ],
+      "dp_uoms": [
+        "М / M"
+      ],
+      "crews": [
+        "АСИ-13",
+        "АСИ-15",
+        "АСИ-28",
+        "СУБпо-18"
+      ],
+      "min_work_date": "2026-05-01",
+      "max_work_date": "2026-07-27"
+    },
+    {
+      "admission_grain": {
+        "project_code": "PRJ_001_БХК",
+        "boq_code": "1500-03-01-01",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация"
+      },
+      "proj_mode": "boq only (diagnostic)",
+      "join_mode": "v3_full",
+      "master_rows": 1,
+      "dp_rows": 69,
+      "match_both": true,
+      "sum_project_qty_num": 14402.0,
+      "sum_total_value_num": 6636441.600000001,
+      "sum_quantity_today": 10426.0,
+      "sum_direct_work_hours": 1056.0,
+      "sum_ac_day_value": 3168000.0,
+      "ac_zero_or_null_rows": 0,
+      "master_uoms": [
+        "М / M"
+      ],
+      "dp_uoms": [
+        "М / M"
+      ],
+      "crews": [
+        "АСИ-13",
+        "АСИ-15",
+        "АСИ-28",
+        "СУБпо-18"
+      ],
+      "min_work_date": "2026-05-01",
+      "max_work_date": "2026-07-27"
+    },
+    {
+      "admission_grain": {
+        "project_code": "PRJ_001_БХК",
+        "boq_code": "1500-03-01-01",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация"
+      },
+      "proj_mode": "project_code==PRJ OR project_name==БХК if admission PRJ_001_БХК",
+      "join_mode": "v1_proj_boq",
+      "master_rows": 2,
+      "dp_rows": 128,
+      "match_both": true,
+      "sum_project_qty_num": 37933.0,
+      "sum_total_value_num": 17479526.400000002,
+      "sum_quantity_today": 25861.0,
+      "sum_direct_work_hours": 2088.0,
+      "sum_ac_day_value": 6264000.0,
+      "ac_zero_or_null_rows": 1,
+      "master_uoms": [
+        "М / M"
+      ],
+      "dp_uoms": [
+        "М / M"
+      ],
+      "crews": [
+        "АСИ-13",
+        "АСИ-15",
+        "АСИ-28",
+        "СУБпо-18",
+        "СУБпо-20"
+      ],
+      "min_work_date": "2026-05-01",
+      "max_work_date": "2026-07-28"
+    },
+    {
+      "admission_grain": {
+        "project_code": "PRJ_001_БХК",
+        "boq_code": "1500-03-01-01",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация"
+      },
+      "proj_mode": "project_code==PRJ OR project_name==БХК if admission PRJ_001_БХК",
+      "join_mode": "v2_proj_boq_fac",
+      "master_rows": 1,
+      "dp_rows": 69,
+      "match_both": true,
+      "sum_project_qty_num": 14402.0,
+      "sum_total_value_num": 6636441.600000001,
+      "sum_quantity_today": 10426.0,
+      "sum_direct_work_hours": 1056.0,
+      "sum_ac_day_value": 3168000.0,
+      "ac_zero_or_null_rows": 0,
+      "master_uoms": [
+        "М / M"
+      ],
+      "dp_uoms": [
+        "М / M"
+      ],
+      "crews": [
+        "АСИ-13",
+        "АСИ-15",
+        "АСИ-28",
+        "СУБпо-18"
+      ],
+      "min_work_date": "2026-05-01",
+      "max_work_date": "2026-07-27"
+    },
+    {
+      "admission_grain": {
+        "project_code": "PRJ_001_БХК",
+        "boq_code": "1500-03-01-01",
+        "facility_building": "16160-13",
+        "construction_discipline": "Автоматизация"
+      },
+      "proj_mode": "project_code==PRJ OR project_name==БХК if admission PRJ_001_БХК",
+      "join_mode": "v3_full",
+      "master_rows": 1,
+      "dp_rows": 69,
+      "match_both": true,
+      "sum_project_qty_num": 14402.0,
+      "sum_total_value_num": 6636441.600000001,
+      "sum_quantity_today": 10426.0,
+      "sum_direct_work_hours": 1056.0,
+      "sum_ac_day_value": 3168000.0,
+      "ac_zero_or_null_rows": 0,
+      "master_uoms": [
+        "М / M"
+      ],
+      "dp_uoms": [
+        "М / M"
+      ],
+      "crews": [
+        "АСИ-13",
+        "АСИ-15",
+        "АСИ-28",
+        "СУБпо-18"
+      ],
+      "min_work_date": "2026-05-01",
+      "max_work_date": "2026-07-27"
+    }
+  ],
+  "norm_diag": {
+    "cons_facility_repr": [
+      [
+        "'16160-13'",
+        "16160-13"
+      ]
+    ],
+    "cons_discipline_repr": [
+      [
+        "'Автоматизация'",
+        "АВТОМАТИЗАЦИЯ"
+      ]
+    ],
+    "dp_facility_repr": [
+      [
+        "'16160-13 '",
+        "16160-13"
+      ],
+      [
+        "'16160-17 '",
+        "16160-17"
+      ]
+    ],
+    "dp_discipline_repr": [
+      [
+        "'Автоматизация'",
+        "АВТОМАТИЗАЦИЯ"
+      ]
+    ],
+    "master_facility_repr": [
+      [
+        "'16160-13'",
+        "16160-13"
+      ],
+      [
+        "'16160-17'",
+        "16160-17"
+      ]
+    ],
+    "master_discipline_repr": [
+      [
+        "'Автоматизация'",
+        "АВТОМАТИЗАЦИЯ"
+      ]
+    ],
+    "cons_boq_repr": [
+      [
+        "'1500-03-01-01'",
+        "1500-03-01-01"
+      ]
+    ],
+    "dp_boq_repr": [
+      [
+        "'1500-03-01-01'",
+        "1500-03-01-01"
+      ]
+    ],
+    "master_boq_repr": [
+      [
+        "'1500-03-01-01'",
+        "1500-03-01-01"
+      ]
+    ]
+  },
+  "facility_norm_sets": {
+    "cons": [
+      "16160-13"
+    ],
+    "dp": [
+      "16160-13",
+      "16160-17"
+    ],
+    "master": [
+      "16160-13",
+      "16160-17"
+    ]
+  },
+  "discipline_norm_sets": {
+    "cons": [
+      "АВТОМАТИЗАЦИЯ"
+    ],
+    "dp": [
+      "АВТОМАТИЗАЦИЯ"
+    ],
+    "master": [
+      "АВТОМАТИЗАЦИЯ"
+    ]
+  },
+  "master_anon_count": 0
+}

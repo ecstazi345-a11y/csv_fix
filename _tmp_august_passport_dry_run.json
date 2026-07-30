@@ -1,0 +1,106 @@
+{
+  "project_code": "PRJ_001_БХК",
+  "month_key": "август-2026",
+  "existing_passports": [
+    {
+      "passport_id": "28aa20b7-95e4-44e4-a3bf-7fc4b3a26571",
+      "passport_status": "APPROVED",
+      "rows_count": 1,
+      "approved_at": "2026-07-29T10:05:16.346746+00:00",
+      "created_at": "2026-07-29T10:05:17.091194+00:00"
+    }
+  ],
+  "active_passport_id": "28aa20b7-95e4-44e4-a3bf-7fc4b3a26571",
+  "active_passport_count": 1,
+  "previous_rows": 1,
+  "previous_boqs": [
+    "1800-01-02-01"
+  ],
+  "source_kind": "v2",
+  "source_errors": [],
+  "source_row_count": 4,
+  "source_boqs": [
+    "1500-04-01-01",
+    "1500-05-02-07",
+    "1800-01-02-01",
+    "2041-01-27-02"
+  ],
+  "eligible_without_war_room_override": [],
+  "skipped_without_override": [
+    {
+      "boq_code": "1500-04-01-01",
+      "line_id": "e6aa214d-d2b3-4ce2-a253-47e01c64c2d3",
+      "admission_plain": "WAITING_CHECKS",
+      "counts": {
+        "constraints_total": 7,
+        "constraints_pass": 0,
+        "constraints_warning": 0,
+        "constraints_hold": 1,
+        "constraints_fail": 0,
+        "constraints_waiting": 6
+      },
+      "needs_override_for_keep": true
+    },
+    {
+      "boq_code": "1500-05-02-07",
+      "line_id": "da557e6c-4ff6-4ab1-a0de-0f65533b2f27",
+      "admission_plain": "WAITING_CHECKS",
+      "counts": {
+        "constraints_total": 7,
+        "constraints_pass": 1,
+        "constraints_warning": 0,
+        "constraints_hold": 0,
+        "constraints_fail": 0,
+        "constraints_waiting": 6
+      },
+      "needs_override_for_keep": true
+    },
+    {
+      "boq_code": "1800-01-02-01",
+      "line_id": "f83cff65-7eba-4e54-8bc5-0f2aad59239a",
+      "admission_plain": "WAITING_CHECKS",
+      "counts": {
+        "constraints_total": 7,
+        "constraints_pass": 0,
+        "constraints_warning": 0,
+        "constraints_hold": 1,
+        "constraints_fail": 0,
+        "constraints_waiting": 6
+      },
+      "needs_override_for_keep": true
+    },
+    {
+      "boq_code": "2041-01-27-02",
+      "line_id": "2e40d2b7-0313-4677-9f22-3ab2272b8a0a",
+      "admission_plain": "WAITING_CHECKS",
+      "counts": {
+        "constraints_total": 7,
+        "constraints_pass": 0,
+        "constraints_warning": 1,
+        "constraints_hold": 0,
+        "constraints_fail": 0,
+        "constraints_waiting": 6
+      },
+      "needs_override_for_keep": true
+    }
+  ],
+  "expected_test_boqs": [
+    "1800-01-02-01",
+    "2041-01-27-02",
+    "1500-04-01-01",
+    "1500-05-02-07"
+  ],
+  "expected_boqs_in_source": [
+    "1800-01-02-01",
+    "2041-01-27-02",
+    "1500-04-01-01",
+    "1500-05-02-07"
+  ],
+  "composition_count_simulated_include_all_expected": 4,
+  "generated_line_count": 4,
+  "coverage_gaps": [],
+  "override_errors_validation": [],
+  "expected_rpc_status": "rebuilt",
+  "product_write": false,
+  "note": "Without War Room inclusion+override patches, plain create_monthly_passport would skip WAITING/BLOCKED lines. Dry-run simulates INCLUDE+override for the four expected BOQs. Apply SQL migration before real rebuild."
+}

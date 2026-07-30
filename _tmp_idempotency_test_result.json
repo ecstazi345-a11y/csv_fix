@@ -1,0 +1,30 @@
+{
+  "uid": "caa4da51-fe04-4b7e-943a-f6d0812d2a65",
+  "plan_line_id_1": "8941f714-f69f-42ba-b90a-66153ecd71ea",
+  "plan_line_id_2": "8941f714-f69f-42ba-b90a-66153ecd71ea",
+  "rows_before": 95,
+  "rows_after": 96,
+  "rows_for_uid": 1,
+  "detail": [
+    {
+      "plan_line_id": "8941f714-f69f-42ba-b90a-66153ecd71ea",
+      "planned_qty": 3.0,
+      "labor_hours": 6.0,
+      "plan_value": 300.0,
+      "client_line_uid": "caa4da51-fe04-4b7e-943a-f6d0812d2a65",
+      "status": "NOT_SENT",
+      "updated_at": "2026-07-28T15:26:23.815412+00:00"
+    }
+  ],
+  "checks": {
+    "rows_for_uid_eq_1": true,
+    "plan_line_id_stable": true,
+    "qty_updated": true,
+    "hours_updated": true,
+    "value_updated": true,
+    "rows_after_eq_96": true,
+    "save2_did_not_increase_extra": true
+  },
+  "result": "PASS",
+  "method": "controlled upsert path identical to patched save_v2_month_plan (on_conflict=client_line_uid); Streamlit restarted on :8501"
+}

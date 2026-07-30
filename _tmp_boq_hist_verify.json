@@ -1,0 +1,4 @@
+{
+  "exists": false,
+  "exists_error": "{'message': \"Could not find the table 'public.boq_execution_history_v1' in the schema cache\", 'code': 'PGRST205', 'hint': \"Perhaps you meant the table 'public.boq_productivity_history'\", 'details': None}"
+}

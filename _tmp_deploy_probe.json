@@ -1,0 +1,9 @@
+{
+  "deploy_method": null,
+  "deploy_ok": false,
+  "deploy_error": null,
+  "pre_exists": false,
+  "pre_error": "{'message': \"Could not find the table 'public.boq_execution_history_v1' in the schema cache\", 'code': 'PGRST205', 'hint': \"Perhaps you meant the table 'public.boq_productivity_history'\", 'details': None}",
+  "rpc_exec_sql": "{'message': 'Could not find the function public.exec_sql(sql) in the schema cache', 'code': 'PGRST202', 'hint': None, 'd",
+  "rpc_execute_sql": "{'message': 'Could not find the function public.execute_sql(query) in the schema cache', 'code': 'PGRST202', 'hint': Non"
+}

@@ -1,0 +1,129 @@
+{
+  "passed": 18,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "23 same row count on cold+warm cache",
+      "ok": true,
+      "detail": {
+        "rows": 168
+      }
+    },
+    {
+      "name": "23 BOQ codes stable across cache hit",
+      "ok": true,
+      "detail": {
+        "boq_count": 168
+      }
+    },
+    {
+      "name": "23 admission outcomes stable",
+      "ok": true,
+      "detail": {
+        "Ожидает проверки": 130,
+        "Заблокировано": 37,
+        "Допущено": 1
+      }
+    },
+    {
+      "name": "23 registry rows == board rows",
+      "ok": true,
+      "detail": {
+        "registry": 168,
+        "board": 168
+      }
+    },
+    {
+      "name": "23 composition sync runs (session composition retained/updated)",
+      "ok": true,
+      "detail": {
+        "before_keys": 0,
+        "after_keys": 0
+      }
+    },
+    {
+      "name": "23 helper present: wr2_build_passport_override_payload",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "23 helper present: wr2_writer_needs_override_for_row",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "23 helper present: wr2_row_in_passport_inclusion",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "23 helper present: passport_includes_outcome",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "23 INCLUDE / INCLUDE_RISK helpers callable",
+      "ok": true,
+      "detail": {
+        "allow_risk_true": true,
+        "allow_risk_false": true
+      }
+    },
+    {
+      "name": "23 passport override payload builds",
+      "ok": true,
+      "detail": {
+        "type": "dict",
+        "size": 0
+      }
+    },
+    {
+      "name": "23 project/month filter isolation",
+      "ok": true,
+      "detail": {
+        "project": "PRJ_001_БХК",
+        "month": "июнь-2026",
+        "filtered_rows": 41
+      }
+    },
+    {
+      "name": "21 package dataframe built",
+      "ok": true,
+      "detail": {
+        "packages": 163,
+        "constraints": 1141
+      }
+    },
+    {
+      "name": "21 v2 single-select enrich keeps package count",
+      "ok": true,
+      "detail": {
+        "packages": 163,
+        "v2_rows": 100,
+        "enriched": 163
+      }
+    },
+    {
+      "name": "23 clear_war_room_data_caches rebuilds equal read model",
+      "ok": true,
+      "detail": {
+        "rows": 168
+      }
+    },
+    {
+      "name": "no st.cache_data.clear() on page 23",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "no st.cache_data.clear() on page 21",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "21 uses clear_admission_constraint_caches after decisions",
+      "ok": true,
+      "detail": {}
+    }
+  ]
+}

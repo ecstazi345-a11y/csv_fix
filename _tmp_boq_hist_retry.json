@@ -1,0 +1,81 @@
+{
+  "attempts": [
+    {
+      "i": 0,
+      "ok": false,
+      "err": "{'message': \"Could not find the table 'public.boq_execution_history_v1' in the schema cache\", 'code': 'PGRST205', 'hint': \"Perhaps you meant the table 'public.boq_productivity_hist"
+    },
+    {
+      "i": 1,
+      "ok": false,
+      "err": "{'message': \"Could not find the table 'public.boq_execution_history_v1' in the schema cache\", 'code': 'PGRST205', 'hint': \"Perhaps you meant the table 'public.boq_productivity_hist"
+    },
+    {
+      "i": 2,
+      "ok": false,
+      "err": "{'message': \"Could not find the table 'public.boq_execution_history_v1' in the schema cache\", 'code': 'PGRST205', 'hint': \"Perhaps you meant the table 'public.boq_productivity_hist"
+    },
+    {
+      "i": 3,
+      "ok": false,
+      "err": "{'message': \"Could not find the table 'public.boq_execution_history_v1' in the schema cache\", 'code': 'PGRST205', 'hint': \"Perhaps you meant the table 'public.boq_productivity_hist"
+    },
+    {
+      "i": 4,
+      "ok": false,
+      "err": "{'message': \"Could not find the table 'public.boq_execution_history_v1' in the schema cache\", 'code': 'PGRST205', 'hint': \"Perhaps you meant the table 'public.boq_productivity_hist"
+    },
+    {
+      "i": 5,
+      "ok": false,
+      "err": "{'message': \"Could not find the table 'public.boq_execution_history_v1' in the schema cache\", 'code': 'PGRST205', 'hint': \"Perhaps you meant the table 'public.boq_productivity_hist"
+    }
+  ],
+  "found": false,
+  "boq_execution_history_v1": {
+    "ok": false,
+    "err": "{'message': \"Could not find the table 'public.boq_execution_history_v1' in the schema cache\", 'code': 'PGRST205', 'hint': \"Perhaps you meant the table 'public.boq_productivity_history'\", 'details': No"
+  },
+  "boq_productivity_history": {
+    "ok": true,
+    "count": 153,
+    "cols": [
+      "project_code",
+      "facility_building",
+      "construction_discipline",
+      "boq_code",
+      "boq_name",
+      "unit_of_measure",
+      "fact_records_count",
+      "active_months_count",
+      "crews_count",
+      "actual_qty_all_time",
+      "actual_ev_all_time",
+      "direct_hours_all_time",
+      "productive_hours_all_time",
+      "idle_hours_all_time",
+      "management_hours_per_unit"
+    ]
+  },
+  "monthly_scope_picker_view": {
+    "ok": true,
+    "count": 664,
+    "cols": [
+      "project_code",
+      "facility_building",
+      "construction_discipline",
+      "boq_code",
+      "boq_name",
+      "unit_of_measure",
+      "total_project_qty",
+      "executed_qty_all_time",
+      "manual_executed_before_system",
+      "system_remaining_qty",
+      "manual_verified_remaining_qty",
+      "planning_remaining_qty",
+      "remaining_qty_source",
+      "unit_price",
+      "total_project_value"
+    ]
+  }
+}

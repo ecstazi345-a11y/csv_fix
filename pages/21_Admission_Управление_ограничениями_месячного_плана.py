@@ -16,6 +16,7 @@ from services.constraint_display import (
     is_insufficient_block_description,
     registry_specific_block_reason,
 )
+from services.boq_execution_history_service import get_boq_execution_history
 from services.constraints_loader import fetch_all_constraints
 from services.perf_audit import finish_page, stage, start_page
 from services.supabase_client import supabase
@@ -5246,9 +5247,116 @@ def _render_fixation_audit_content(
     else:
         st.caption("Записей в журнале пока нет.")
 
-    st.markdown("**C. История по BOQ-коду**")
-    st.caption(
-        "Полная межмесячная история по BOQ-коду будет доступна после подключения журнала ограничений."
+    _render_boq_execution_history_block(row)
+
+
+def _format_history_percent(value: Any) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "—"
+    try:
+        return f"{float(value):,.2f}".replace(",", " ").replace(".", ",") + " %"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _format_history_index(value: Any) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "—"
+    try:
+        return f"{float(value):,.2f}".replace(",", " ").replace(".", ",")
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _format_history_hours(value: Any) -> str:
+    text = format_labor_hours_display(value)
+    if text == "—":
+        return text
+    return f"{text} чел·ч"
+
+
+def _format_history_money_or_dash(value: Any, *, allowed: bool = True) -> str:
+    if not allowed or value is None or (isinstance(value, float) and pd.isna(value)):
+        return "—"
+    return money_ru(value)
+
+
+def _render_boq_execution_history_block(row: pd.Series) -> None:
+    """Read-only «C. История исполнения BOQ» from boq_execution_history_v1."""
+    st.markdown("**C. История исполнения BOQ**")
+
+    project_code = safe_str(row.get("project_code"))
+    boq_code = safe_str(row.get("boq_code"))
+    facility = safe_str(row.get("facility_building"))
+    discipline = safe_str(row.get("construction_discipline"))
+
+    if not project_code or not boq_code:
+        st.caption("История недоступна: недостаточно ключевых данных.")
+        return
+
+    result = get_boq_execution_history(
+        project_code=project_code,
+        boq_code=boq_code,
+        facility_building=facility,
+        construction_discipline=discipline,
+    )
+
+    if result.get("error"):
+        st.caption(field_display(result.get("error")))
+        return
+
+    if not result.get("found") or not result.get("row"):
+        st.caption("История исполнения отсутствует")
+        return
+
+    hist = result["row"]
+    if not hist.get("has_history"):
+        st.caption("История исполнения отсутствует")
+        return
+
+    forecast_ok = bool(hist.get("forecast_allowed"))
+    cells = [
+        ("Работы выполнялись", "Да"),
+        ("Количество смен", field_display(hist.get("shift_count"))),
+        ("Исполнявшие звенья", field_display(hist.get("crew_list"))),
+        ("Полный объём BOQ", format_qty_display(hist.get("project_qty_full"))),
+        ("Выполнено", format_qty_display(hist.get("actual_qty"))),
+        ("Процент выполнения", _format_history_percent(hist.get("execution_percent"))),
+        ("Освоено трудозатрат", _format_history_hours(hist.get("direct_work_hours"))),
+        (
+            "Стоимость освоенного труда",
+            _format_history_money_or_dash(hist.get("labor_cost_actual")),
+        ),
+        ("Стоимость BOQ", _format_history_money_or_dash(hist.get("boq_total_value"))),
+        (
+            "Текущий остаток",
+            _format_history_money_or_dash(hist.get("current_balance")),
+        ),
+        (
+            "Израсходовано бюджета труда",
+            _format_history_percent(hist.get("labor_budget_used_percent")),
+        ),
+        (
+            "Индекс расходования труда",
+            _format_history_index(hist.get("labor_consumption_index")),
+        ),
+        (
+            "Прогноз стоимости труда",
+            _format_history_money_or_dash(
+                hist.get("forecast_labor_cost"), allowed=forecast_ok
+            ),
+        ),
+        (
+            "Прогнозный результат",
+            _format_history_money_or_dash(
+                hist.get("forecast_result"), allowed=forecast_ok
+            ),
+        ),
+        ("Экономическое состояние", field_display(hist.get("data_status"))),
+    ]
+    st.markdown(
+        f'<div class="da-fix-panel">{_render_da_compact_grid_html(cells, columns=2)}</div>',
+        unsafe_allow_html=True,
     )
 
 

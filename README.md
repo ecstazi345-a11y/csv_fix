@@ -26,6 +26,7 @@ cd C:\csv_fix
 | [README_SMR_EXECUTION_LOGIC.md](README_SMR_EXECUTION_LOGIC.md) | Логика план-факт СМР |
 | [DATA_ENTRY_GUIDE.md](DATA_ENTRY_GUIDE.md) | Инструкция мастерам по полям Daily Progress |
 | [SYNC_REGULATION.md](SYNC_REGULATION.md) | Регламент синхронизации Airtable → Supabase |
+| [docs/AUTOMATIC_SYNC.md](docs/AUTOMATIC_SYNC.md) | Ежедневный автосинк через Windows Task Scheduler |
 | [EXECUTION_OS_ARCHITECTURE.md](EXECUTION_OS_ARCHITECTURE.md) | Архитектура Contractor Execution OS: Month → Week → Day → Crew → Worker |
 
 ## Разделы Streamlit
@@ -49,3 +50,17 @@ cd C:\csv_fix
 Двойной клик `ОБНОВИТЬ_ВСЕ_ДАННЫЕ.bat` или `python update_all_sync.py` (из `.venv`) — **4 синка** за один запуск: факт, BOQ, план месяца, Crew_Register / `monthly_labor_summary`.
 
 Регламент синка: [SYNC_REGULATION.md](SYNC_REGULATION.md) · Ввод факта: [DATA_ENTRY_GUIDE.md](DATA_ENTRY_GUIDE.md)
+
+## Автоматическая синхронизация
+
+Автоматическая синхронизация выполняется ежедневно в 23:00 через Windows Task Scheduler.
+
+Используется:
+
+`ОБНОВИТЬ_ВСЕ_ДАННЫЕ_АВТО.bat`
+
+Лог:
+
+`logs\daily_sync.log`
+
+Подробности: [docs/AUTOMATIC_SYNC.md](docs/AUTOMATIC_SYNC.md)

@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.log
+logs/
 _crew_diag.py
 csv_fix/
 pages/_order_backup/

@@ -4354,7 +4354,9 @@ def _da_decision_button_handler(
     draft = build_direct_admit_decision_draft(action, cid, dept_key, officer_fio, criteria)
     st.session_state[DIRECT_ADMIT_DECISION_DRAFT_KEY] = draft
     st.session_state[DIRECT_ADMIT_PENDING_ACTION_KEY] = action
-    apply_direct_admit_decision_draft_to_gov(f"da_gov_{cid[:8]}", action, draft, cid)
+    apply_direct_admit_decision_draft_to_gov(
+        f"da_gov_{_da_stable_key_fragment(cid)}", action, draft, cid
+    )
 
 
 def _render_direct_admit_block_d(
@@ -4364,7 +4366,7 @@ def _render_direct_admit_block_d(
 ) -> None:
     st.markdown('<div class="da-c2-section-title">D. Решение</div>', unsafe_allow_html=True)
 
-    officer_key = f"da_officer_{cid[:8]}"
+    officer_key = f"da_officer_{_da_stable_key_fragment(cid)}"
     officer_fio = st.text_input(
         "ФИО лица, принимающего решение",
         placeholder="Виталий Тронин",
@@ -4382,6 +4384,7 @@ def _render_direct_admit_block_d(
     if rec_msg:
         st.info(rec_msg)
 
+    cid_key = _da_stable_key_fragment(cid)
     a1, a2, a3 = st.columns(3, gap="small")
     with a1:
         with st.container(border=False):
@@ -4393,7 +4396,7 @@ def _render_direct_admit_block_d(
                 'font-weight:600;line-height:1.2;text-align:center;">ДОПУСТИТЬ</div>',
                 unsafe_allow_html=True,
             )
-            if st.button("ДОПУСТИТЬ", key=f"da_act_pass_{cid[:8]}", use_container_width=True):
+            if st.button("ДОПУСТИТЬ", key=f"da_act_pass_{cid_key}", use_container_width=True):
                 officer_value = safe_str(officer_fio).strip() or safe_str(
                     st.session_state.get(officer_key)
                 ).strip()
@@ -4411,7 +4414,7 @@ def _render_direct_admit_block_d(
                 'font-weight:600;line-height:1.2;text-align:center;">ТРЕБУЕТ ДОРАБОТКИ</div>',
                 unsafe_allow_html=True,
             )
-            if st.button("ТРЕБУЕТ ДОРАБОТКИ", key=f"da_act_clarify_{cid[:8]}", use_container_width=True):
+            if st.button("ТРЕБУЕТ ДОРАБОТКИ", key=f"da_act_clarify_{cid_key}", use_container_width=True):
                 officer_value = safe_str(officer_fio).strip() or safe_str(
                     st.session_state.get(officer_key)
                 ).strip()
@@ -4429,7 +4432,7 @@ def _render_direct_admit_block_d(
                 'font-weight:600;line-height:1.2;text-align:center;">ЗАБЛОКИРОВАТЬ</div>',
                 unsafe_allow_html=True,
             )
-            if st.button("ЗАБЛОКИРОВАТЬ", key=f"da_act_block_{cid[:8]}", use_container_width=True):
+            if st.button("ЗАБЛОКИРОВАТЬ", key=f"da_act_block_{cid_key}", use_container_width=True):
                 officer_value = safe_str(officer_fio).strip() or safe_str(
                     st.session_state.get(officer_key)
                 ).strip()
@@ -5528,7 +5531,9 @@ def _render_fixation_decision_section(
         if draft.get("cid") == cid:
             decision_officer = safe_str(draft.get("officer_fio")).strip()
         if not decision_officer:
-            decision_officer = safe_str(st.session_state.get(f"da_officer_{cid[:8]}")).strip()
+            decision_officer = safe_str(
+                st.session_state.get(f"da_officer_{_da_stable_key_fragment(cid)}")
+            ).strip()
         if not decision_officer:
             st.error("Укажите ФИО лица, принимающего решение")
         elif pending_action == "block":
@@ -5861,9 +5866,15 @@ def _da_queue_select_id(row: pd.Series, idx: int) -> str:
     return f"{line_id}|{dept}|{check}|{idx}"
 
 
-def _da_queue_widget_key(select_id: str) -> str:
-    safe = "".join(ch if ch.isalnum() else "_" for ch in select_id)
-    return f"da_qsel_{safe}"
+def _da_stable_key_fragment(value: Any) -> str:
+    """Alphanumeric fragment for Streamlit widget keys (never empty)."""
+    safe = "".join(ch if ch.isalnum() else "_" for ch in safe_str(value))
+    return safe or "na"
+
+
+def _da_queue_widget_key(select_id: str, pos: int) -> str:
+    """Unique per queue row: position + select_id (avoids DuplicateElementKey)."""
+    return f"da_qsel_{int(pos)}_{_da_stable_key_fragment(select_id)}"
 
 
 def _da_queue_status_display(status_key: str) -> tuple[str, str]:
@@ -5979,7 +5990,7 @@ def render_direct_admit_queue_pane(
                     )
                     st.button(
                         "\u200b",
-                        key=_da_queue_widget_key(select_id),
+                        key=_da_queue_widget_key(select_id, pos),
                         on_click=_da_queue_select_item,
                         args=(select_id,),
                         use_container_width=True,
@@ -6117,7 +6128,7 @@ def render_direct_admit_governance_pane(
         return
 
     cid = safe_str(row.get("constraint_id"))
-    prefix = f"da_gov_{cid[:8]}"
+    prefix = f"da_gov_{_da_stable_key_fragment(cid)}"
 
     _render_fixation_mvp_sections(
         row, prefix, saver_name, pending_action, workbench_df, cid

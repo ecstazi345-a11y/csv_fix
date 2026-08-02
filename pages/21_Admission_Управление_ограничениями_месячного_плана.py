@@ -17,6 +17,7 @@ from services.constraint_display import (
     registry_specific_block_reason,
 )
 from services.boq_execution_history_service import get_boq_execution_history
+from services.boq_execution_crews_service import get_boq_execution_crew_breakdown
 from services.constraints_loader import fetch_all_constraints
 from services.perf_audit import finish_page, stage, start_page
 from services.supabase_client import supabase
@@ -5321,7 +5322,6 @@ def _render_boq_execution_history_block(row: pd.Series) -> None:
     cells = [
         ("Работы выполнялись", "Да"),
         ("Количество смен", field_display(hist.get("shift_count"))),
-        ("Исполнявшие звенья", field_display(hist.get("crew_list"))),
         ("Полный объём BOQ", format_qty_display(hist.get("project_qty_full"))),
         ("Выполнено", format_qty_display(hist.get("actual_qty"))),
         ("Процент выполнения", _format_history_percent(hist.get("execution_percent"))),
@@ -5360,6 +5360,48 @@ def _render_boq_execution_history_block(row: pd.Series) -> None:
     st.markdown(
         f'<div class="da-fix-panel">{_render_da_compact_grid_html(cells, columns=2)}</div>',
         unsafe_allow_html=True,
+    )
+
+    st.caption("Исполнение по звеньям")
+    crew_result = get_boq_execution_crew_breakdown(
+        project_code=project_code,
+        boq_code=boq_code,
+        facility_building=facility,
+        construction_discipline=discipline,
+    )
+    if crew_result.get("error"):
+        st.caption("Не удалось загрузить разбивку по звеньям.")
+        return
+    if not crew_result.get("found") or not crew_result.get("rows"):
+        st.caption("Разбивка по звеньям отсутствует")
+        return
+
+    display_rows: list[dict[str, Any]] = []
+    for crew_row in crew_result["rows"]:
+        display_rows.append(
+            {
+                "Звено": safe_str(crew_row.get("crew_id")) or "—",
+                "Смен": int(crew_row.get("shift_count") or 0),
+                "Объём": format_qty_display(crew_row.get("actual_qty")),
+                "Чел·ч": (
+                    format_labor_hours_display(crew_row.get("direct_work_hours"))
+                    if safe_num(crew_row.get("direct_work_hours")) > 0
+                    else "—"
+                ),
+                "Стоимость труда": (
+                    money_ru(crew_row.get("labor_cost"))
+                    if safe_num(crew_row.get("labor_cost")) > 0
+                    else "—"
+                ),
+            }
+        )
+    crew_df = pd.DataFrame(display_rows)
+    table_height = min(220, 38 + 32 * max(len(crew_df), 1))
+    st.dataframe(
+        crew_df,
+        use_container_width=True,
+        hide_index=True,
+        height=table_height,
     )
 
 

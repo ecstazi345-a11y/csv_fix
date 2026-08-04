@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -2058,6 +2059,280 @@ def wr2_create_monthly_passport_with_overrides(
     return summary
 
 
+@dataclass
+class LineConstraintIndex:
+    """Pre-aggregated constraint state for one plan_line_id (department grain)."""
+
+    counts: Dict[str, int] = field(
+        default_factory=lambda: {
+            "hold": 0,
+            "fail": 0,
+            "warning": 0,
+            "waiting": 0,
+            "pass": 0,
+            "total": 0,
+        }
+    )
+    check_statuses: List[str] = field(default_factory=list)
+    # responsible_department (as str, matching DataFrame.astype(str)) → status keys
+    dept_keys: Dict[str, List[str]] = field(default_factory=dict)
+    has_overdue: bool = False
+    # (status_key, blocked_compact_text, reason_text) in original row order
+    reason_items: List[Tuple[str, str, str]] = field(default_factory=list)
+    first_row: Optional[Dict[str, Any]] = None
+
+
+_EMPTY_LINE_CONSTRAINT_INDEX = LineConstraintIndex()
+
+
+def build_constraint_department_index(
+    constraints_df: pd.DataFrame,
+) -> Dict[str, LineConstraintIndex]:
+    """One-pass line_id → department aggregation for War Room read-model.
+
+    Replaces repeated constraints_df / group filters inside the plan-line loop.
+    """
+    index: Dict[str, LineConstraintIndex] = {}
+    if constraints_df.empty or "line_id" not in constraints_df.columns:
+        return index
+
+    line_series = constraints_df["line_id"]
+    valid = line_series.notna() & (line_series.astype(str).str.strip() != "")
+    if not valid.any():
+        return index
+
+    has_check = "check_status" in constraints_df.columns
+    has_dept = "responsible_department" in constraints_df.columns
+    has_overdue_col = "is_overdue" in constraints_df.columns
+    has_promise_overdue_col = "is_promise_overdue" in constraints_df.columns
+
+    for line_id, part in constraints_df.loc[valid].groupby(
+        line_series.loc[valid].astype(str), dropna=False
+    ):
+        lid = safe_str(line_id)
+        if not lid:
+            continue
+
+        counts = {
+            "hold": 0,
+            "fail": 0,
+            "warning": 0,
+            "waiting": 0,
+            "pass": 0,
+            "total": 0,
+        }
+        check_statuses: List[str] = []
+        dept_keys: Dict[str, List[str]] = {}
+        reason_items: List[Tuple[str, str, str]] = []
+        first_row: Optional[Dict[str, Any]] = None
+
+        if has_overdue_col:
+            has_overdue = bool(part["is_overdue"].astype(bool).any())
+        elif has_promise_overdue_col:
+            has_overdue = bool(part["is_promise_overdue"].astype(bool).any())
+        else:
+            has_overdue = False
+
+        for _, row in part.iterrows():
+            if first_row is None:
+                first_row = row.to_dict()
+
+            if not has_check:
+                continue
+
+            status = norm_check_status_key(row.get("check_status"))
+            check_statuses.append(status)
+            counts["total"] += 1
+            if status == "HOLD":
+                counts["hold"] += 1
+            elif status == "FAIL":
+                counts["fail"] += 1
+            elif status == "WARNING":
+                counts["warning"] += 1
+            elif status == "ОЖИДАЕТ":
+                counts["waiting"] += 1
+            elif status == "PASS":
+                counts["pass"] += 1
+
+            if has_dept:
+                # Match group[col].astype(str) used by legacy filters (NaN → "nan")
+                dept_db = str(row.get("responsible_department"))
+                dept_keys.setdefault(dept_db, []).append(status)
+
+            reason_items.append(
+                (
+                    status,
+                    constraint_decision_line_compact(row, dept_ui),
+                    reason_text(row),
+                )
+            )
+
+        index[lid] = LineConstraintIndex(
+            counts=counts,
+            check_statuses=check_statuses,
+            dept_keys=dept_keys,
+            has_overdue=has_overdue,
+            reason_items=reason_items,
+            first_row=first_row,
+        )
+
+    return index
+
+
+def _indexed_depts_with_statuses(
+    line_state: LineConstraintIndex, status_keys: frozenset[str]
+) -> List[str]:
+    names: List[str] = []
+    for col_label, dept_db in ADMISSION_DEPT_COLUMNS:
+        keys = line_state.dept_keys.get(dept_db, [])
+        if any(k in status_keys for k in keys):
+            names.append(col_label)
+    return names
+
+
+def _indexed_admission_logic_explanation(
+    counts: Dict[str, int], line_state: LineConstraintIndex
+) -> str:
+    if counts["total"] == 0:
+        return "Нет проверок → Нет проверок"
+    hold_depts = _indexed_depts_with_statuses(line_state, frozenset({"HOLD"}))
+    if hold_depts:
+        return f"Есть HOLD от {', '.join(hold_depts)} → Заблокировано"
+    fail_depts = _indexed_depts_with_statuses(line_state, frozenset({"FAIL"}))
+    if fail_depts:
+        return f"Есть FAIL от {', '.join(fail_depts)} → Заблокировано"
+    waiting_depts = _indexed_depts_with_statuses(line_state, frozenset({"ОЖИДАЕТ"}))
+    if waiting_depts:
+        return f"Есть WAITING от {', '.join(waiting_depts)} → Ожидает проверки"
+    if counts["waiting"] > 0:
+        return "Есть WAITING → Ожидает проверки"
+    warning_depts = _indexed_depts_with_statuses(line_state, frozenset({"WARNING"}))
+    if warning_depts:
+        return (
+            f"Есть WARNING от {', '.join(warning_depts)}, HOLD/FAIL нет → Допущено с риском"
+        )
+    if counts["warning"] > 0:
+        return "Есть WARNING, HOLD/FAIL нет → Допущено с риском"
+    return "Все отделы PASS → Допущено"
+
+
+def _indexed_blocking_departments_text(line_state: LineConstraintIndex) -> str:
+    blockers = _indexed_depts_with_statuses(line_state, frozenset({"HOLD", "FAIL"}))
+    if blockers:
+        return ", ".join(blockers)
+    warn = _indexed_depts_with_statuses(line_state, frozenset({"WARNING"}))
+    if warn:
+        return f"Риск: {', '.join(warn)}"
+    waiting = _indexed_depts_with_statuses(line_state, frozenset({"ОЖИДАЕТ"}))
+    if waiting:
+        return f"Ожидают: {', '.join(waiting)}"
+    return "—"
+
+
+def _indexed_outcome_status_reason(
+    line_state: LineConstraintIndex, counts: Dict[str, int]
+) -> str:
+    if counts["total"] == 0:
+        return "Проверки не сформированы"
+    blockers = _indexed_depts_with_statuses(line_state, frozenset({"HOLD", "FAIL"}))
+    if blockers:
+        return f"Блокируют: {', '.join(blockers)}"
+    hold_depts = _indexed_depts_with_statuses(line_state, frozenset({"HOLD"}))
+    if hold_depts:
+        return f"HOLD: {', '.join(hold_depts)}"
+    fail_depts = _indexed_depts_with_statuses(line_state, frozenset({"FAIL"}))
+    if fail_depts:
+        return f"FAIL: {', '.join(fail_depts)}"
+    waiting_depts = _indexed_depts_with_statuses(line_state, frozenset({"ОЖИДАЕТ"}))
+    no_check: List[str] = []
+    # Missing responsible_department column ⇒ dept_keys empty ⇒ все отделы «Нет проверки»
+    for col_label, dept_db in ADMISSION_DEPT_COLUMNS:
+        if not line_state.dept_keys.get(dept_db):
+            no_check.append(col_label)
+    if waiting_depts or no_check or counts["waiting"] > 0:
+        parts: List[str] = []
+        if waiting_depts:
+            parts.append(f"Ожидают проверки: {', '.join(waiting_depts)}")
+        elif counts["waiting"] > 0:
+            parts.append("Ожидают проверки отделов")
+        if no_check:
+            parts.append(f"Нет проверки: {', '.join(no_check)}")
+        return "; ".join(parts)
+    if counts["warning"] > 0:
+        warn_depts = _indexed_depts_with_statuses(line_state, frozenset({"WARNING"}))
+        if warn_depts:
+            return f"Риск / уточнение: {', '.join(warn_depts)}"
+        return "Есть замечания WARNING"
+    return "Все проверки пройдены"
+
+
+def _indexed_dept_badge(line_state: LineConstraintIndex, dept_db: str) -> str:
+    keys = line_state.dept_keys.get(dept_db, [])
+    if not keys:
+        return WR2_DEPT_BADGE["ОЖИДАЕТ"]
+    worst = worst_check_status(keys)
+    return WR2_DEPT_BADGE.get(worst, WR2_DEPT_BADGE["ОЖИДАЕТ"])
+
+
+def _indexed_classic_dept_status(line_state: LineConstraintIndex, dept_db: str) -> str:
+    keys = line_state.dept_keys.get(dept_db, [])
+    if not keys:
+        return DEPT_STATUS_NO_CHECK
+    worst = worst_check_status(keys)
+    if not worst:
+        return DEPT_STATUS_NO_CHECK
+    return DEPT_STATUS_LABEL.get(worst, DEPT_STATUS_NO_CHECK)
+
+
+def _indexed_critical_department(line_state: LineConstraintIndex) -> str:
+    worst_prio = -1
+    worst_label = "—"
+    for label, dept_db in WR2_DEPT_COLUMNS:
+        keys = line_state.dept_keys.get(dept_db, [])
+        if not keys:
+            prio = STATUS_PRIORITY["ОЖИДАЕТ"]
+        else:
+            worst_key = worst_check_status(keys)
+            prio = STATUS_PRIORITY.get(worst_key, 0)
+        if prio > worst_prio:
+            worst_prio = prio
+            worst_label = label
+    return worst_label
+
+
+def _indexed_line_reason_summary(
+    line_state: LineConstraintIndex, outcome: str
+) -> str:
+    if line_state.counts["total"] == 0 or outcome in (
+        ADMISSION_OK,
+        ADMISSION_NO_CHECKS,
+    ):
+        return "—"
+    if outcome == ADMISSION_BLOCKED:
+        wanted: Optional[frozenset[str]] = frozenset({"HOLD", "FAIL"})
+        use_blocked = True
+    elif outcome == ADMISSION_WAITING:
+        wanted = frozenset({"ОЖИДАЕТ"})
+        use_blocked = False
+    elif outcome == ADMISSION_RISK:
+        wanted = frozenset({"WARNING"})
+        use_blocked = False
+    else:
+        wanted = None
+        use_blocked = False
+
+    parts: List[str] = []
+    seen: set[str] = set()
+    for status, blocked_text, rtext in line_state.reason_items:
+        if wanted is not None and status not in wanted:
+            continue
+        text = blocked_text if use_blocked else rtext
+        if text != "—" and text not in seen:
+            seen.add(text)
+            parts.append(text)
+    return "; ".join(parts) if parts else "—"
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def build_war_room_read_model(
     constraints_df: pd.DataFrame,
@@ -2069,7 +2344,7 @@ def build_war_room_read_model(
     Pure read-model builder (no session_state, no Supabase writes).
     Cached for Streamlit reruns; invalidate via clear_war_room_data_caches().
     """
-    constraints_by_line = build_constraints_by_line_id(constraints_df)
+    constraint_index = build_constraint_department_index(constraints_df)
     plan_meta: Dict[str, Dict[str, Any]] = {}
 
     if not v2_df.empty:
@@ -2102,20 +2377,20 @@ def build_war_room_read_model(
                 "source": "v2",
             }
 
-    for line_id, group in constraints_by_line.items():
+    for line_id, line_state in constraint_index.items():
         if line_id in plan_meta:
             continue
-        first = group.iloc[0]
-        facility = wr2_plan_facility(first.to_dict())
+        first = line_state.first_row or {}
+        facility = wr2_plan_facility(first)
         plan_meta[line_id] = {
             "plan_line_id": line_id,
             "project_code": safe_str(first.get("project_code")),
             "month_key": safe_str(first.get("month_key")),
             "boq_code": safe_str(first.get("boq_code")),
             "boq_name": safe_str(first.get("boq_name")),
-            "crew": wr2_plan_crew(first.to_dict()),
+            "crew": wr2_plan_crew(first),
             "facility": facility,
-            "discipline": wr2_plan_discipline(first.to_dict()),
+            "discipline": wr2_plan_discipline(first),
             "planned_qty": safe_num(first.get("planned_qty")),
             "plan_value": safe_num(first.get("plan_value")),
             "labor_hours": safe_num(first.get("labor_hours") or first.get("required_hours")),
@@ -2156,41 +2431,39 @@ def build_war_room_read_model(
             }
 
     rows: List[Dict[str, Any]] = []
+    empty_state = _EMPTY_LINE_CONSTRAINT_INDEX
     for pid, meta in plan_meta.items():
-        group = constraints_by_line.get(pid, pd.DataFrame())
-        counts = count_line_constraint_statuses(group)
-        outcome = resolve_war_room_line_outcome(counts, group)
+        line_state = constraint_index.get(pid, empty_state)
+        counts = line_state.counts
+        outcome = resolve_war_room_line_outcome(counts, pd.DataFrame())
         classic_outcome = wr2_outcome_for_classic(outcome)
-        check_statuses = (
-            [norm_check_status_key(v) for v in group["check_status"]]
-            if not group.empty and "check_status" in group.columns
-            else []
-        )
         row_data: Dict[str, Any] = {
             **meta,
             **wr2_plan_economics(meta),
             "outcome": outcome,
             "classic_outcome": classic_outcome,
-            "logic_outcome": build_admission_logic_explanation(counts, group),
+            "logic_outcome": _indexed_admission_logic_explanation(counts, line_state),
             "action_needed": build_action_needed(classic_outcome),
-            "critical_department": wr2_critical_department(group),
-            "blocking_departments": wr2_blocking_departments_text(group),
-            "outcome_status_reason": wr2_outcome_status_reason(group, counts),
-            "has_overdue": wr2_line_has_overdue(group),
+            "critical_department": _indexed_critical_department(line_state),
+            "blocking_departments": _indexed_blocking_departments_text(line_state),
+            "outcome_status_reason": _indexed_outcome_status_reason(line_state, counts),
+            "has_overdue": line_state.has_overdue,
             "passport_include": passport_includes_outcome(classic_outcome),
-            "reason": line_reason_summary(group, classic_outcome),
+            "reason": _indexed_line_reason_summary(line_state, classic_outcome),
             "hold_count": counts["hold"],
             "fail_count": counts["fail"],
             "warning_count": counts["warning"],
             "waiting_count": counts["waiting"],
             "checks_percent": wr2_checks_percent(counts),
-            "_check_statuses": check_statuses,
+            "_check_statuses": list(line_state.check_statuses),
             "_sort": WR2_OUTCOME_SORT.get(outcome, 99),
         }
         for col_label, dept_db in WR2_DEPT_COLUMNS:
-            row_data[f"dept_{col_label}"] = wr2_dept_badge_for_group(group, dept_db)
+            row_data[f"dept_{col_label}"] = _indexed_dept_badge(line_state, dept_db)
         for col_label, dept_db in ADMISSION_DEPT_COLUMNS:
-            row_data[f"classic_{col_label}"] = dept_status_for_group(group, dept_db)
+            row_data[f"classic_{col_label}"] = _indexed_classic_dept_status(
+                line_state, dept_db
+            )
         rows.append(row_data)
 
     if not rows:

@@ -372,6 +372,7 @@ WR2_BOARD_DEPT_DISPLAY: List[tuple[str, str]] = [
 
 WR2_BOARD_TABLE_COLUMNS = [
     "Итог допуска",
+    "Почему не допущен",
     "Проект",
     "Очередь",
     "Титул",
@@ -390,10 +391,26 @@ WR2_BOARD_TABLE_COLUMNS = [
     "Норма выработки",
     "Стоимость труда / стоимость звена",
     "Труд / стоимость работ, %",
-    "Причина итогового допуска",
-    "Последнее ограничение",
     "Возраст ограничения",
 ]
+
+# Active blocking-reason aggregation (display-only; does not change outcome logic)
+CLOSED_RESOLUTION_STATUSES = frozenset({"RESOLVED", "CANCELLED"})
+BLOCKING_REASON_DISPLAY_MAX = 160
+BLOCKING_REASON_EMPTY = "Активные причины не зафиксированы"
+BLOCKING_REASON_MISSING = "Причина не указана"
+ACTIVE_CONSTRAINT_STATUS_RU = {
+    "ОЖИДАЕТ": "Ожидает проверки",
+    "WARNING": "Требует уточнения",
+    "HOLD": "Удержание",
+    "FAIL": "Заблокировано",
+}
+ACTIVE_BLOCKING_STATUS_PRIORITY = {
+    "FAIL": 0,
+    "HOLD": 1,
+    "WARNING": 2,
+    "ОЖИДАЕТ": 3,
+}
 
 
 def safe_str(value: Any) -> str:
@@ -489,6 +506,37 @@ def reason_text(row: pd.Series) -> str:
         return substance
     category = safe_str(row.get("constraint_category"))
     return category or "—"
+
+
+def concrete_blocking_reason_text(row: Any) -> str:
+    """Short concrete reason for registry: block_reason → substance (non-generic)."""
+    specific = registry_specific_block_reason(row)
+    if specific:
+        return specific
+    substance = constraint_block_substance(row)
+    if substance and not is_generic_block_reason(substance):
+        return substance
+    return ""
+
+
+def format_blocking_reason_due(row: Any) -> str:
+    due = None
+    if hasattr(row, "get"):
+        due = safe_date(row.get("target_resolution_date"))
+        if due is None:
+            due = safe_date(row.get("effective_promised_date"))
+    return due.strftime("%d.%m.%Y") if due else "Не определён"
+
+
+def truncate_blocking_reason_display(
+    text: str, max_len: int = BLOCKING_REASON_DISPLAY_MAX
+) -> str:
+    cleaned = safe_str(text)
+    if not cleaned:
+        return BLOCKING_REASON_EMPTY
+    if len(cleaned) <= max_len:
+        return cleaned
+    return cleaned[: max(0, max_len - 1)] + "…"
 
 
 def unique_risk_sum(df_part: pd.DataFrame) -> float:
@@ -1366,6 +1414,9 @@ def wr2_build_unified_registry_df(
             "_priority_sort": WR2_PRIORITY_ORDER.get(priority, 9),
             "_plan_value_num": plan_value_num,
             "Итог допуска": outcome_display,
+            "Почему не допущен": truncate_blocking_reason_display(
+                safe_str(row.get("blocking_reason_summary"))
+            ),
             "Проект": display_dash(row.get("project_code")),
             "Очередь": display_dash(row.get("queue_display")),
             "Титул": display_dash(row.get("title_display")),
@@ -2079,6 +2130,8 @@ class LineConstraintIndex:
     has_overdue: bool = False
     # (status_key, blocked_compact_text, reason_text) in original row order
     reason_items: List[Tuple[str, str, str]] = field(default_factory=list)
+    # Active (non-closed) FAIL/HOLD/WARNING/ОЖИДАЕТ details for reason column + work zone
+    active_blocking_details: List[Dict[str, Any]] = field(default_factory=list)
     first_row: Optional[Dict[str, Any]] = None
 
 
@@ -2105,6 +2158,7 @@ def build_constraint_department_index(
     has_dept = "responsible_department" in constraints_df.columns
     has_overdue_col = "is_overdue" in constraints_df.columns
     has_promise_overdue_col = "is_promise_overdue" in constraints_df.columns
+    has_resolution = "resolution_status" in constraints_df.columns
 
     for line_id, part in constraints_df.loc[valid].groupby(
         line_series.loc[valid].astype(str), dropna=False
@@ -2124,6 +2178,7 @@ def build_constraint_department_index(
         check_statuses: List[str] = []
         dept_keys: Dict[str, List[str]] = {}
         reason_items: List[Tuple[str, str, str]] = []
+        active_blocking_details: List[Dict[str, Any]] = []
         first_row: Optional[Dict[str, Any]] = None
 
         if has_overdue_col:
@@ -2167,12 +2222,44 @@ def build_constraint_department_index(
                 )
             )
 
+            # Display-only active reasons (does not affect outcome counts)
+            resolution = (
+                safe_str(row.get("resolution_status")).upper()
+                if has_resolution
+                else ""
+            )
+            if resolution in CLOSED_RESOLUTION_STATUSES:
+                continue
+            if status == "PASS" or status not in ACTIVE_BLOCKING_STATUS_PRIORITY:
+                continue
+            concrete = concrete_blocking_reason_text(row)
+            if status == "ОЖИДАЕТ" and not concrete:
+                continue
+            dept_label = wr2_registry_dept_short_label(
+                row.get("responsible_department")
+            )
+            if not dept_label or dept_label == "—":
+                dept_label = safe_str(row.get("responsible_department")) or "—"
+            owner = safe_str(row.get("owner_name")) or "Не заполнено автором"
+            active_blocking_details.append(
+                {
+                    "dept": dept_label,
+                    "status": status,
+                    "status_ru": ACTIVE_CONSTRAINT_STATUS_RU.get(status, status),
+                    "reason": concrete or BLOCKING_REASON_MISSING,
+                    "owner": owner,
+                    "due": format_blocking_reason_due(row),
+                    "priority": ACTIVE_BLOCKING_STATUS_PRIORITY[status],
+                }
+            )
+
         index[lid] = LineConstraintIndex(
             counts=counts,
             check_statuses=check_statuses,
             dept_keys=dept_keys,
             has_overdue=has_overdue,
             reason_items=reason_items,
+            active_blocking_details=active_blocking_details,
             first_row=first_row,
         )
 
@@ -2333,6 +2420,35 @@ def _indexed_line_reason_summary(
     return "; ".join(parts) if parts else "—"
 
 
+def _indexed_blocking_reason_summary(
+    line_state: LineConstraintIndex,
+) -> Tuple[str, int, List[Dict[str, Any]]]:
+    """Aggregate active dept reasons for registry + work zone (display-only)."""
+    details = sorted(
+        line_state.active_blocking_details,
+        key=lambda item: (
+            int(item.get("priority", 99)),
+            safe_str(item.get("dept")),
+            safe_str(item.get("reason")),
+        ),
+    )
+    parts: List[str] = []
+    seen: set[str] = set()
+    ordered_details: List[Dict[str, Any]] = []
+    for item in details:
+        dept = safe_str(item.get("dept")) or "—"
+        reason = safe_str(item.get("reason")) or BLOCKING_REASON_MISSING
+        label = f"{dept}: {reason}"
+        if label in seen:
+            continue
+        seen.add(label)
+        parts.append(label)
+        ordered_details.append(item)
+    if not parts:
+        return BLOCKING_REASON_EMPTY, 0, []
+    return "; ".join(parts), len(parts), ordered_details
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def build_war_room_read_model(
     constraints_df: pd.DataFrame,
@@ -2437,6 +2553,9 @@ def build_war_room_read_model(
         counts = line_state.counts
         outcome = resolve_war_room_line_outcome(counts, pd.DataFrame())
         classic_outcome = wr2_outcome_for_classic(outcome)
+        reason_summary, reason_count, reason_details = _indexed_blocking_reason_summary(
+            line_state
+        )
         row_data: Dict[str, Any] = {
             **meta,
             **wr2_plan_economics(meta),
@@ -2450,6 +2569,9 @@ def build_war_room_read_model(
             "has_overdue": line_state.has_overdue,
             "passport_include": passport_includes_outcome(classic_outcome),
             "reason": _indexed_line_reason_summary(line_state, classic_outcome),
+            "blocking_reason_summary": reason_summary,
+            "blocking_reason_count": reason_count,
+            "active_blocking_details": reason_details,
             "hold_count": counts["hold"],
             "fail_count": counts["fail"],
             "warning_count": counts["warning"],
@@ -2999,11 +3121,43 @@ def render_war_room_v3_code_card(row: pd.Series) -> None:
             for part in dept_parts:
                 st.markdown(part)
 
+        st.markdown("**Активные ограничения по отделам**")
+        details_raw = row.get("active_blocking_details")
+        details: List[Dict[str, Any]] = []
+        if isinstance(details_raw, list):
+            details = [item for item in details_raw if isinstance(item, dict)]
+        if not details:
+            st.caption("Активные ограничения отсутствуют")
+        else:
+            detail_rows = [
+                {
+                    "Отдел": safe_str(item.get("dept")) or "—",
+                    "Статус": safe_str(item.get("status_ru"))
+                    or ACTIVE_CONSTRAINT_STATUS_RU.get(
+                        safe_str(item.get("status")), safe_str(item.get("status"))
+                    )
+                    or "—",
+                    "Причина": safe_str(item.get("reason")) or BLOCKING_REASON_MISSING,
+                    "Ответственный": safe_str(item.get("owner"))
+                    or "Не заполнено автором",
+                    "Срок": safe_str(item.get("due")) or "Не определён",
+                }
+                for item in details
+            ]
+            st.dataframe(
+                pd.DataFrame(detail_rows),
+                use_container_width=True,
+                hide_index=True,
+            )
+
         st.markdown("**Основные ограничения**")
         st.markdown(display_dash(row.get("blocking_departments")))
         reason = display_dash(row.get("reason"))
         if reason != "—":
             st.markdown(f"**Причина ограничения:** {reason}")
+        summary = safe_str(row.get("blocking_reason_summary"))
+        if summary and summary != BLOCKING_REASON_EMPTY:
+            st.markdown(f"**Почему не допущен:** {summary}")
         st.caption(display_dash(row.get("outcome_status_reason")))
 
         st.markdown(

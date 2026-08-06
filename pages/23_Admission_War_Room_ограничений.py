@@ -141,6 +141,27 @@ WR2_FINAL_DECISION_COLUMN_HELP = (
     "Последнее управленческое решение, принятое после проверки допуска по отделам."
 )
 
+# Display-only: membership in the approved/current monthly passport snapshot
+WR2_PASSPORT_STATUS_NOT_IN = "Не включён"
+WR2_PASSPORT_STATUS_IN = "Включён"
+WR2_PASSPORT_STATUS_IN_RISK = "Включён с риском"
+WR2_PASSPORT_STATUS_COLUMN = "Статус в паспорте"
+WR2_PASSPORT_STATUS_COLUMN_HELP = (
+    "Факт включения кода в действующий паспорт месяца (snapshot). "
+    "Не заменяет управленческое решение."
+)
+WR2_PASSPORT_CONFLICT_MARK = "⚠"
+WR2_PASSPORT_CONFLICT_HELP = (
+    "Текущее управленческое решение не совпадает с действующим паспортом месяца."
+)
+WR2_SESSION_PASSPORT_STATUS_INDEX = "wr2_passport_status_index"
+
+WR2_PASSPORT_STATUS_BG = {
+    WR2_PASSPORT_STATUS_IN: "background-color: #ecfdf5;",
+    WR2_PASSPORT_STATUS_IN_RISK: "background-color: #fefce8;",
+    WR2_PASSPORT_STATUS_NOT_IN: "background-color: #f4f4f5;",
+}
+
 WR2_REGISTRY_STATUS_DISPLAY: Dict[str, str] = {
     "Ожидает проверки": "ПРОВЕРЯЕТСЯ",
     "ОЖИДАЕТ": "ПРОВЕРЯЕТСЯ",
@@ -166,6 +187,9 @@ WR2_REGISTRY_STATUS_DISPLAY: Dict[str, str] = {
     WR2_FINAL_DECISION_IN_OBLIGATION_RISK: "В ОБЯЗАТЕЛЬСТВЕ С РИСКОМ",
     WR2_FINAL_DECISION_DEFERRED: "ОТЛОЖЕНО",
     WR2_FINAL_DECISION_EXCLUDED: "ИСКЛЮЧЕНО",
+    WR2_PASSPORT_STATUS_NOT_IN: "НЕ ВКЛЮЧЁН",
+    WR2_PASSPORT_STATUS_IN: "ВКЛЮЧЁН",
+    WR2_PASSPORT_STATUS_IN_RISK: "ВКЛЮЧЁН С РИСКОМ",
 }
 
 WR2_REGISTRY_STATUS_TEXT_STYLE = {
@@ -182,6 +206,9 @@ WR2_REGISTRY_STATUS_TEXT_STYLE = {
     "В ОБЯЗАТЕЛЬСТВЕ С РИСКОМ": "color: #a16207;",
     "ОТЛОЖЕНО": "color: #64748b;",
     "ИСКЛЮЧЕНО": "color: #9a3412;",
+    "НЕ ВКЛЮЧЁН": "color: #64748b;",
+    "ВКЛЮЧЁН": "color: #166534;",
+    "ВКЛЮЧЁН С РИСКОМ": "color: #a16207;",
 }
 
 DEPT_STATUS_BG = {
@@ -429,6 +456,7 @@ WR2_BOARD_DEPT_DISPLAY: List[tuple[str, str]] = [
 WR2_BOARD_TABLE_COLUMNS = [
     "Итог допуска",
     "Итоговое решение",
+    WR2_PASSPORT_STATUS_COLUMN,
     "Почему не допущен",
     "Проект",
     "Очередь",
@@ -1819,13 +1847,25 @@ def wr2_build_unified_registry_df(
         labor_cost = safe_num(row.get("labor_cost"))
         crew_size_raw = safe_num(row.get("crew_size"))
         plan_value_num = safe_num(row.get("plan_value_num"))
+        final_decision = wr2_final_decision_label_for_row(row)
+        passport_index = wr2_passport_status_index_from_session()
+        passport_status = wr2_passport_status_for_row(row, passport_index)
+        passport_conflict = wr2_passport_decision_conflict(
+            final_decision,
+            passport_status,
+            has_active_passport=bool(passport_index.get("has_passport")),
+        )
         row_dict: Dict[str, Any] = {
             "_plan_line_id": pid,
             "_needs_review_sort": 0 if needs_review else 1,
             "_priority_sort": WR2_PRIORITY_ORDER.get(priority, 9),
             "_plan_value_num": plan_value_num,
+            "_passport_decision_conflict": passport_conflict,
             "Итог допуска": outcome_display,
-            "Итоговое решение": wr2_final_decision_label_for_row(row),
+            "Итоговое решение": final_decision,
+            WR2_PASSPORT_STATUS_COLUMN: wr2_format_passport_status_display(
+                passport_status, conflict=passport_conflict
+            ),
             "Почему не допущен": truncate_blocking_reason_display(
                 safe_str(row.get("blocking_reason_summary"))
             ),
@@ -3338,23 +3378,29 @@ def format_wr2_registry_status_display(val: Any) -> str:
     text = safe_str(val)
     if not text or text == "—":
         return "—"
+    conflict_prefix = ""
+    mark = f"{WR2_PASSPORT_CONFLICT_MARK} "
+    if text.startswith(mark):
+        conflict_prefix = mark
+        text = text[len(mark) :].strip()
     mapped = WR2_REGISTRY_STATUS_DISPLAY.get(text)
     if mapped:
-        return mapped
-    return WR2_REGISTRY_STATUS_DISPLAY.get(text.upper(), text.upper())
+        return f"{conflict_prefix}{mapped}"
+    upper = WR2_REGISTRY_STATUS_DISPLAY.get(text.upper(), text.upper())
+    return f"{conflict_prefix}{upper}"
 
 
 def style_wr2_registry_status_text(val: Any) -> str:
-    text = str(val).strip().upper()
+    text = wr2_strip_passport_conflict_mark(val).strip().upper()
     if not text or text == "—":
         return "color: #64748b;"
     return WR2_REGISTRY_STATUS_TEXT_STYLE.get(text, "color: #475569;")
 
 
 def wr2_registry_status_column_names(df: pd.DataFrame) -> List[str]:
-    cols = ["Итог допуска", "Итоговое решение"]
+    cols = ["Итог допуска", "Итоговое решение", WR2_PASSPORT_STATUS_COLUMN]
     cols.extend(label for label, _ in WR2_BOARD_DEPT_DISPLAY if label in df.columns)
-    return cols
+    return [c for c in cols if c in df.columns]
 
 
 def prepare_wr2_registry_display_table(df: pd.DataFrame) -> pd.DataFrame:
@@ -3368,7 +3414,20 @@ def style_war_room_board_table(df_in: pd.DataFrame):
     styler = df_in.style
     for col in wr2_registry_status_column_names(df_in):
         styler = _apply_wr2_registry_cell_style(styler, style_wr2_registry_status_text, col)
+        if col == WR2_PASSPORT_STATUS_COLUMN:
+            styler = _apply_wr2_registry_cell_style(
+                styler, wr2_passport_status_cell_background, col
+            )
     return styler
+
+
+def wr2_passport_status_cell_background(val: Any) -> str:
+    base = wr2_strip_passport_conflict_mark(val)
+    bg = WR2_PASSPORT_STATUS_BG.get(base, "")
+    if safe_str(val).startswith(WR2_PASSPORT_CONFLICT_MARK):
+        # Keep status color; conflict is shown via marker + caption.
+        return bg or "background-color: #fff7ed;"
+    return bg
 
 
 def _war_room_plan_summary_kpi_card_html(label: str, value: str, variant: str) -> str:
@@ -3399,6 +3458,15 @@ def wr2_build_registry_column_config(show_cols: List[str]) -> Dict[str, Any]:
             config[col] = st.column_config.TextColumn(
                 col,
                 help=WR2_FINAL_DECISION_COLUMN_HELP,
+                disabled=True,
+            )
+        elif col == WR2_PASSPORT_STATUS_COLUMN:
+            config[col] = st.column_config.TextColumn(
+                col,
+                help=(
+                    f"{WR2_PASSPORT_STATUS_COLUMN_HELP} "
+                    f"{WR2_PASSPORT_CONFLICT_MARK} = {WR2_PASSPORT_CONFLICT_HELP}"
+                ),
                 disabled=True,
             )
         else:
@@ -3593,10 +3661,18 @@ def render_war_room_v3_unified_registry(
 
     needs_review_cnt = int((registry_df["_needs_review_sort"] == 0).sum())
     total_cnt = len(registry_df)
+    conflict_cnt = 0
+    if "_passport_decision_conflict" in registry_df.columns:
+        conflict_cnt = int(registry_df["_passport_decision_conflict"].astype(bool).sum())
     st.caption(
         f"Показано {total_cnt} кодов · Требует рассмотрения: {needs_review_cnt}. "
         "Выберите строку для управленческого решения."
     )
+    if conflict_cnt:
+        st.caption(
+            f"⚠ Расхождений intent/паспорт: {conflict_cnt}. "
+            f"{WR2_PASSPORT_CONFLICT_HELP}"
+        )
 
     show_cols = [c for c in WR2_BOARD_TABLE_COLUMNS if c in registry_df.columns]
     show = prepare_wr2_registry_display_table(registry_df[show_cols])
@@ -4077,6 +4153,189 @@ def wr2_final_decision_label_for_row(row: pd.Series) -> str:
             return WR2_FINAL_DECISION_IN_OBLIGATION_RISK
         return WR2_FINAL_DECISION_IN_OBLIGATION
     return WR2_FINAL_DECISION_PENDING
+
+
+def wr2_empty_passport_status_index() -> Dict[str, Any]:
+    return {
+        "scope": "",
+        "has_passport": False,
+        "passport_id": None,
+        "by_line_id": {},
+        "by_boq_unique": {},
+        "lines_loaded": 0,
+        "load_calls": 0,
+    }
+
+
+def wr2_passport_line_status_label(line: Dict[str, Any]) -> str:
+    override = bool(line.get("management_override"))
+    admission = safe_str(line.get("admission_status")).upper()
+    if override or admission == "APPROVED_BY_OVERRIDE":
+        return WR2_PASSPORT_STATUS_IN_RISK
+    return WR2_PASSPORT_STATUS_IN
+
+
+def wr2_pick_active_passport_header(headers: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not headers:
+        return None
+    approved = [
+        h
+        for h in headers
+        if safe_str(h.get("passport_status")).upper() == "APPROVED"
+    ]
+    pool = approved or list(headers)
+
+    def _ts(row: Dict[str, Any]) -> str:
+        return safe_str(row.get("updated_at") or row.get("approved_at") or row.get("created_at"))
+
+    return sorted(pool, key=_ts, reverse=True)[0]
+
+
+def wr2_load_passport_status_index(
+    project_code: str,
+    month_key: str,
+) -> Dict[str, Any]:
+    """
+    One bulk load of the acting passport lines for concrete project+month.
+    Indexed by line_id (= plan_line_id). Unique-boq fallback only when pid absent.
+    """
+    index = wr2_empty_passport_status_index()
+    index["load_calls"] = 1
+    if not wr2_is_concrete_mgmt_scope(project_code, month_key):
+        return index
+
+    scope = wr2_mgmt_scope_token(project_code, month_key)
+    index["scope"] = scope
+    try:
+        headers_resp = (
+            supabase.table("monthly_plan_passports")
+            .select(
+                "passport_id,passport_status,created_at,updated_at,approved_at,rows_count"
+            )
+            .eq("project_code", project_code)
+            .eq("month_key", month_key)
+            .limit(50)
+            .execute()
+        )
+    except Exception:  # noqa: BLE001
+        return index
+
+    header = wr2_pick_active_passport_header(list(headers_resp.data or []))
+    if not header:
+        return index
+
+    passport_id = safe_str(header.get("passport_id"))
+    if not passport_id:
+        return index
+
+    index["has_passport"] = True
+    index["passport_id"] = passport_id
+    try:
+        lines_resp = (
+            supabase.table("monthly_plan_passport_lines")
+            .select("line_id,boq_code,admission_status,management_override")
+            .eq("passport_id", passport_id)
+            .limit(10000)
+            .execute()
+        )
+    except Exception:  # noqa: BLE001
+        return index
+
+    lines = list(lines_resp.data or [])
+    index["lines_loaded"] = len(lines)
+    by_line: Dict[str, str] = {}
+    boq_to_statuses: Dict[str, List[str]] = {}
+    for line in lines:
+        status = wr2_passport_line_status_label(line)
+        lid = safe_str(line.get("line_id"))
+        if lid:
+            by_line[lid] = status
+        boq = safe_str(line.get("boq_code"))
+        if boq:
+            boq_to_statuses.setdefault(boq, []).append(status)
+    index["by_line_id"] = by_line
+    index["by_boq_unique"] = {
+        boq: statuses[0]
+        for boq, statuses in boq_to_statuses.items()
+        if len(statuses) == 1
+    }
+    return index
+
+
+def wr2_store_passport_status_index(index: Dict[str, Any]) -> None:
+    st.session_state[WR2_SESSION_PASSPORT_STATUS_INDEX] = index
+
+
+def wr2_passport_status_index_from_session() -> Dict[str, Any]:
+    stored = st.session_state.get(WR2_SESSION_PASSPORT_STATUS_INDEX)
+    if isinstance(stored, dict) and "by_line_id" in stored:
+        return stored
+    return wr2_empty_passport_status_index()
+
+
+def wr2_passport_status_for_row(
+    row: pd.Series,
+    index: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Display-only passport membership label. Never empty."""
+    idx = index if index is not None else wr2_passport_status_index_from_session()
+    pid = safe_str(row.get("plan_line_id"))
+    by_line = idx.get("by_line_id") or {}
+    if pid:
+        return safe_str(by_line.get(pid)) or WR2_PASSPORT_STATUS_NOT_IN
+    # Fallback by boq only when plan_line_id is missing and BOQ is unique in passport.
+    boq = safe_str(row.get("boq_code"))
+    by_boq = idx.get("by_boq_unique") or {}
+    if boq and boq in by_boq:
+        return safe_str(by_boq.get(boq)) or WR2_PASSPORT_STATUS_NOT_IN
+    return WR2_PASSPORT_STATUS_NOT_IN
+
+
+def wr2_passport_decision_conflict(
+    final_decision: str,
+    passport_status: str,
+    *,
+    has_active_passport: bool,
+) -> bool:
+    """
+    Intent vs snapshot mismatch.
+    Legacy: no ACTIVE decision + passport line → NOT a conflict.
+    """
+    in_passport = passport_status in (
+        WR2_PASSPORT_STATUS_IN,
+        WR2_PASSPORT_STATUS_IN_RISK,
+    )
+    if final_decision in (
+        WR2_FINAL_DECISION_EXCLUDED,
+        WR2_FINAL_DECISION_DEFERRED,
+    ) and in_passport:
+        return True
+    if (
+        final_decision
+        in (
+            WR2_FINAL_DECISION_IN_OBLIGATION,
+            WR2_FINAL_DECISION_IN_OBLIGATION_RISK,
+        )
+        and passport_status == WR2_PASSPORT_STATUS_NOT_IN
+        and has_active_passport
+    ):
+        return True
+    return False
+
+
+def wr2_format_passport_status_display(status: str, *, conflict: bool) -> str:
+    label = safe_str(status) or WR2_PASSPORT_STATUS_NOT_IN
+    if conflict:
+        return f"{WR2_PASSPORT_CONFLICT_MARK} {label}"
+    return label
+
+
+def wr2_strip_passport_conflict_mark(val: Any) -> str:
+    text = safe_str(val)
+    prefix = f"{WR2_PASSPORT_CONFLICT_MARK} "
+    if text.startswith(prefix):
+        return text[len(prefix) :].strip()
+    return text
 
 
 def wr2_slice_month_board(
@@ -4809,6 +5068,9 @@ def render_war_room_v3(
         )
         st.session_state[WR2_SESSION_MONTH_BOARD] = month_board
         wr2_sync_auto_admitted_composition(month_board)
+        wr2_store_passport_status_index(
+            wr2_load_passport_status_index(filters["project"], filters["month"])
+        )
         st.session_state["wr2_passport_board_df"] = board_df.copy()
 
     with stage("render summary + registry"):
@@ -5196,6 +5458,9 @@ def admission_cell_background(value: Any) -> str:
         return ADMISSION_OUTCOME_BG[text]
     if text in WR2_FINAL_DECISION_BG:
         return WR2_FINAL_DECISION_BG[text]
+    base = wr2_strip_passport_conflict_mark(text)
+    if base in WR2_PASSPORT_STATUS_BG:
+        return WR2_PASSPORT_STATUS_BG[base]
     return ""
 
 

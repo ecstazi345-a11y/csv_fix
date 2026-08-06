@@ -14,6 +14,17 @@ from services.constraint_display import (
 from services.monthly_passport_service import create_monthly_passport
 import services.monthly_passport_service as monthly_passport_service
 from services.constraints_loader import fetch_all_constraints
+from services.monthly_plan_management_decisions import (
+    DECISION_DEFER,
+    DECISION_EXCLUDE,
+    DECISION_INCLUDE,
+    DECISION_INCLUDE_RISK,
+    apply_management_decision,
+    cancel_management_decision,
+    clear_management_decisions_cache,
+    load_management_decisions,
+    normalize_decision_code,
+)
 from services.perf_audit import finish_page, stage, start_page
 from services.supabase_client import supabase
 
@@ -292,6 +303,17 @@ WR2_SESSION_FORMING = "wr2_passport_forming_lock"
 WR2_SESSION_SELECTED = "wr2_selected_plan_line_id"
 WR2_SESSION_DEFERRED = "wr2_deferred_decisions"
 WR2_SESSION_EXCLUDED = "wr2_excluded_decisions"
+WR2_SESSION_MGMT_SCOPE = "wr2_mgmt_scope"
+WR2_SESSION_MGMT_REHYDRATED_COUNT = "wr2_mgmt_rehydrated_count"
+WR2_SESSION_MGMT_REHYDRATED_NOTICE = "wr2_mgmt_rehydrated_notice"
+
+# DB EN codes → Page 23 session RU labels
+WR2_DECISION_EN_TO_SESSION = {
+    DECISION_INCLUDE: WR2_MGMT_INCLUDE,
+    DECISION_INCLUDE_RISK: WR2_MGMT_INCLUDE_RISK,
+    DECISION_EXCLUDE: WR2_MGMT_EXCLUDE,
+    DECISION_DEFER: WR2_MGMT_POSTPONE,
+}
 
 WR2_MGMT_LABELS = {
     WR2_MGMT_INCLUDE: "Включить в паспорт",
@@ -878,6 +900,213 @@ def wr2_init_passport_session() -> None:
     st.session_state.setdefault(WR2_SESSION_FORMING, False)
     st.session_state.setdefault(WR2_SESSION_DEFERRED, {})
     st.session_state.setdefault(WR2_SESSION_EXCLUDED, {})
+    st.session_state.setdefault(WR2_SESSION_MGMT_SCOPE, "")
+    st.session_state.setdefault(WR2_SESSION_MGMT_REHYDRATED_COUNT, 0)
+    st.session_state.setdefault(WR2_SESSION_MGMT_REHYDRATED_NOTICE, False)
+
+
+def wr2_mgmt_scope_token(project_code: str, month_key: str) -> str:
+    return f"{safe_str(project_code)}|{safe_str(month_key)}"
+
+
+def wr2_is_concrete_mgmt_scope(project_code: str, month_key: str) -> bool:
+    project = safe_str(project_code)
+    month = safe_str(month_key)
+    return bool(project and month and project != "Все" and month != "Все")
+
+
+def wr2_clear_session_decision_caches() -> None:
+    """Clear UI decision caches only. Does not touch DB."""
+    st.session_state[WR2_SESSION_COMPOSITION] = {}
+    st.session_state[WR2_SESSION_DEFERRED] = {}
+    st.session_state[WR2_SESSION_EXCLUDED] = {}
+
+
+def wr2_db_decision_to_session_record(db_row: Dict[str, Any]) -> Dict[str, Any]:
+    en = normalize_decision_code(db_row.get("decision"))
+    ru = WR2_DECISION_EN_TO_SESSION.get(en, WR2_MGMT_EXCLUDE)
+    return {
+        "boq_code": safe_str(db_row.get("boq_code")),
+        "boq_name": safe_str(db_row.get("boq_name")),
+        "decision": ru,
+        "outcome": safe_str(db_row.get("admission_outcome_at_decision")) or "—",
+        "override": bool(db_row.get("management_override")),
+        "basis": safe_str(db_row.get("decision_basis")) or "—",
+        "responsible": safe_str(db_row.get("responsible_person")) or "—",
+        "review_deadline": safe_str(db_row.get("review_deadline")) or "—",
+        "comment": safe_str(db_row.get("decision_comment")) or "—",
+        "risk_description": safe_str(db_row.get("risk_description")),
+        "risk_impact": safe_str(db_row.get("risk_impact")),
+        "risk_mitigation_owner": safe_str(db_row.get("risk_mitigation_owner")),
+        "risk_mitigation_deadline": safe_str(db_row.get("risk_mitigation_deadline")),
+        "risk_acceptance_basis": safe_str(db_row.get("risk_acceptance_basis")),
+        "risk_manager_comment": safe_str(db_row.get("risk_manager_comment")),
+        "risk_deadline": safe_str(db_row.get("risk_mitigation_deadline")) or "—",
+        "risk_blocker": safe_str(db_row.get("risk_blocker")) or "—",
+        "plan_value": 0.0,
+        "labor_hours": 0.0,
+        "added_at": safe_str(db_row.get("decided_at")) or datetime.now(timezone.utc).isoformat(),
+        "decided_by": safe_str(db_row.get("decided_by")),
+        "from_db": True,
+    }
+
+
+def wr2_apply_rehydrate_from_rows(rows: List[Dict[str, Any]]) -> int:
+    """Replace session decision baskets from ACTIVE DB rows (SoT)."""
+    comp: Dict[str, Any] = {}
+    deferred: Dict[str, Any] = {}
+    excluded: Dict[str, Any] = {}
+    for db_row in rows:
+        pid = safe_str(db_row.get("plan_line_id"))
+        if not pid:
+            continue
+        en = normalize_decision_code(db_row.get("decision"))
+        record = wr2_db_decision_to_session_record(db_row)
+        ru = safe_str(record.get("decision"))
+        st.session_state[wr2_mgmt_session_key(pid)] = ru
+        if en in (DECISION_INCLUDE, DECISION_INCLUDE_RISK):
+            comp[pid] = record
+        elif en == DECISION_EXCLUDE:
+            excluded[pid] = record
+        elif en == DECISION_DEFER:
+            deferred[pid] = record
+    st.session_state[WR2_SESSION_COMPOSITION] = comp
+    st.session_state[WR2_SESSION_DEFERRED] = deferred
+    st.session_state[WR2_SESSION_EXCLUDED] = excluded
+    st.session_state[WR2_SESSION_MGMT_REHYDRATED_COUNT] = len(rows)
+    return len(rows)
+
+
+def wr2_rehydrate_management_decisions(project_code: str, month_key: str) -> int:
+    """
+    Load ACTIVE decisions for concrete project+month into session_state.
+    Project/Month = «Все» → no-op (does not clear).
+    """
+    if not wr2_is_concrete_mgmt_scope(project_code, month_key):
+        return int(st.session_state.get(WR2_SESSION_MGMT_REHYDRATED_COUNT) or 0)
+
+    scope = wr2_mgmt_scope_token(project_code, month_key)
+    prev = safe_str(st.session_state.get(WR2_SESSION_MGMT_SCOPE))
+    if prev != scope:
+        wr2_clear_session_decision_caches()
+        st.session_state[WR2_SESSION_MGMT_SCOPE] = scope
+        st.session_state[WR2_SESSION_MGMT_REHYDRATED_NOTICE] = True
+
+    rows = load_management_decisions(project_code, month_key)
+    count = wr2_apply_rehydrate_from_rows(rows)
+    if prev != scope:
+        st.session_state[WR2_SESSION_MGMT_REHYDRATED_NOTICE] = True
+    return count
+
+
+def wr2_build_mgmt_rpc_payload(
+    row: pd.Series,
+    *,
+    decision: str,
+    basis: str,
+    responsible: str,
+    review_deadline: str,
+    comment: str,
+    risk_description: str = "",
+    risk_impact: str = "",
+    risk_mitigation_owner: str = "",
+    risk_mitigation_deadline: str = "",
+    risk_acceptance_basis: str = "",
+    risk_manager_comment: str = "",
+    override: bool = False,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "boq_code": safe_str(row.get("boq_code")),
+        "boq_name": safe_str(row.get("boq_name")),
+        "facility_building": wr2_plan_facility(row.to_dict()),
+        "construction_discipline": wr2_plan_discipline(row.to_dict()),
+        "admission_outcome_at_decision": safe_str(row.get("outcome")),
+        "management_override": bool(override),
+        "decision_basis": wr2_normalize_form_value(basis),
+        "decision_comment": wr2_normalize_form_value(comment),
+        "responsible_person": wr2_normalize_form_value(responsible),
+        "review_deadline": wr2_normalize_form_value(review_deadline),
+        "risk_blocker": safe_str(row.get("blocking_departments")) or "",
+    }
+    if decision == WR2_MGMT_INCLUDE_RISK:
+        payload["management_override"] = True
+        payload.update(
+            {
+                "risk_description": wr2_normalize_form_value(risk_description),
+                "risk_impact": wr2_normalize_form_value(risk_impact),
+                "risk_mitigation_owner": wr2_normalize_form_value(risk_mitigation_owner),
+                "risk_mitigation_deadline": wr2_normalize_form_value(
+                    risk_mitigation_deadline
+                ),
+                "risk_acceptance_basis": wr2_normalize_form_value(risk_acceptance_basis),
+                "risk_manager_comment": wr2_normalize_form_value(risk_manager_comment),
+            }
+        )
+    else:
+        # Non-risk decisions must not carry stale risk widget values into RPC.
+        payload.update(
+            {
+                "risk_description": "",
+                "risk_impact": "",
+                "risk_mitigation_owner": "",
+                "risk_mitigation_deadline": "",
+                "risk_acceptance_basis": "",
+                "risk_manager_comment": "",
+            }
+        )
+    return payload
+
+
+def wr2_resolve_decided_by(responsible: str) -> str:
+    """Prefer form responsible; fallback to passport_created_by if set."""
+    actor = safe_str(responsible)
+    if actor and actor not in WR2_BLANK_REASON_MARKERS:
+        return actor
+    created_by = safe_str(st.session_state.get("passport_created_by"))
+    if created_by and created_by not in WR2_BLANK_REASON_MARKERS:
+        return created_by
+    return ""
+
+
+def wr2_render_saved_decisions_indicator(project_code: str, month_key: str) -> None:
+    if not wr2_is_concrete_mgmt_scope(project_code, month_key):
+        return
+    n = int(st.session_state.get(WR2_SESSION_MGMT_REHYDRATED_COUNT) or 0)
+    st.caption(f"Сохранённые управленческие решения: {n}")
+    if st.session_state.get(WR2_SESSION_MGMT_REHYDRATED_NOTICE):
+        st.caption("Состав восстановлен из Supabase")
+        st.session_state[WR2_SESSION_MGMT_REHYDRATED_NOTICE] = False
+
+
+def wr2_cancel_all_active_scope_decisions(
+    project_code: str,
+    month_key: str,
+    cancelled_by: str,
+) -> List[str]:
+    """Cancel every ACTIVE decision in concrete scope. Returns error messages."""
+    errors: List[str] = []
+    actor = safe_str(cancelled_by)
+    if not actor:
+        return ["Укажите «Кто утверждает» перед очисткой состава."]
+    rows = load_management_decisions(project_code, month_key)
+    for db_row in rows:
+        pid = safe_str(db_row.get("plan_line_id"))
+        if not pid:
+            continue
+        result = cancel_management_decision(
+            project_code=project_code,
+            month_key=month_key,
+            plan_line_id=pid,
+            cancelled_by=actor,
+            reason="Очистка состава обязательства",
+        )
+        if not result.get("ok"):
+            errors.append(
+                f"{safe_str(db_row.get('boq_code')) or pid}: "
+                f"{result.get('error') or 'ошибка отмены'}"
+            )
+    clear_management_decisions_cache()
+    return errors
 
 
 def wr2_sid(plan_line_id: str) -> str:
@@ -937,35 +1166,180 @@ def wr2_get_decision_record(plan_line_id: str) -> Dict[str, Any]:
     return {}
 
 
-def wr2_hydrate_decision_widgets(plan_line_id: str) -> None:
-    record = wr2_get_decision_record(plan_line_id)
-    if not record:
-        return
-    defaults = {
-        wr2_decision_basis_key(plan_line_id): safe_str(record.get("basis")),
-        wr2_decision_responsible_key(plan_line_id): safe_str(record.get("responsible")),
-        wr2_decision_review_deadline_key(plan_line_id): safe_str(
-            record.get("review_deadline") or record.get("risk_deadline")
-        ),
-        wr2_decision_comment_key(plan_line_id): safe_str(record.get("comment")),
-        wr2_risk_reason_text_key(plan_line_id): safe_str(
-            record.get("risk_description") or record.get("basis")
-        ),
-        wr2_risk_impact_key(plan_line_id): safe_str(record.get("risk_impact")),
-        wr2_risk_responsible_key(plan_line_id): safe_str(
-            record.get("risk_mitigation_owner") or record.get("responsible")
-        ),
-        wr2_risk_deadline_key(plan_line_id): safe_str(
-            record.get("risk_mitigation_deadline") or record.get("risk_deadline")
-        ),
-        wr2_risk_acceptance_basis_key(plan_line_id): safe_str(record.get("risk_acceptance_basis")),
-        wr2_risk_comment_key(plan_line_id): safe_str(
-            record.get("risk_manager_comment") or record.get("comment")
-        ),
-    }
+def wr2_normalize_form_value(value: Any) -> str:
+    """Strip blank UI markers («—») so they never become real field values."""
+    text = safe_str(value).strip()
+    if text in WR2_BLANK_REASON_MARKERS:
+        return ""
+    return text
+
+
+def wr2_previous_decision_type_key(plan_line_id: str) -> str:
+    return f"wr2_previous_decision_type_{wr2_sid(plan_line_id)}"
+
+
+def wr2_hydrate_marker_key(plan_line_id: str) -> str:
+    return f"wr2_form_hydrated_{wr2_sid(plan_line_id)}"
+
+
+def wr2_common_form_keys(plan_line_id: str) -> List[str]:
+    return [
+        wr2_decision_basis_key(plan_line_id),
+        wr2_decision_responsible_key(plan_line_id),
+        wr2_decision_review_deadline_key(plan_line_id),
+        wr2_decision_comment_key(plan_line_id),
+    ]
+
+
+def wr2_risk_form_keys(plan_line_id: str) -> List[str]:
+    return [
+        wr2_risk_reason_text_key(plan_line_id),
+        wr2_risk_impact_key(plan_line_id),
+        wr2_risk_responsible_key(plan_line_id),
+        wr2_risk_deadline_key(plan_line_id),
+        wr2_risk_acceptance_basis_key(plan_line_id),
+        wr2_risk_comment_key(plan_line_id),
+    ]
+
+
+def wr2_clear_widget_keys(keys: List[str]) -> None:
+    for key in keys:
+        st.session_state[key] = ""
+
+
+def wr2_set_widget_defaults(
+    defaults: Dict[str, str],
+    *,
+    force: bool = False,
+) -> None:
     for key, value in defaults.items():
-        if value and key not in st.session_state:
-            st.session_state[key] = value
+        clean = wr2_normalize_form_value(value)
+        if not clean:
+            if force:
+                st.session_state[key] = ""
+            continue
+        if force or key not in st.session_state:
+            st.session_state[key] = clean
+
+
+def wr2_hydrate_decision_widgets(
+    plan_line_id: str,
+    *,
+    live_decision: str = "",
+    force: bool = False,
+) -> None:
+    """
+    Seed form widgets from durable/session record.
+
+    - Common fields hydrate from any durable decision.
+    - Risk fields hydrate ONLY when durable decision is INCLUDE_RISK
+      and live decision is also INCLUDE_RISK.
+    - No risk_description←basis / risk_comment←comment fallback.
+    - «—» is never written as a real value.
+    - One-shot per (sid, live_decision) unless force=True.
+    """
+    marker = wr2_hydrate_marker_key(plan_line_id)
+    live = live_decision or safe_str(st.session_state.get(wr2_live_decision_key(plan_line_id)))
+    if not force and safe_str(st.session_state.get(marker)) == live and live:
+        return
+
+    record = wr2_get_decision_record(plan_line_id)
+    record_decision = safe_str(record.get("decision")) if record else ""
+
+    if record:
+        common = {
+            wr2_decision_basis_key(plan_line_id): safe_str(record.get("basis")),
+            wr2_decision_responsible_key(plan_line_id): safe_str(record.get("responsible")),
+            wr2_decision_review_deadline_key(plan_line_id): safe_str(
+                record.get("review_deadline") or record.get("risk_deadline")
+            ),
+            wr2_decision_comment_key(plan_line_id): safe_str(record.get("comment")),
+        }
+        wr2_set_widget_defaults(common, force=force)
+
+        if (
+            record_decision == WR2_MGMT_INCLUDE_RISK
+            and live == WR2_MGMT_INCLUDE_RISK
+        ):
+            risk = {
+                wr2_risk_reason_text_key(plan_line_id): safe_str(
+                    record.get("risk_description")
+                ),
+                wr2_risk_impact_key(plan_line_id): safe_str(record.get("risk_impact")),
+                wr2_risk_responsible_key(plan_line_id): safe_str(
+                    record.get("risk_mitigation_owner")
+                ),
+                wr2_risk_deadline_key(plan_line_id): safe_str(
+                    record.get("risk_mitigation_deadline") or record.get("risk_deadline")
+                ),
+                wr2_risk_acceptance_basis_key(plan_line_id): safe_str(
+                    record.get("risk_acceptance_basis")
+                ),
+                wr2_risk_comment_key(plan_line_id): safe_str(
+                    record.get("risk_manager_comment")
+                ),
+            }
+            wr2_set_widget_defaults(risk, force=force)
+
+    if live:
+        st.session_state[marker] = live
+
+
+def wr2_on_decision_type_changed(
+    plan_line_id: str,
+    previous: str,
+    current: str,
+) -> None:
+    """Controlled reset when radio decision type changes for one plan_line_id."""
+    record = wr2_get_decision_record(plan_line_id)
+    record_decision = safe_str(record.get("decision")) if record else ""
+
+    if current == WR2_MGMT_INCLUDE_RISK:
+        # Never inherit DEFER/EXCLUDE text into risk protocol.
+        wr2_clear_widget_keys(wr2_risk_form_keys(plan_line_id))
+        if record_decision == WR2_MGMT_INCLUDE_RISK:
+            wr2_hydrate_decision_widgets(
+                plan_line_id,
+                live_decision=current,
+                force=True,
+            )
+        else:
+            st.session_state[wr2_hydrate_marker_key(plan_line_id)] = current
+        return
+
+    # Leaving INCLUDE_RISK (or switching non-risk types): drop stale risk widgets
+    # so they cannot leak into a later INCLUDE_RISK payload by accident.
+    if previous == WR2_MGMT_INCLUDE_RISK or current != WR2_MGMT_INCLUDE_RISK:
+        wr2_clear_widget_keys(wr2_risk_form_keys(plan_line_id))
+
+    if record_decision == current and current in WR2_MGMT_OPTIONS:
+        wr2_hydrate_decision_widgets(
+            plan_line_id,
+            live_decision=current,
+            force=True,
+        )
+    else:
+        st.session_state[wr2_hydrate_marker_key(plan_line_id)] = current
+
+
+def wr2_sync_decision_type_change(plan_line_id: str, current_decision: str) -> bool:
+    """
+    Detect real radio change for plan_line_id.
+    Returns True when type changed this run.
+    """
+    prev_key = wr2_previous_decision_type_key(plan_line_id)
+    previous = safe_str(st.session_state.get(prev_key))
+    current = safe_str(current_decision)
+    if not previous:
+        st.session_state[prev_key] = current
+        wr2_hydrate_decision_widgets(plan_line_id, live_decision=current)
+        return False
+    if previous == current:
+        wr2_hydrate_decision_widgets(plan_line_id, live_decision=current)
+        return False
+    wr2_on_decision_type_changed(plan_line_id, previous, current)
+    st.session_state[prev_key] = current
+    return True
 
 
 def wr2_field_from_record_or_widget(
@@ -973,13 +1347,19 @@ def wr2_field_from_record_or_widget(
     widget_key: str,
     *record_fields: str,
 ) -> str:
+    """
+    Apply priority: live widget value first; durable/session record only if
+    widget key is absent from session_state.
+    """
+    if widget_key in st.session_state:
+        return wr2_normalize_form_value(st.session_state.get(widget_key))
     record = wr2_get_decision_record(plan_line_id)
     if record:
         for field in record_fields:
-            value = safe_str(record.get(field))
+            value = wr2_normalize_form_value(record.get(field))
             if value:
                 return value
-    return safe_str(st.session_state.get(widget_key))
+    return ""
 
 
 def wr2_get_decision_basis(plan_line_id: str) -> str:
@@ -1012,7 +1392,6 @@ def wr2_get_decision_comment(plan_line_id: str) -> str:
         plan_line_id,
         wr2_decision_comment_key(plan_line_id),
         "comment",
-        "risk_manager_comment",
     )
 
 
@@ -1037,7 +1416,6 @@ def wr2_get_risk_responsible(plan_line_id: str) -> str:
         plan_line_id,
         wr2_risk_responsible_key(plan_line_id),
         "risk_mitigation_owner",
-        "responsible",
     )
 
 
@@ -1046,7 +1424,6 @@ def wr2_get_risk_deadline(plan_line_id: str) -> str:
         plan_line_id,
         wr2_risk_deadline_key(plan_line_id),
         "risk_mitigation_deadline",
-        "risk_deadline",
     )
 
 
@@ -1055,7 +1432,6 @@ def wr2_get_risk_comment(plan_line_id: str) -> str:
         plan_line_id,
         wr2_risk_comment_key(plan_line_id),
         "risk_manager_comment",
-        "comment",
     )
 
 
@@ -1550,54 +1926,121 @@ def wr2_apply_management_decision(
     pid = safe_str(row.get("plan_line_id"))
     if not pid:
         return ["Не выбран plan_line_id."]
+    project_code = safe_str(row.get("project_code"))
+    month_key = safe_str(row.get("month_key"))
+    if not wr2_is_concrete_mgmt_scope(project_code, month_key):
+        return [
+            "Для сохранения решения выберите конкретный проект и месяц в фильтрах."
+        ]
     outcome = safe_str(row.get("outcome"))
 
-    if not basis.strip():
+    basis = wr2_normalize_form_value(basis)
+    responsible = wr2_normalize_form_value(responsible)
+    review_deadline = wr2_normalize_form_value(review_deadline)
+    comment = wr2_normalize_form_value(comment)
+    risk_description = wr2_normalize_form_value(risk_description)
+    risk_impact = wr2_normalize_form_value(risk_impact)
+    risk_mitigation_owner = wr2_normalize_form_value(risk_mitigation_owner)
+    risk_mitigation_deadline = wr2_normalize_form_value(risk_mitigation_deadline)
+    risk_acceptance_basis = wr2_normalize_form_value(risk_acceptance_basis)
+    risk_manager_comment = wr2_normalize_form_value(risk_manager_comment)
+
+    if decision != WR2_MGMT_INCLUDE_RISK:
+        risk_description = ""
+        risk_impact = ""
+        risk_mitigation_owner = ""
+        risk_mitigation_deadline = ""
+        risk_acceptance_basis = ""
+        risk_manager_comment = ""
+
+    if not basis:
         errors.append("Укажите основание решения.")
-    if not responsible.strip():
+    if not responsible:
         errors.append("Укажите ответственного.")
-    if not review_deadline.strip():
+    if not review_deadline:
         errors.append("Укажите срок пересмотра.")
-    if not comment.strip():
+    if not comment:
         errors.append("Укажите комментарий.")
 
     if decision == WR2_MGMT_INCLUDE_RISK:
-        if not risk_description.strip():
+        if not risk_description:
             errors.append("Укажите описание риска.")
-        if not risk_impact.strip():
+        if not risk_impact:
             errors.append("Укажите возможные последствия.")
-        if not risk_mitigation_owner.strip():
+        if not risk_mitigation_owner:
             errors.append("Укажите ответственного за устранение.")
-        if not risk_mitigation_deadline.strip():
+        if not risk_mitigation_deadline:
             errors.append("Укажите срок устранения.")
-        if not risk_acceptance_basis.strip():
+        if not risk_acceptance_basis:
             errors.append("Укажите основание принятия риска.")
-        if not risk_manager_comment.strip():
+        if not risk_manager_comment:
             errors.append("Укажите комментарий руководителя.")
+
+    decided_by = wr2_resolve_decided_by(responsible)
+    if not decided_by:
+        errors.append(
+            "Не указан автор решения. Заполните «Ответственный» "
+            "или поле «Кто утверждает»."
+        )
+
+    decision_code = normalize_decision_code(decision)
+    if not decision_code:
+        errors.append(f"Некорректное решение: {decision}")
 
     if errors:
         return errors
 
-    comp = dict(st.session_state.get(WR2_SESSION_COMPOSITION, {}))
-    deferred = dict(st.session_state.get(WR2_SESSION_DEFERRED, {}))
-    excluded = dict(st.session_state.get(WR2_SESSION_EXCLUDED, {}))
     old_decision = wr2_get_mgmt_decision(row)
     now_iso = datetime.now(timezone.utc).isoformat()
     record = wr2_build_decision_record(
         row,
         decision,
-        basis=basis.strip(),
-        responsible=responsible.strip(),
-        review_deadline=review_deadline.strip(),
-        comment=comment.strip(),
-        risk_description=risk_description.strip(),
-        risk_impact=risk_impact.strip(),
-        risk_mitigation_owner=risk_mitigation_owner.strip(),
-        risk_mitigation_deadline=risk_mitigation_deadline.strip(),
-        risk_acceptance_basis=risk_acceptance_basis.strip(),
-        risk_manager_comment=risk_manager_comment.strip(),
+        basis=basis,
+        responsible=responsible,
+        review_deadline=review_deadline,
+        comment=comment,
+        risk_description=risk_description,
+        risk_impact=risk_impact,
+        risk_mitigation_owner=risk_mitigation_owner,
+        risk_mitigation_deadline=risk_mitigation_deadline,
+        risk_acceptance_basis=risk_acceptance_basis,
+        risk_manager_comment=risk_manager_comment,
     )
     override = bool(record.get("override"))
+    payload = wr2_build_mgmt_rpc_payload(
+        row,
+        decision=decision,
+        basis=basis,
+        responsible=responsible,
+        review_deadline=review_deadline,
+        comment=comment,
+        risk_description=risk_description,
+        risk_impact=risk_impact,
+        risk_mitigation_owner=risk_mitigation_owner,
+        risk_mitigation_deadline=risk_mitigation_deadline,
+        risk_acceptance_basis=risk_acceptance_basis,
+        risk_manager_comment=risk_manager_comment,
+        override=override,
+    )
+
+    # DB first — session updates only after successful RPC
+    rpc_result = apply_management_decision(
+        project_code=project_code,
+        month_key=month_key,
+        plan_line_id=pid,
+        decision=decision_code,
+        decided_by=decided_by,
+        payload=payload,
+    )
+    if not rpc_result.get("ok"):
+        return [
+            f"Не удалось сохранить решение в Supabase: "
+            f"{rpc_result.get('error') or 'неизвестная ошибка'}"
+        ]
+
+    comp = dict(st.session_state.get(WR2_SESSION_COMPOSITION, {}))
+    deferred = dict(st.session_state.get(WR2_SESSION_DEFERRED, {}))
+    excluded = dict(st.session_state.get(WR2_SESSION_EXCLUDED, {}))
 
     if decision in WR2_PASSPORT_DECISIONS:
         deferred.pop(pid, None)
@@ -1618,6 +2061,13 @@ def wr2_apply_management_decision(
     st.session_state[WR2_SESSION_DEFERRED] = deferred
     st.session_state[WR2_SESSION_EXCLUDED] = excluded
     st.session_state[wr2_mgmt_session_key(pid)] = decision
+    st.session_state[WR2_SESSION_MGMT_SCOPE] = wr2_mgmt_scope_token(
+        project_code, month_key
+    )
+    # Refresh count from cache-cleared load after apply
+    st.session_state[WR2_SESSION_MGMT_REHYDRATED_COUNT] = len(
+        load_management_decisions(project_code, month_key)
+    )
 
     wr2_append_audit(
         {
@@ -1631,39 +2081,61 @@ def wr2_apply_management_decision(
             "basis": basis.strip(),
             "responsible": responsible.strip(),
             "comment": comment.strip(),
+            "persisted": True,
         }
     )
     return []
 
 
-def wr2_remove_from_passport(pid: str, boq_code: str, outcome: str) -> None:
-    comp = dict(st.session_state.get(WR2_SESSION_COMPOSITION, {}))
-    excluded = dict(st.session_state.get(WR2_SESSION_EXCLUDED, {}))
+def wr2_remove_from_passport(pid: str, boq_code: str, outcome: str) -> List[str]:
+    """Remove line from draft via cancel RPC, then update session."""
+    scope = safe_str(st.session_state.get(WR2_SESSION_MGMT_SCOPE))
+    parts = scope.split("|", 1) if scope else []
+    project_code = parts[0] if len(parts) == 2 else ""
+    month_key = parts[1] if len(parts) == 2 else ""
+    if not wr2_is_concrete_mgmt_scope(project_code, month_key):
+        return [
+            "Нельзя убрать код: выберите конкретный проект и месяц."
+        ]
+    actor = wr2_resolve_decided_by(
+        safe_str(st.session_state.get("passport_created_by"))
+    )
+    if not actor:
+        return [
+            "Укажите «Кто утверждает» перед удалением кода из состава."
+        ]
+
     formed = bool(st.session_state.get(WR2_SESSION_FORMED))
-    if pid in comp:
-        del comp[pid]
-    st.session_state[WR2_SESSION_COMPOSITION] = comp
-    st.session_state[wr2_mgmt_session_key(pid)] = WR2_MGMT_EXCLUDE
-    excluded[pid] = {
-        "boq_code": boq_code,
-        "boq_name": "—",
-        "decision": WR2_MGMT_EXCLUDE,
-        "outcome": outcome,
-        "basis": (
-            "Код исключён из паспорта управленческим решением"
-            if formed
-            else "Код убран из черновика состава паспорта"
-        ),
-        "responsible": "—",
-        "review_deadline": "—",
-        "comment": "—",
-        "plan_value": 0.0,
-    }
-    st.session_state[WR2_SESSION_EXCLUDED] = excluded
     note = (
         "Код исключён из паспорта управленческим решением"
         if formed
         else "Код убран из черновика состава паспорта"
+    )
+    rpc_result = cancel_management_decision(
+        project_code=project_code,
+        month_key=month_key,
+        plan_line_id=pid,
+        cancelled_by=actor,
+        reason=note,
+    )
+    if not rpc_result.get("ok"):
+        return [
+            f"Не удалось отменить решение в Supabase: "
+            f"{rpc_result.get('error') or 'неизвестная ошибка'}"
+        ]
+
+    comp = dict(st.session_state.get(WR2_SESSION_COMPOSITION, {}))
+    deferred = dict(st.session_state.get(WR2_SESSION_DEFERRED, {}))
+    excluded = dict(st.session_state.get(WR2_SESSION_EXCLUDED, {}))
+    comp.pop(pid, None)
+    deferred.pop(pid, None)
+    excluded.pop(pid, None)
+    st.session_state[WR2_SESSION_COMPOSITION] = comp
+    st.session_state[WR2_SESSION_DEFERRED] = deferred
+    st.session_state[WR2_SESSION_EXCLUDED] = excluded
+    st.session_state.pop(wr2_mgmt_session_key(pid), None)
+    st.session_state[WR2_SESSION_MGMT_REHYDRATED_COUNT] = len(
+        load_management_decisions(project_code, month_key)
     )
     wr2_append_audit(
         {
@@ -1671,13 +2143,15 @@ def wr2_remove_from_passport(pid: str, boq_code: str, outcome: str) -> None:
             "boq_code": boq_code,
             "plan_line_id": pid,
             "old_outcome": outcome,
-            "decision": WR2_MGMT_EXCLUDE,
+            "decision": "CANCEL",
             "override": False,
             "basis": note,
-            "responsible": "—",
+            "responsible": actor,
             "comment": note,
+            "persisted": True,
         }
     )
+    return []
 
 
 def wr2_get_risk_reason_text(plan_line_id: str) -> str:
@@ -1685,7 +2159,6 @@ def wr2_get_risk_reason_text(plan_line_id: str) -> str:
         plan_line_id,
         wr2_risk_reason_text_key(plan_line_id),
         "risk_description",
-        "basis",
     )
 
 
@@ -3175,9 +3648,16 @@ def render_war_room_v3_decision_panel(row: pd.Series) -> None:
     st.markdown("#### Управленческое решение")
     pid = safe_str(row.get("plan_line_id"))
     outcome = safe_str(row.get("outcome"))
-    default_decision = wr2_get_mgmt_decision(row)
+    durable_decision = wr2_get_mgmt_decision(row)
+    default_decision = durable_decision
     if outcome == WR2_OUTCOME_OK and default_decision not in WR2_MGMT_OPTIONS:
         default_decision = WR2_MGMT_INCLUDE
+
+    if wr2_has_durable_mgmt_decision(pid) and durable_decision in WR2_MGMT_OPTIONS:
+        st.markdown(
+            f"**Текущее решение:** {wr2_mgmt_display_label(durable_decision)}"
+        )
+
     st.radio(
         "Вариант решения",
         WR2_MGMT_OPTIONS,
@@ -3189,11 +3669,21 @@ def render_war_room_v3_decision_panel(row: pd.Series) -> None:
         horizontal=True,
     )
 
+    live_decision = wr2_get_live_decision(row)
+    if (
+        wr2_has_durable_mgmt_decision(pid)
+        and durable_decision in WR2_MGMT_OPTIONS
+        and live_decision in WR2_MGMT_OPTIONS
+        and live_decision != durable_decision
+    ):
+        st.markdown(
+            f"**Новое решение:** {wr2_mgmt_display_label(live_decision)}"
+        )
+
 
 def render_war_room_v3_decision_basis(row: pd.Series, decision: str) -> None:
     st.markdown("#### Обоснование принятого решения")
     pid = safe_str(row.get("plan_line_id"))
-    wr2_hydrate_decision_widgets(pid)
     b1, b2 = st.columns(2)
     with b1:
         st.text_area(
@@ -3231,7 +3721,6 @@ def render_war_room_v3_decision_basis(row: pd.Series, decision: str) -> None:
 def render_war_room_v3_risk_protocol(row: pd.Series) -> None:
     st.markdown("#### Протокол принятия риска")
     pid = safe_str(row.get("plan_line_id"))
-    wr2_hydrate_decision_widgets(pid)
     r1, r2 = st.columns(2)
     with r1:
         st.text_area(
@@ -3275,16 +3764,43 @@ def wr2_is_auto_clean_admitted(row: pd.Series) -> bool:
     return pid in st.session_state.get(WR2_SESSION_COMPOSITION, {})
 
 
+def wr2_has_durable_mgmt_decision(plan_line_id: str) -> bool:
+    """True when sid has a saved decision in composition / deferred / excluded."""
+    pid = safe_str(plan_line_id)
+    if not pid:
+        return False
+    if pid in st.session_state.get(WR2_SESSION_COMPOSITION, {}):
+        return True
+    if pid in st.session_state.get(WR2_SESSION_DEFERRED, {}):
+        return True
+    if pid in st.session_state.get(WR2_SESSION_EXCLUDED, {}):
+        return True
+    return False
+
+
+def wr2_apply_button_label(row: pd.Series, live_decision: str) -> str:
+    pid = safe_str(row.get("plan_line_id"))
+    if not wr2_has_durable_mgmt_decision(pid):
+        return "Применить управленческое решение"
+    durable = wr2_get_mgmt_decision(row)
+    if live_decision != durable:
+        return "Пересмотреть решение"
+    return "Обновить решение"
+
+
 def wr2_render_management_decision_form(row: pd.Series) -> None:
     pid = safe_str(row.get("plan_line_id"))
     boq = display_dash(row.get("boq_code"))
     render_war_room_v3_decision_panel(row)
     decision = wr2_get_live_decision(row)
+    # Controlled type-change + one-shot hydrate BEFORE widgets bind keys.
+    wr2_sync_decision_type_change(pid, decision)
     render_war_room_v3_decision_basis(row, decision)
     if decision == WR2_MGMT_INCLUDE_RISK:
         render_war_room_v3_risk_protocol(row)
 
-    if st.button("Применить управленческое решение", key=f"wr2_apply_{wr2_sid(pid)}"):
+    apply_label = wr2_apply_button_label(row, decision)
+    if st.button(apply_label, key=f"wr2_apply_{wr2_sid(pid)}"):
         apply_decision = wr2_get_live_decision(row)
         errors = wr2_apply_management_decision(
             row,
@@ -3304,6 +3820,9 @@ def wr2_render_management_decision_form(row: pd.Series) -> None:
             for err in errors:
                 st.error(err)
         else:
+            # Keep previous-type marker aligned with newly saved decision.
+            st.session_state[wr2_previous_decision_type_key(pid)] = apply_decision
+            st.session_state[wr2_hydrate_marker_key(pid)] = apply_decision
             st.success(f"Решение по {boq} сохранено.")
             st.rerun()
 
@@ -3477,7 +3996,8 @@ def render_war_room_v3_management_workspace(
     row = match.iloc[0]
     pid = safe_str(row.get("plan_line_id"))
     st.session_state[WR2_SESSION_SELECTED] = pid
-    wr2_hydrate_decision_widgets(pid)
+    # Hydrate runs inside wr2_render_management_decision_form via
+    # wr2_sync_decision_type_change (after live radio is known).
 
     render_war_room_v3_code_card(row)
 
@@ -3573,8 +4093,12 @@ def render_war_room_v3_passport_basket(board_df: pd.DataFrame) -> None:
                         else f"Убрать {boq} из черновика"
                     )
                     if st.button(label, key=f"wr2_remove_passport_{wr2_sid(pid)}"):
-                        wr2_remove_from_passport(pid, boq, outcome)
-                        st.rerun()
+                        remove_errors = wr2_remove_from_passport(pid, boq, outcome)
+                        if remove_errors:
+                            for err in remove_errors:
+                                st.error(err)
+                        else:
+                            st.rerun()
 
 
 def wr2_compute_readiness(
@@ -3869,30 +4393,59 @@ def render_war_room_v3_obligation_draft(
                     else f"Убрать {boq} из драфта"
                 )
                 if st.button(label, key=f"wr2_remove_obligation_{wr2_sid(pid)}"):
-                    wr2_remove_from_passport(pid, boq, outcome)
-                    st.rerun()
+                    remove_errors = wr2_remove_from_passport(pid, boq, outcome)
+                    if remove_errors:
+                        for err in remove_errors:
+                            st.error(err)
+                    else:
+                        st.rerun()
 
-        if st.button("Очистить состав", key="wr2_clear_passport"):
-            st.session_state[WR2_SESSION_COMPOSITION] = {}
-            st.session_state[WR2_SESSION_DEFERRED] = {}
-            st.session_state[WR2_SESSION_EXCLUDED] = {}
-            st.session_state[WR2_SESSION_DRAFT] = False
-            st.session_state[WR2_SESSION_FORMED] = False
-            wr2_append_audit(
-                {
-                    "datetime": datetime.now(timezone.utc).isoformat(),
-                    "boq_code": "—",
-                    "plan_line_id": "—",
-                    "old_outcome": "—",
-                    "decision": "CLEAR",
-                    "override": False,
-                    "basis": "Очищен состав паспорта",
-                    "responsible": created_by,
-                    "comment": "—",
-                }
+        clear_disabled = not scope_ready
+        clear_confirm = st.checkbox(
+            "Подтверждаю отмену всех ACTIVE управленческих решений "
+            "для выбранного проекта и месяца",
+            key="wr2_clear_obligation_confirm",
+            disabled=clear_disabled,
+        )
+        if clear_disabled:
+            st.caption(
+                "«Очистить состав» доступно только при выбранных "
+                "конкретных проекте и месяце."
             )
-            st.success("Состав обязательства очищен.")
-            st.rerun()
+        if st.button(
+            "Очистить состав",
+            key="wr2_clear_obligation_btn",
+            disabled=clear_disabled or not clear_confirm,
+        ):
+            clear_errors = wr2_cancel_all_active_scope_decisions(
+                project_sel,
+                month_sel,
+                created_by.strip(),
+            )
+            if clear_errors:
+                for err in clear_errors:
+                    st.error(err)
+            else:
+                wr2_clear_session_decision_caches()
+                st.session_state[WR2_SESSION_DRAFT] = False
+                st.session_state[WR2_SESSION_FORMED] = False
+                st.session_state[WR2_SESSION_MGMT_REHYDRATED_COUNT] = 0
+                wr2_append_audit(
+                    {
+                        "datetime": datetime.now(timezone.utc).isoformat(),
+                        "boq_code": "—",
+                        "plan_line_id": "—",
+                        "old_outcome": "—",
+                        "decision": "CLEAR",
+                        "override": False,
+                        "basis": "Очищен состав паспорта (cancel ACTIVE scope)",
+                        "responsible": created_by,
+                        "comment": "—",
+                        "persisted": True,
+                    }
+                )
+                st.success("Состав обязательства очищен (решения отменены в Supabase).")
+                st.rerun()
 
         st.markdown("**Расширенные опции**")
         st.caption(
@@ -3949,10 +4502,12 @@ def render_war_room_v3(
             overdue_only=filters["overdue_only"],
             search_boq=filters["search_boq"],
         )
+        wr2_rehydrate_management_decisions(filters["project"], filters["month"])
         wr2_sync_auto_admitted_composition(board_df)
         st.session_state["wr2_passport_board_df"] = board_df.copy()
 
     with stage("render summary + registry"):
+        wr2_render_saved_decisions_indicator(filters["project"], filters["month"])
         render_war_room_v3_summary(board_df)
         selected_pid = render_war_room_v3_unified_registry(board_df, constraints_df)
     st.markdown("---")

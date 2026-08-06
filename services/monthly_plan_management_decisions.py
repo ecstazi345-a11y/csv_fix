@@ -196,10 +196,7 @@ def _validate_apply_inputs(
         return "Не указано основание решения (decision_basis)", "", {}
     if not responsible:
         return "Не указан ответственный (responsible_person)", "", {}
-    if not review_deadline:
-        return "Не указан срок пересмотра (review_deadline)", "", {}
-    if not comment:
-        return "Не указан комментарий (decision_comment)", "", {}
+    # review_deadline and decision_comment are optional (empty → null in RPC payload).
 
     if code == DECISION_INCLUDE_RISK:
         required_risk = (

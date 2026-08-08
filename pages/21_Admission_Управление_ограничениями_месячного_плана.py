@@ -19,6 +19,7 @@ from services.constraint_display import (
 from services.boq_execution_history_service import get_boq_execution_history
 from services.boq_execution_crews_service import get_boq_execution_crew_breakdown
 from services.constraints_loader import fetch_all_constraints
+from services.constraints_service import merge_created_by_once
 from services.perf_audit import finish_page, stage, start_page
 from services.supabase_client import supabase
 
@@ -3464,6 +3465,28 @@ def update_constraint_record(
         return str(exc)
 
 
+def page21_constraints_recorder_name() -> str:
+    """
+    FIO of the person who records a constraint (constraints_saver_name).
+    Must not be substituted by admitted_by / decision officer.
+    """
+    return safe_str(st.session_state.get("constraints_saver_name"))
+
+
+def attach_created_by_on_first_fixation(
+    payload: Dict[str, Any],
+    row: pd.Series,
+    *,
+    recorder_name: str,
+) -> Dict[str, Any]:
+    """Stamp created_by once from recorder; never overwrite; never use officer."""
+    return merge_created_by_once(
+        payload,
+        existing_created_by=row.get("created_by") if row is not None else None,
+        recorder_name=recorder_name,
+    )
+
+
 def _apply_cell_style(styler, func, column: str):
     if column not in styler.data.columns:
         return styler
@@ -3890,6 +3913,7 @@ def apply_check_quick_action(
             "resolved_by": saver,
             "last_comment_at": now_iso,
         }
+        # pass = admission, not constraint fixation → do not stamp created_by
     elif action == "hold":
         reason = comment_text.strip()
         if not reason:
@@ -3906,6 +3930,10 @@ def apply_check_quick_action(
             "updated_at": now_iso,
             "last_comment_at": now_iso,
         }
+        recorder = page21_constraints_recorder_name() or saver
+        payload = attach_created_by_on_first_fixation(
+            payload, row, recorder_name=recorder
+        )
     elif action == "clarify":
         reason = comment_text.strip()
         if not reason:
@@ -3920,6 +3948,10 @@ def apply_check_quick_action(
             "updated_at": now_iso,
             "last_comment_at": now_iso,
         }
+        recorder = page21_constraints_recorder_name() or saver
+        payload = attach_created_by_on_first_fixation(
+            payload, row, recorder_name=recorder
+        )
     else:
         return "Неизвестное действие."
 
@@ -4979,6 +5011,9 @@ def _sync_fixation_blocks_to_governance_keys(
     if impediment and not safe_str(st.session_state.get(desc_key)).strip():
         st.session_state[desc_key] = impediment
 
+    # Stamp required_action from «Что необходимо сделать» before block-5 save.
+    _stamp_mvp_required_action(prefix)
+
 
 _DIRECT_ADMIT_JOURNAL_LINE_RE = re.compile(
     r"^\[(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2})\]\s*(.+)$"
@@ -5160,6 +5195,57 @@ def _render_fixation_classification_section(prefix: str) -> None:
     )
 
 
+def _stamp_mvp_required_action(prefix: str, live_value: Any = None) -> str:
+    """
+    Capture «Что необходимо сделать» into a committed session key.
+
+    Returns non-empty text to write as required_action, or "" if UI empty
+    (empty must NOT clear an existing DB required_action on re-save).
+    """
+    action_key = f"{prefix}_mvp_action"
+    commit_key = f"{prefix}_required_action_committed"
+    live = safe_str(
+        live_value if live_value is not None else st.session_state.get(action_key)
+    ).strip()
+    if live:
+        st.session_state[commit_key] = live
+        return live
+    return safe_str(st.session_state.get(commit_key)).strip()
+
+
+def resolve_required_action_for_write(
+    *candidates: Any,
+    prefix: str = "",
+) -> str:
+    """
+    First non-empty candidate / stamped mvp_action wins.
+
+    Empty result means omit required_action from UPDATE payload
+    (preserve existing DB value). Never writes blank to clear.
+    """
+    for candidate in candidates:
+        text = safe_str(candidate).strip()
+        if text:
+            if prefix:
+                st.session_state[f"{prefix}_required_action_committed"] = text
+            return text
+    if prefix:
+        return _stamp_mvp_required_action(prefix)
+    return ""
+
+
+def apply_required_action_to_payload(
+    payload: Dict[str, Any],
+    *candidates: Any,
+    prefix: str = "",
+) -> Dict[str, Any]:
+    """Attach required_action only when a non-empty write value is resolved."""
+    action_text = resolve_required_action_for_write(*candidates, prefix=prefix)
+    if action_text:
+        payload["required_action"] = action_text
+    return payload
+
+
 def _render_fixation_plan_section(
     prefix: str,
     row: pd.Series,
@@ -5169,20 +5255,29 @@ def _render_fixation_plan_section(
         "Официальный срок фиксации — в блоке **5. Какое решение официально фиксируем**."
     )
     control_key = f"{prefix}_mvp_next_control"
+    action_key = f"{prefix}_mvp_action"
     if control_key not in st.session_state:
         st.session_state[control_key] = date.today()
+    # Prefill from DB once so re-open shows existing required_action
+    if action_key not in st.session_state:
+        existing_action = safe_str(row.get("required_action")).strip()
+        if existing_action:
+            st.session_state[action_key] = existing_action
+            st.session_state[f"{prefix}_required_action_committed"] = existing_action
     st.text_area(
         "Что мешает выполнить работу",
         key=f"{prefix}_mvp_impediment",
         height=68,
         placeholder="Кратко опишите препятствие",
     )
-    st.text_area(
+    action_live = st.text_area(
         "Что необходимо сделать",
-        key=f"{prefix}_mvp_action",
+        key=action_key,
         height=68,
         placeholder="Конкретные шаги для снятия ограничения",
+        help="Сохраняется в monthly_plan_constraints.required_action",
     )
+    _stamp_mvp_required_action(prefix, action_live)
     st.date_input(
         "Следующий контроль",
         key=control_key,
@@ -5198,8 +5293,10 @@ def _render_fixation_audit_content(
     status_key = norm_check_status_key(row.get("check_status"))
     queue_label, _, _ = direct_admit_queue_status(status_key)
     decision_label = _direct_admit_governance_decision_label(status_key)
-    updated_by = audit_last_updated_by(row) or safe_str(row.get("resolved_by"))
+    updated_by = audit_last_updated_by(row)
     updated_by_display = field_display(updated_by)
+    created_by_display = field_display(row.get("created_by"))
+    resolved_by_display = field_display(row.get("resolved_by"))
     updated_at_display = format_datetime_moscow(audit_last_updated_at(row))
     owner_display = field_display(row.get("owner_name"))
     target_text = format_date_any_ru(row.get("target_resolution_date"))
@@ -5223,7 +5320,9 @@ def _render_fixation_audit_content(
         ("Статус допуска", queue_label),
         ("Последнее действие", last_action_display),
         ("Решение", decision_label),
-        ("Инициатор / кто зафиксировал", updated_by_display),
+        ("Зафиксировал ограничение", created_by_display),
+        ("Последнее изменение", updated_by_display),
+        ("Снял", resolved_by_display),
         ("Дата / время (МСК)", updated_at_display),
         ("Владелец ограничения", owner_display),
         ("Срок ответа / снятия", target_text),
@@ -5591,7 +5690,10 @@ def _render_fixation_decision_section(
             if not validation_failed:
                 save_description = user_description
                 save_block_reason = user_block_reason
+                mvp_action_text = resolve_required_action_for_write(prefix=prefix)
                 if draft.get("cid") == cid:
+                    if mvp_action_text:
+                        draft = {**draft, "action_text": mvp_action_text}
                     audit = format_direct_admit_audit_trail(
                         {**draft, "reason": user_block_reason}
                     )
@@ -5611,6 +5713,7 @@ def _render_fixation_decision_section(
                     ),
                     description=save_description,
                     block_reason=save_block_reason,
+                    required_action=mvp_action_text,
                     target_date=st.session_state.get(f"{prefix}_target"),
                     severity=severity,
                 )
@@ -5628,7 +5731,10 @@ def _render_fixation_decision_section(
         else:
             save_description = safe_str(st.session_state.get(f"{prefix}_desc")).strip()
             save_block_reason = safe_str(st.session_state.get(f"{prefix}_block_reason")).strip()
+            mvp_action_text = resolve_required_action_for_write(prefix=prefix)
             if draft.get("cid") == cid:
+                if mvp_action_text:
+                    draft = {**draft, "action_text": mvp_action_text}
                 audit = format_direct_admit_audit_trail(draft)
                 if audit not in save_description:
                     save_description = (
@@ -5646,6 +5752,7 @@ def _render_fixation_decision_section(
                 ),
                 description=save_description,
                 block_reason=save_block_reason,
+                required_action=mvp_action_text,
                 target_date=st.session_state.get(f"{prefix}_target"),
                 severity=severity,
             )
@@ -5796,6 +5903,7 @@ def save_direct_admission_decision(
     owner_name: str = "",
     description: str = "",
     block_reason: str = "",
+    required_action: str = "",
     target_date: date | None = None,
     severity: str = "MEDIUM",
 ) -> Optional[str]:
@@ -5836,6 +5944,7 @@ def save_direct_admission_decision(
             "resolved_by": saver_name,
             "last_comment_at": now_iso,
         }
+        # officer/admitted_by must not stamp created_by (admission ≠ fixation)
         err = update_constraint_record(constraint_id, payload)
         if err is None:
             _register_direct_admit_status_patch(constraint_id, action)
@@ -5890,6 +5999,23 @@ def save_direct_admission_decision(
         }
     else:
         return "Неизвестное действие."
+
+    # «Что необходимо сделать» → monthly_plan_constraints.required_action
+    # Empty UI / omitted arg must NOT wipe an existing DB value.
+    cid_frag = _da_stable_key_fragment(constraint_id)
+    gov_prefix = f"da_gov_{cid_frag}"
+    payload = apply_required_action_to_payload(
+        payload,
+        required_action,
+        prefix=gov_prefix,
+    )
+
+    # created_by from constraints_saver_name only — never from officer/admitted_by
+    recorder = page21_constraints_recorder_name()
+    if recorder:
+        payload = attach_created_by_on_first_fixation(
+            payload, row, recorder_name=recorder
+        )
 
     err = update_constraint_record(constraint_id, payload)
     if err is None:
@@ -6991,6 +7117,9 @@ def render_edit_card(row: pd.Series) -> None:
             "last_action_at": now_iso,
             "updated_at": now_iso,
         }
+        payload = attach_created_by_on_first_fixation(
+            payload, row, recorder_name=saver_name or page21_constraints_recorder_name()
+        )
         if "constraint_created_at" in row.index:
             occurrence_iso = datetime.combine(
                 new_occurrence_date, datetime.min.time(), tzinfo=timezone.utc

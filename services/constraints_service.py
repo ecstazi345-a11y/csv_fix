@@ -175,6 +175,36 @@ def _plan_line_as_constraint_source(plan_line: Dict[str, Any]) -> Dict[str, Any]
     }
 
 
+def is_created_by_empty(value: Any) -> bool:
+    """True when created_by is null/blank (first fixation may stamp it)."""
+    if value is None:
+        return True
+    text = str(value).strip()
+    return not text or text.lower() in {"nan", "none", "<na>"}
+
+
+def merge_created_by_once(
+    payload: Dict[str, Any],
+    *,
+    existing_created_by: Any,
+    recorder_name: str,
+) -> Dict[str, Any]:
+    """
+    Attach created_by only on first human fixation.
+
+    Rule:
+    - if existing.created_by is empty and recorder_name is non-empty → set created_by
+    - otherwise leave payload without overwriting created_by
+    Never replaces an already stored created_by.
+    """
+    out = dict(payload)
+    out.pop("created_by", None)
+    recorder = str(recorder_name or "").strip()
+    if recorder and is_created_by_empty(existing_created_by):
+        out["created_by"] = recorder
+    return out
+
+
 def _build_constraint_row(
     queue_row: Dict[str, Any],
     template: Dict[str, str],
@@ -183,6 +213,8 @@ def _build_constraint_row(
     plan_value = queue_row.get("plan_value")
     dept = template["responsible_department"]
 
+    # Intentionally omit created_by: auto-created rows are not yet human-fixed.
+    # created_by is stamped on first substantive fixation (Page 21).
     row: Dict[str, Any] = {
         "draft_id": queue_row.get("draft_id"),
         "line_id": queue_row.get("line_id"),

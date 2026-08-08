@@ -1,15 +1,17 @@
 """
-Реестр ограничений допуска месячного плана — Python read model + resolve RPC.
+Реестр ограничений допуска месячного плана — Python read model + resolve/update RPC.
 
 Источник чтения: monthly_plan_constraints_dashboard_v2
 Обогащение (bulk): monthly_plan_lines_v2
 Закрытие: RPC resolve_monthly_plan_constraint
+Обновление (R2): RPC update_monthly_plan_constraint
 
 Не пишет в passport. Не меняет page 21 / page 23.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -34,6 +36,77 @@ VIEW_DASHBOARD_V2 = "monthly_plan_constraints_dashboard_v2"
 TABLE_PLAN_LINES_V2 = "monthly_plan_lines_v2"
 TABLE_EVENTS = "monthly_plan_constraint_events"
 RPC_RESOLVE = "resolve_monthly_plan_constraint"
+RPC_UPDATE = "update_monthly_plan_constraint"
+
+# R2 update patch: only these keys may be sent to update_monthly_plan_constraint.
+UPDATE_PATCH_WHITELIST = frozenset(
+    {
+        "constraint_occurred_at",
+        "problem_owner",
+        "owner_name",
+        "subcontractor_coordinator",
+        "constraint_category",
+        "constraint_priority",
+        "problem_description",
+        "problem_impact",
+        "required_action",
+        "deadline_status",
+        "deadline_source",
+        "target_resolution_date",
+        "next_control_date",
+    }
+)
+
+UPDATE_DATE_FIELDS = frozenset(
+    {
+        "constraint_occurred_at",
+        "target_resolution_date",
+        "next_control_date",
+    }
+)
+
+UPDATE_ENUM_FIELDS = frozenset(
+    {
+        "deadline_status",
+        "deadline_source",
+        "constraint_priority",
+    }
+)
+
+EMPTY_TEXT_MARKERS = frozenset({"", "—", "-", "–", "−", "‒"})
+
+DEADLINE_STATUS_DISPLAY = {
+    "NOT_SET": "Не определён",
+    "REQUESTED": "Запрошен",
+    "ESTIMATED": "Предварительный",
+    "CONFIRMED": "Подтверждён",
+    "RESCHEDULED": "Перенесён",
+    "OVERDUE": "Просрочен",
+    "RESOLVED": "Исполнен",
+}
+
+DEADLINE_SOURCE_DISPLAY = {
+    "CUSTOMER": "Заказчик",
+    "GENERAL_CONTRACTOR": "Генподрядчик",
+    "DESIGN_INSTITUTE": "Проектный институт",
+    "SUPPLIER": "Поставщик",
+    "SUBCONTRACTOR_ESTIMATE": "Оценка субподрядчика",
+    "MEETING_PROTOCOL": "Протокол совещания",
+    "LETTER": "Письмо",
+    "TEQ": "TEQ",
+    "OTHER": "Другое",
+}
+
+CONSTRAINT_PRIORITY_DISPLAY = {
+    "CRITICAL": "Критический",
+    "HIGH": "Высокий",
+    "NORMAL": "Нормальный",
+    "LOW": "Низкий",
+}
+
+DEADLINE_STATUS_CODES = frozenset(DEADLINE_STATUS_DISPLAY.keys())
+DEADLINE_SOURCE_CODES = frozenset(DEADLINE_SOURCE_DISPLAY.keys())
+CONSTRAINT_PRIORITY_CODES = frozenset(CONSTRAINT_PRIORITY_DISPLAY.keys())
 
 DEFAULT_PAGE_SIZE = 1000
 LINE_ID_CHUNK = 200
@@ -75,9 +148,18 @@ READ_MODEL_COLUMNS = [
     "root_cause",
     "problem_owner",
     "owner_name",
+    "subcontractor_coordinator",
     "required_action",
     "target_resolution_date",
     "actual_resolution_date",
+    "constraint_occurred_at",
+    "problem_description",
+    "problem_impact",
+    "deadline_status",
+    "deadline_source",
+    "next_control_date",
+    "constraint_priority",
+    "resolution_basis",
     "resolved_at",
     "resolved_by",
     "severity",
@@ -90,6 +172,11 @@ READ_MODEL_COLUMNS = [
     "updated_by",
     "delay_days",
     "days_open",
+    "days_open_real",
+    "deadline_days_overdue",
+    "is_deadline_overdue",
+    "is_next_control_overdue",
+    "effective_deadline_status",
     "is_open",
     "is_blocking",
     "is_warning",
@@ -590,6 +677,45 @@ def build_constraint_registry_read_model(
     else:
         result["is_promise_overdue"] = result["is_promise_overdue"].fillna(False).astype(bool)
 
+    # R2 deadline / control flags (prefer dashboard_v2 computed columns)
+    if "days_open_real" in result.columns:
+        result["days_open_real"] = (
+            pd.to_numeric(result["days_open_real"], errors="coerce")
+            .fillna(result["days_open"])
+            .astype(int)
+        )
+    else:
+        result["days_open_real"] = result["days_open"]
+
+    if "deadline_days_overdue" in result.columns:
+        result["deadline_days_overdue"] = (
+            pd.to_numeric(result["deadline_days_overdue"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+    else:
+        result["deadline_days_overdue"] = 0
+
+    for flag_col in ("is_deadline_overdue", "is_next_control_overdue"):
+        if flag_col not in result.columns:
+            result[flag_col] = False
+        else:
+            result[flag_col] = result[flag_col].fillna(False).astype(bool)
+
+    if "effective_deadline_status" not in result.columns:
+        if "deadline_status" in result.columns:
+            result["effective_deadline_status"] = result["deadline_status"]
+        else:
+            result["effective_deadline_status"] = "NOT_SET"
+    result["effective_deadline_status"] = (
+        result["effective_deadline_status"]
+        .fillna("NOT_SET")
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .replace({"": "NOT_SET"})
+    )
+
     result["problem_summary"] = result.apply(_problem_summary_row, axis=1)
     result["next_action_summary"] = result.apply(_next_action_summary_row, axis=1)
 
@@ -717,6 +843,298 @@ def clear_constraint_registry_caches() -> dict[str, bool]:
         "clear_war_room_data_caches",
     )
     return cleared
+
+
+def clear_registry_read_caches() -> dict[str, bool]:
+    """
+    R2: clear only registry + events read caches.
+
+    Does NOT touch page 21 / page 23 / passport caches.
+    """
+    cleared = {"registry": False, "events": False}
+    try:
+        load_constraint_registry.clear()
+        cleared["registry"] = True
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        load_constraint_events.clear()
+        cleared["events"] = True
+    except Exception:  # noqa: BLE001
+        pass
+    return cleared
+
+
+def display_deadline_status(value: Any) -> str:
+    code = safe_text(value).upper()
+    if not code:
+        return "—"
+    return DEADLINE_STATUS_DISPLAY.get(code, code)
+
+
+def display_deadline_source(value: Any) -> str:
+    code = safe_text(value).upper()
+    if not code:
+        return "—"
+    return DEADLINE_SOURCE_DISPLAY.get(code, code)
+
+
+def display_constraint_priority(value: Any) -> str:
+    code = safe_text(value).upper()
+    if not code:
+        return "—"
+    return CONSTRAINT_PRIORITY_DISPLAY.get(code, code)
+
+
+def _is_empty_marker(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, float) and pd.isna(value):
+        return True
+    text = str(value).strip()
+    return text in EMPTY_TEXT_MARKERS or text.lower() in {"nan", "none", "<na>"}
+
+
+def _normalize_patch_date(value: Any) -> Optional[str]:
+    if _is_empty_marker(value):
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text = str(value).strip()
+    parsed = pd.to_datetime(text, errors="coerce")
+    if pd.isna(parsed):
+        raise ValueError(f"Некорректная дата: {text}")
+    try:
+        return parsed.date().isoformat()
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"Некорректная дата: {text}") from exc
+
+
+def _normalize_patch_enum(field: str, value: Any) -> Optional[str]:
+    if _is_empty_marker(value):
+        return None
+    code = str(value).strip().upper()
+    allowed = {
+        "deadline_status": DEADLINE_STATUS_CODES,
+        "deadline_source": DEADLINE_SOURCE_CODES,
+        "constraint_priority": CONSTRAINT_PRIORITY_CODES,
+    }.get(field)
+    if allowed is not None and code not in allowed:
+        raise ValueError(f"Недопустимое значение {field}: {code}")
+    return code
+
+
+def _normalize_patch_text(value: Any) -> Optional[str]:
+    if _is_empty_marker(value):
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def normalize_update_patch(patch: Any) -> dict[str, Any]:
+    """
+    Normalize R2 update patch for RPC.
+
+    - Unknown keys → ValueError (controlled)
+    - "" / "—" / "-" / "–" → None (explicit clear)
+    - dates → ISO YYYY-MM-DD or None
+    - enums → uppercase technical code or None
+    - Missing keys stay omitted (dirty patch responsibility of caller)
+    """
+    if patch is None:
+        return {}
+    if not isinstance(patch, dict):
+        raise ValueError("p_patch должен быть объектом (jsonb object)")
+
+    out: dict[str, Any] = {}
+    for raw_key, raw_value in patch.items():
+        key = str(raw_key).strip()
+        if key not in UPDATE_PATCH_WHITELIST:
+            raise ValueError(f"Недопустимое поле обновления: {key}")
+        if key in UPDATE_DATE_FIELDS:
+            out[key] = _normalize_patch_date(raw_value)
+        elif key in UPDATE_ENUM_FIELDS:
+            out[key] = _normalize_patch_enum(key, raw_value)
+        else:
+            out[key] = _normalize_patch_text(raw_value)
+    return out
+
+
+def parse_constraint_event_payload(payload: Any) -> dict[str, Any]:
+    """
+    Parse monthly_plan_constraint_events.event_payload for UPDATED (and others).
+
+    Returns normalized dict with:
+      changed_fields, old_values, new_values, source_page, comment
+    """
+    empty = {
+        "changed_fields": [],
+        "old_values": {},
+        "new_values": {},
+        "source_page": None,
+        "comment": None,
+    }
+    data = payload
+    if data is None or (isinstance(data, float) and pd.isna(data)):
+        return empty
+    if isinstance(data, str):
+        text = data.strip()
+        if not text:
+            return empty
+        try:
+            data = json.loads(text)
+        except Exception:  # noqa: BLE001
+            return {**empty, "comment": text}
+    if not isinstance(data, dict):
+        return empty
+
+    changed = data.get("changed_fields")
+    if changed is None:
+        changed = []
+    if isinstance(changed, str):
+        changed = [changed]
+    if not isinstance(changed, list):
+        changed = list(changed) if changed else []
+
+    old_values = data.get("old_values")
+    new_values = data.get("new_values")
+    if not isinstance(old_values, dict):
+        old_values = {}
+    if not isinstance(new_values, dict):
+        new_values = {}
+
+    return {
+        "changed_fields": [str(x) for x in changed],
+        "old_values": old_values,
+        "new_values": new_values,
+        "source_page": _normalize_patch_text(data.get("source_page")),
+        "comment": _normalize_patch_text(data.get("comment") or data.get("update_comment")),
+    }
+
+
+def normalize_update_error(exc: BaseException) -> str:
+    """Normalize update RPC errors for UI."""
+    raw = str(exc).strip() or exc.__class__.__name__
+    lowered = raw.lower()
+
+    if "not found" in lowered:
+        match = re.search(r"constraint_id\s+([0-9a-f-]{36})", raw, flags=re.I)
+        if match:
+            return f"Ограничение не найдено: {match.group(1)}"
+        return "Ограничение не найдено"
+
+    if "p_constraint_id is required" in lowered:
+        return "Не указан constraint_id"
+    if "p_updated_by is required" in lowered:
+        return "Не указан автор обновления (updated_by)"
+    if "p_update_comment is required" in lowered:
+        return "Не указан комментарий обновления"
+    if "no_changes" in lowered or "no changes" in lowered:
+        return "Нет изменений для сохранения"
+    if "permission denied" in lowered or "not authorized" in lowered:
+        return "Недостаточно прав для обновления ограничения (нужен service_role / authenticated)"
+    if "jwt" in lowered or "api key" in lowered:
+        return f"Ошибка авторизации Supabase: {raw}"
+    if "недопустимое поле" in lowered or "недопустимое значение" in lowered:
+        return raw
+    if "update_monthly_plan_constraint:" in raw:
+        return raw.split("update_monthly_plan_constraint:", 1)[-1].strip() or raw
+    return raw
+
+
+def update_constraint(
+    constraint_id: Any,
+    updated_by: Any,
+    update_comment: Any,
+    patch: Any,
+) -> dict[str, Any]:
+    """
+    Call RPC update_monthly_plan_constraint (OPEN / IN_PROGRESS only on DB side).
+
+    Returns: {"ok": bool, "status": str | None, "data": dict | None, "error": str | None}
+
+    Empty patch after normalization → status=no_changes, RPC not called.
+    Success → clear_registry_read_caches() only (not page 23 / passport).
+    """
+    cid = _norm_filter(constraint_id)
+    actor = safe_text(updated_by)
+    comment = safe_text(update_comment)
+
+    if not cid:
+        return {
+            "ok": False,
+            "status": "error",
+            "data": None,
+            "error": "Не указан constraint_id",
+        }
+    if not actor:
+        return {
+            "ok": False,
+            "status": "error",
+            "data": None,
+            "error": "Не указан автор обновления (updated_by)",
+        }
+    if not comment:
+        return {
+            "ok": False,
+            "status": "error",
+            "data": None,
+            "error": "Не указан комментарий обновления",
+        }
+
+    try:
+        normalized = normalize_update_patch(patch)
+    except ValueError as exc:
+        return {
+            "ok": False,
+            "status": "error",
+            "data": None,
+            "error": str(exc),
+        }
+
+    if not normalized:
+        return {
+            "ok": True,
+            "status": "no_changes",
+            "data": None,
+            "error": None,
+        }
+
+    payload: dict[str, Any] = {
+        "p_constraint_id": cid,
+        "p_updated_by": actor,
+        "p_update_comment": comment,
+        "p_patch": normalized,
+    }
+
+    client = get_write_client()
+    if client is None:
+        return {
+            "ok": False,
+            "status": "error",
+            "data": None,
+            "error": "Нет SUPABASE_SECRET_KEY — update RPC недоступен с anon-ключом",
+        }
+
+    try:
+        response = client.rpc(RPC_UPDATE, payload).execute()
+        data = response.data
+        if isinstance(data, list) and len(data) == 1:
+            data = data[0]
+        if not isinstance(data, dict):
+            data = {"raw": data}
+        status = safe_text(data.get("status")) or "updated"
+        clear_registry_read_caches()
+        return {"ok": True, "status": status, "data": data, "error": None}
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "status": "error",
+            "data": None,
+            "error": normalize_update_error(exc),
+        }
 
 
 @st.cache_data(ttl=60, show_spinner=False)

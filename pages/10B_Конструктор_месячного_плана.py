@@ -91,6 +91,19 @@ PLANNING_MONTH_OPTIONS = [
     "декабрь-2026",
 ]
 
+# Product-canonical discipline (matches monthly_plan_constraints.construction_discipline).
+PIPE_TESTING_DISCIPLINE = "Испытания трубопроводов"
+
+
+def _v2_discipline_filter_options(base_options: list[str]) -> list[str]:
+    """Ensure pipe-testing discipline is always available in Discipline filters."""
+    rest = [v for v in base_options if v != "Все"]
+    merged = sorted(
+        {*rest, PIPE_TESTING_DISCIPLINE},
+        key=lambda v: v.casefold(),
+    )
+    return ["Все", *merged]
+
 
 def _v2_is_all_months_filter(month_key: str) -> bool:
     return str(month_key or "").strip() == V2_PLANNING_MONTH_ALL
@@ -2001,11 +2014,10 @@ def _v2_apply_boq_availability_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _v2_resolve_scope_status_row(row: pd.Series) -> str:
-    if _v2_safe_num(row.get("overrun_qty")) > 0:
-        return V2_SCOPE_STATUS_OVERRUN
     not_required = _v2_safe_num(row.get("not_required_qty"))
     effective_required = _v2_safe_num(row.get("effective_required_qty"))
     executed_total = _v2_safe_num(row.get("executed_total_qty"))
+    total_qty = _v2_safe_num(row.get("total_qty"))
     remaining = _v2_safe_num(row.get("remaining_qty"))
     available = _v2_safe_num(row.get("available_to_add_qty"))
     planned = _v2_safe_num(row.get("already_planned_qty"))
@@ -2016,6 +2028,11 @@ def _v2_resolve_scope_status_row(row: pd.Series) -> str:
         and effective_required > 0
     ):
         return V2_SCOPE_STATUS_NOT_REQUIRED
+    # COMPLETED: project qty fully covered by executed (incl. over-execution vs BOQ).
+    if total_qty > 0 and executed_total >= total_qty:
+        return "Выполнено"
+    if _v2_safe_num(row.get("overrun_qty")) > 0:
+        return V2_SCOPE_STATUS_OVERRUN
     return _v2_resolve_available_status(remaining, available, planned)
 
 
@@ -2554,8 +2571,10 @@ def _v2_resolve_available_status(
     available_qty: float,
     session_planned_qty: float,
 ) -> str:
+    # remaining<=0 without executed>=total is handled upstream as NOT_REQUIRED /
+    # COMPLETED / OVERRUN; here only planning availability for remaining > 0.
     if remaining_qty <= 0:
-        return "Выполнено"
+        return "Нет остатка"
     if available_qty < 0:
         return "Перепланировано"
     if available_qty <= 0 and session_planned_qty > 0:
@@ -4290,7 +4309,9 @@ def render_v2_plan_registry_filters(items: list[dict[str, Any]]) -> dict[str, st
     project_options = _v2_plan_registry_filter_options(items, "project")
     queue_options = _v2_plan_registry_filter_options(items, "queue")
     title_options = _v2_plan_registry_filter_options(items, "title")
-    discipline_options = _v2_plan_registry_filter_options(items, "discipline")
+    discipline_options = _v2_discipline_filter_options(
+        _v2_plan_registry_filter_options(items, "discipline")
+    )
     system_options = _v2_plan_registry_filter_options(items, "system")
     iwp_options = _v2_plan_registry_filter_options(items, "iwp")
     crew_options = _v2_plan_registry_filter_options(items, "crew")
@@ -5664,12 +5685,17 @@ def _render_add_to_month_plan_content(item: pd.Series) -> None:
     )
     available_qty = _v2_safe_num(item.get("available_to_add_qty"))
     session_reserved = _v2_safe_num(item.get("already_planned_qty"))
+    status = str(item.get("status") or "")
     is_overrun = (
-        str(item.get("status") or "") == V2_SCOPE_STATUS_OVERRUN
+        status == V2_SCOPE_STATUS_OVERRUN
         or _v2_safe_num(item.get("overrun_qty")) > 0
     )
-    is_not_required = str(item.get("status") or "") == V2_SCOPE_STATUS_NOT_REQUIRED
+    is_not_required = status == V2_SCOPE_STATUS_NOT_REQUIRED
+    is_completed = status == "Выполнено"
 
+    if is_completed:
+        st.info("BOQ выполнен. Добавление нового объёма в месячный план недоступно.")
+        return
     if is_overrun:
         st.warning(
             "Факт превышает BOQ. Требуется проверка Daily Progress / BOQ / допработ. "
@@ -6724,12 +6750,36 @@ def build_v2_cost_discrepancy_diagnostics(
 
 def filter_invalid_v2_boq_rows(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     """
-    Исключить заголовки/разделы без цены и стоимости.
-    Невалидно: unit_price <= 0 и total_value <= 0.
+    Исключить пустые заголовки/разделы без цены, стоимости, остатка и объёма.
+
+    KEEP if any of:
+    - unit_price > 0
+    - total_value > 0
+    - remaining_qty > 0  (from planning_remaining_qty after normalize)
+    - total_qty > 0  (real BOQ with project qty; may be COMPLETED with remaining=0)
     """
     if df.empty:
         return df, 0
-    valid_mask = (df["unit_price"] > 0) | (df["total_value"] > 0)
+    unit_price = pd.to_numeric(df.get("unit_price"), errors="coerce").fillna(0.0)
+    total_value = pd.to_numeric(df.get("total_value"), errors="coerce").fillna(0.0)
+    # After normalize_v2_scope_df the view field is remaining_qty;
+    # accept planning_remaining_qty if present on raw-like frames.
+    if "remaining_qty" in df.columns:
+        remaining = pd.to_numeric(df["remaining_qty"], errors="coerce").fillna(0.0)
+    elif "planning_remaining_qty" in df.columns:
+        remaining = pd.to_numeric(df["planning_remaining_qty"], errors="coerce").fillna(0.0)
+    else:
+        remaining = pd.Series(0.0, index=df.index)
+    # After normalize: total_qty; accept total_project_qty on raw-like frames.
+    if "total_qty" in df.columns:
+        total_qty = pd.to_numeric(df["total_qty"], errors="coerce").fillna(0.0)
+    elif "total_project_qty" in df.columns:
+        total_qty = pd.to_numeric(df["total_project_qty"], errors="coerce").fillna(0.0)
+    else:
+        total_qty = pd.Series(0.0, index=df.index)
+    valid_mask = (
+        (unit_price > 0) | (total_value > 0) | (remaining > 0) | (total_qty > 0)
+    )
     excluded = int((~valid_mask).sum())
     return df[valid_mask].reset_index(drop=True), excluded
 
@@ -7272,7 +7322,9 @@ def render_scope_filters(scoped_df: pd.DataFrame) -> dict[str, str]:
     project_options = _v2_project_filter_options(scoped_df)
     queue_options = V2_QUEUE_FILTER_OPTIONS
     title_options = _v2_filter_options(scoped_df, "facility")
-    discipline_options = _v2_filter_options(scoped_df, "discipline")
+    discipline_options = _v2_discipline_filter_options(
+        _v2_filter_options(scoped_df, "discipline")
+    )
     status_options = _v2_filter_options(scoped_df, "status")
 
     _v2_sync_filter_option("v2_scope_planning_month", PLANNING_MONTH_OPTIONS)

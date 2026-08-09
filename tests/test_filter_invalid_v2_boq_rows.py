@@ -1,68 +1,29 @@
 """
 Unit tests for filter_invalid_v2_boq_rows and COMPLETED visibility (Constructor 10B).
 
+Imports the shared deterministic core from monthly_planning_boq_service (MPO-001A).
 No Streamlit page load. No product DB writes.
 """
 
 from __future__ import annotations
 
-import ast
 import unittest
-from pathlib import Path
 
 import pandas as pd
 
-
-PAGE_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "pages"
-    / "10B_Конструктор_месячного_плана.py"
+from services.monthly_planning_boq_service import (
+    _v2_apply_boq_availability_metrics,
+    _v2_resolve_scope_status_row,
+    filter_invalid_v2_boq_rows,
 )
-
-
-def _load_fns(*names: str) -> dict:
-    tree = ast.parse(PAGE_PATH.read_text(encoding="utf-8"))
-    wanted = set(names)
-    body = [
-        node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name in wanted
-    ]
-    found = {node.name for node in body}
-    missing = wanted - found
-    if missing:
-        raise RuntimeError(f"functions not found: {sorted(missing)}")
-    # Constants referenced by status helpers
-    const_assigns = []
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id in {
-                    "V2_SCOPE_STATUS_NOT_REQUIRED",
-                    "V2_SCOPE_STATUS_OVERRUN",
-                }:
-                    const_assigns.append(node)
-    module = ast.Module(body=const_assigns + body, type_ignores=[])
-    ns: dict = {"pd": pd, "Any": object}
-    exec(compile(module, str(PAGE_PATH), "exec"), ns)
-    return {name: ns[name] for name in names}
 
 
 class FilterInvalidV2BoqRowsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        fns = _load_fns(
-            "filter_invalid_v2_boq_rows",
-            "_v2_safe_num",
-            "_v2_value_per_unit_series",
-            "_v2_resolve_available_status",
-            "_v2_resolve_scope_status_row",
-            "_v2_apply_boq_availability_metrics",
-        )
-        cls.fn = staticmethod(fns["filter_invalid_v2_boq_rows"])
-        cls.resolve_status = staticmethod(fns["_v2_resolve_scope_status_row"])
-        cls.apply_metrics = staticmethod(fns["_v2_apply_boq_availability_metrics"])
-        # wire nested deps used by resolve/metrics into same ns already done via exec
+        cls.fn = staticmethod(filter_invalid_v2_boq_rows)
+        cls.resolve_status = staticmethod(_v2_resolve_scope_status_row)
+        cls.apply_metrics = staticmethod(_v2_apply_boq_availability_metrics)
 
     def _row(self, **kwargs) -> pd.DataFrame:
         base = {

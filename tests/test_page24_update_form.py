@@ -254,6 +254,29 @@ class Page24UpdateFormTests(unittest.TestCase):
         self.assertEqual(self.st.session_state["reg_upd_problem_owner"], "TYPED")
         self.assertEqual(self.st.session_state["reg_upd_update_comment"], "keep me")
 
+    def test_update_comment_reset_pending_clears_pre_widget(self) -> None:
+        self.st.session_state[self.mod.UPDATE_COMMENT_WIDGET_KEY] = "typed comment"
+        self.st.session_state[self.mod.UPDATE_COMMENT_RESET_PENDING_KEY] = True
+        self.mod.apply_update_form_pending_resets(self.st.session_state)
+        self.assertEqual(self.st.session_state[self.mod.UPDATE_COMMENT_WIDGET_KEY], "")
+        self.assertNotIn(self.mod.UPDATE_COMMENT_RESET_PENDING_KEY, self.st.session_state)
+
+    def test_update_comment_reset_pending_noop_without_flag(self) -> None:
+        self.st.session_state[self.mod.UPDATE_COMMENT_WIDGET_KEY] = "keep me"
+        self.mod.apply_update_form_pending_resets(self.st.session_state)
+        self.assertEqual(self.st.session_state[self.mod.UPDATE_COMMENT_WIDGET_KEY], "keep me")
+
+    def test_success_path_uses_deferred_reset_flag(self) -> None:
+        src = PAGE_PATH.read_text(encoding="utf-8")
+        self.assertIn(
+            "UPDATE_COMMENT_RESET_PENDING_KEY] = True",
+            src,
+        )
+        self.assertNotIn(
+            'st.session_state["reg_upd_update_comment"] = ""',
+            src,
+        )
+
     def test_t10_resolved_disabled(self) -> None:
         self.assertTrue(self.mod.can_edit_update_form("OPEN"))
         self.assertTrue(self.mod.can_edit_update_form("IN_PROGRESS"))

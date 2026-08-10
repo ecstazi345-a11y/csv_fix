@@ -745,6 +745,16 @@ def build_update_dirty_patch(
     return patch
 
 
+UPDATE_COMMENT_WIDGET_KEY = "reg_upd_update_comment"
+UPDATE_COMMENT_RESET_PENDING_KEY = "reg_upd_reset_comment_pending"
+
+
+def apply_update_form_pending_resets(session_state: Any) -> None:
+    """Apply deferred widget resets before corresponding widgets are instantiated."""
+    if session_state.pop(UPDATE_COMMENT_RESET_PENDING_KEY, False):
+        session_state[UPDATE_COMMENT_WIDGET_KEY] = ""
+
+
 def hydrate_update_form_state(
     session_state: Any,
     constraint_id: str,
@@ -777,7 +787,7 @@ def hydrate_update_form_state(
     # Keep actor/comment across rows only if empty; otherwise reset comment
     if "reg_upd_updated_by" not in session_state:
         session_state["reg_upd_updated_by"] = ""
-    session_state["reg_upd_update_comment"] = ""
+    session_state[UPDATE_COMMENT_WIDGET_KEY] = ""
     return True
 
 
@@ -2195,6 +2205,7 @@ if selected_row is not None and selected_constraint_id:
     with st.expander("Скорректировать ограничение", expanded=False):
         baseline = row_to_update_baseline(selected_row)
         hydrate_update_form_state(st.session_state, selected_constraint_id, baseline)
+        apply_update_form_pending_resets(st.session_state)
         baseline = dict(st.session_state.get("reg_upd_baseline") or baseline)
 
         if not can_update:
@@ -2348,7 +2359,7 @@ if selected_row is not None and selected_constraint_id:
                             st.session_state["reg_update_success"] = result.get("data") or {
                                 "changed_fields": list(normalized.keys())
                             }
-                            st.session_state["reg_upd_update_comment"] = ""
+                            st.session_state[UPDATE_COMMENT_RESET_PENDING_KEY] = True
                             st.rerun()
                         else:
                             st.session_state["reg_update_error"] = (

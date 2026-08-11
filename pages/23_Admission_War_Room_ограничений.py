@@ -4345,7 +4345,8 @@ def wr2_slice_month_board(
 ) -> pd.DataFrame:
     """Project+month slice without war-room display filters."""
     if full_board.empty or not wr2_is_concrete_mgmt_scope(project_code, month_key):
-        return pd.DataFrame()
+        # Preserve read-model columns (incl. plan_line_id) for empty scope.
+        return full_board.head(0).copy()
     return full_board[
         (full_board["project_code"].astype(str) == project_code)
         & (full_board["month_key"].astype(str) == month_key)
@@ -4945,8 +4946,17 @@ def render_war_room_v3_obligation_draft(
             for _, comp_row in obligation_table.iterrows():
                 pid = safe_str(comp_row.get("_plan_line_id"))
                 boq = display_dash(comp_row.get("BOQ-код"))
-                match = month_board[month_board["plan_line_id"].astype(str) == pid]
-                outcome = safe_str(match.iloc[0].get("outcome")) if not match.empty else "—"
+                if month_board.empty or "plan_line_id" not in month_board.columns:
+                    outcome = "—"
+                else:
+                    match = month_board[
+                        month_board["plan_line_id"].astype(str) == pid
+                    ]
+                    outcome = (
+                        safe_str(match.iloc[0].get("outcome"))
+                        if not match.empty
+                        else "—"
+                    )
                 formed = bool(st.session_state.get(WR2_SESSION_FORMED))
                 label = (
                     f"Убрать {boq} (аудит: исключение из сформированного паспорта)"

@@ -405,6 +405,60 @@ class Wr2DraftObligationTests(unittest.TestCase):
         self.assertEqual(len(readiness_filtered["full_scope"]), 1)
         self.assertEqual(len(readiness_full["full_scope"]), 2)
 
+    def test_empty_month_board_preserves_schema_no_plan_line_id_keyerror(self) -> None:
+        """Regression: empty/non-concrete slice must keep schema; no KeyError."""
+        full_board = pd.DataFrame(
+            [
+                _board_row(PID_INCLUDE, outcome="OK"),
+                _board_row(PID_FILTERED, outcome="OK"),
+            ]
+        )
+        # Non-concrete scope previously returned pd.DataFrame() without columns.
+        empty_scope = self.mod.wr2_slice_month_board(full_board, "Все", "Все")
+        self.assertTrue(empty_scope.empty)
+        self.assertIn("plan_line_id", empty_scope.columns)
+
+        # Indexing plan_line_id must not raise on schema-preserving empty board.
+        _ = empty_scope["plan_line_id"]
+        match = empty_scope[empty_scope["plan_line_id"].astype(str) == PID_INCLUDE]
+        self.assertTrue(match.empty)
+        outcome = (
+            self.mod.safe_str(match.iloc[0].get("outcome"))
+            if not match.empty
+            else "—"
+        )
+        self.assertEqual(outcome, "—")
+
+        # Schema-less empty board (legacy session) + obligation composition:
+        # defensive path must stay neutral without KeyError.
+        schemaless = pd.DataFrame()
+        self.assertNotIn("plan_line_id", schemaless.columns)
+        if schemaless.empty or "plan_line_id" not in schemaless.columns:
+            outcome_guard = "—"
+        else:
+            match2 = schemaless[schemaless["plan_line_id"].astype(str) == PID_INCLUDE]
+            outcome_guard = (
+                self.mod.safe_str(match2.iloc[0].get("outcome"))
+                if not match2.empty
+                else "—"
+            )
+        self.assertEqual(outcome_guard, "—")
+
+        draft = self.mod.wr2_build_draft_summary_and_tables(
+            empty_scope,
+            composition={
+                PID_INCLUDE: {
+                    "decision": self.mod.WR2_MGMT_INCLUDE,
+                    "boq_code": "BOQ-001",
+                    "basis": "b",
+                }
+            },
+            deferred={},
+            excluded={},
+        )
+        self.assertEqual(draft["summary"]["obligation"]["count"], 1)
+        self.assertFalse(draft["tables"]["obligation"].empty)
+
 
 if __name__ == "__main__":
     unittest.main()

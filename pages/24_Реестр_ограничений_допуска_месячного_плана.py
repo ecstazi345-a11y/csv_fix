@@ -784,10 +784,11 @@ def hydrate_update_form_state(
         d = safe_date(baseline.get(field))
         session_state[f"reg_upd_{field}_date"] = d or date.today()
 
-    # Keep actor/comment across rows only if empty; otherwise reset comment
+    # Keep actor across rows only if empty; comment reset is deferred via pending
+    # flag so the widget key is never written after instantiation in the same run.
     if "reg_upd_updated_by" not in session_state:
         session_state["reg_upd_updated_by"] = ""
-    session_state[UPDATE_COMMENT_WIDGET_KEY] = ""
+    session_state[UPDATE_COMMENT_RESET_PENDING_KEY] = True
     return True
 
 
@@ -1983,6 +1984,9 @@ update_error = st.session_state.pop("reg_update_error", None)
 if update_error:
     st.error(str(update_error))
 
+# Deferred update-form widget resets MUST run before any reg_upd_* widgets.
+apply_update_form_pending_resets(st.session_state)
+
 st.markdown("### Показатели")
 
 st.caption("Слой 1 · Ограничения (по constraint_id)")
@@ -2205,6 +2209,7 @@ if selected_row is not None and selected_constraint_id:
     with st.expander("Скорректировать ограничение", expanded=False):
         baseline = row_to_update_baseline(selected_row)
         hydrate_update_form_state(st.session_state, selected_constraint_id, baseline)
+        # Apply again after hydrate: constraint-switch sets the pending flag above.
         apply_update_form_pending_resets(st.session_state)
         baseline = dict(st.session_state.get("reg_upd_baseline") or baseline)
 

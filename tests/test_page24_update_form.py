@@ -266,6 +266,24 @@ class Page24UpdateFormTests(unittest.TestCase):
         self.mod.apply_update_form_pending_resets(self.st.session_state)
         self.assertEqual(self.st.session_state[self.mod.UPDATE_COMMENT_WIDGET_KEY], "keep me")
 
+    def test_hydrate_schedules_comment_reset_before_widgets(self) -> None:
+        baseline = self.mod.row_to_update_baseline(self.row)
+        self.st.session_state[self.mod.UPDATE_COMMENT_WIDGET_KEY] = "old comment"
+        changed = self.mod.hydrate_update_form_state(
+            self.st.session_state, self.row["constraint_id"], baseline
+        )
+        self.assertTrue(changed)
+        # Hydrate must not mutate the widget key directly — only schedule reset.
+        self.assertEqual(
+            self.st.session_state[self.mod.UPDATE_COMMENT_WIDGET_KEY], "old comment"
+        )
+        self.assertTrue(
+            self.st.session_state.get(self.mod.UPDATE_COMMENT_RESET_PENDING_KEY)
+        )
+        self.mod.apply_update_form_pending_resets(self.st.session_state)
+        self.assertEqual(self.st.session_state[self.mod.UPDATE_COMMENT_WIDGET_KEY], "")
+        self.assertNotIn(self.mod.UPDATE_COMMENT_RESET_PENDING_KEY, self.st.session_state)
+
     def test_success_path_uses_deferred_reset_flag(self) -> None:
         src = PAGE_PATH.read_text(encoding="utf-8")
         self.assertIn(
@@ -276,7 +294,22 @@ class Page24UpdateFormTests(unittest.TestCase):
             'st.session_state["reg_upd_update_comment"] = ""',
             src,
         )
-
+        # No direct widget-key write from hydrate; only via apply_pending helper.
+        self.assertNotIn(
+            "session_state[UPDATE_COMMENT_WIDGET_KEY] = \"\"\n    return True",
+            src,
+        )
+        self.assertIn(
+            "Deferred update-form widget resets MUST run before any reg_upd_* widgets.",
+            src,
+        )
+        # Success path must not clear the widget key in the same run as the form.
+        success_idx = src.find('st.session_state["reg_update_success"]')
+        self.assertGreater(success_idx, 0)
+        success_tail = src[success_idx : success_idx + 500]
+        self.assertIn("UPDATE_COMMENT_RESET_PENDING_KEY] = True", success_tail)
+        self.assertIn("st.rerun()", success_tail)
+        self.assertNotIn("UPDATE_COMMENT_WIDGET_KEY] = \"\"", success_tail)
     def test_t10_resolved_disabled(self) -> None:
         self.assertTrue(self.mod.can_edit_update_form("OPEN"))
         self.assertTrue(self.mod.can_edit_update_form("IN_PROGRESS"))

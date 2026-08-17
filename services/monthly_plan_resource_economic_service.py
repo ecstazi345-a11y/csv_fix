@@ -597,6 +597,28 @@ def build_resource_economic_models(
     }
 
 
+def theoretical_feasible_qty_by_plan_line(
+    lines_df: pd.DataFrame,
+    capacity_df: pd.DataFrame,
+) -> dict[str, Optional[float]]:
+    """plan_line_id → theoretical_feasible_qty (None if not calculated)."""
+    models = build_resource_economic_models(lines_df, capacity_df)
+    line_model = models["line_model"]
+    result: dict[str, Optional[float]] = {}
+    if line_model is None or line_model.empty:
+        return result
+    for _, row in line_model.iterrows():
+        pid = _safe_str(row.get("plan_line_id"))
+        if not pid:
+            continue
+        raw = row.get("theoretical_feasible_qty")
+        if raw is None or pd.isna(raw):
+            result[pid] = None
+        else:
+            result[pid] = float(raw)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # R1.5B — Decision Economics read-model (no writes; not accounting P&L)
 # ---------------------------------------------------------------------------

@@ -73,7 +73,7 @@ DECISION_RU_TO_EN: dict[str, str] = {
 STATUS_ACTIVE = "ACTIVE"
 STATUS_CANCELLED = "CANCELLED"
 
-SELECT_COLS = (
+SELECT_COLS_LEGACY = (
     "decision_id,project_code,month_key,plan_line_id,"
     "boq_code,boq_name,facility_building,construction_discipline,"
     "decision,decision_status,"
@@ -84,6 +84,35 @@ SELECT_COLS = (
     "decided_by,decided_at,updated_by,updated_at,source_page,created_at"
 )
 
+SELECT_COLS = (
+    "decision_id,project_code,month_key,plan_line_id,"
+    "boq_code,boq_name,facility_building,construction_discipline,"
+    "decision,decision_status,"
+    "admission_outcome_at_decision,management_override,"
+    "decision_basis,decision_comment,responsible_person,review_deadline,"
+    "risk_description,risk_impact,risk_mitigation_owner,risk_mitigation_deadline,"
+    "risk_acceptance_basis,risk_manager_comment,risk_blocker,"
+    "requested_qty_snapshot,feasible_qty_snapshot,approved_commitment_qty,"
+    "committed_work_value,committed_required_hours,committed_labor_cost,"
+    "decided_by,decided_at,updated_by,updated_at,source_page,created_at"
+)
+
+COMMITMENT_PAYLOAD_KEYS = (
+    "requested_qty_snapshot",
+    "feasible_qty_snapshot",
+    "approved_commitment_qty",
+    "committed_work_value",
+    "committed_required_hours",
+    "committed_labor_cost",
+)
+
+MSG_COMMITMENT_FEASIBLE_MISSING = (
+    "Невозможно принять объём обязательства: ресурсная исполнимость не рассчитана."
+)
+MSG_COMMITMENT_OVER_FEASIBLE = (
+    "Утверждённый объём обязательства не может превышать реально выполнимый объём."
+)
+
 
 def safe_text(value: Any) -> str:
     if value is None:
@@ -92,6 +121,100 @@ def safe_text(value: Any) -> str:
     if text.lower() in {"", "none", "nan", "nat", "<na>"}:
         return ""
     return text
+
+
+def optional_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, str) and not safe_text(value):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number:  # NaN
+        return None
+    return number
+
+
+def validate_approved_commitment_qty(
+    commitment_qty: Any,
+    feasible_qty: Any,
+) -> Optional[str]:
+    """Return Russian error or None. commitment<=0 is 'not set', not an error."""
+    commitment = optional_float(commitment_qty)
+    if commitment is None or commitment <= 0:
+        return None
+    feasible = optional_float(feasible_qty)
+    if feasible is None:
+        return MSG_COMMITMENT_FEASIBLE_MISSING
+    if commitment > feasible + 1e-9:
+        return MSG_COMMITMENT_OVER_FEASIBLE
+    return None
+
+
+def build_commitment_snapshots(
+    *,
+    requested_qty: Any,
+    feasible_qty: Any,
+    approved_commitment_qty: Any,
+    unit_price: Any = None,
+    plan_value: Any = None,
+    labor_hours: Any = None,
+    labor_rate_per_hour: Any = None,
+) -> Optional[dict[str, Optional[float]]]:
+    """
+    Build qty/economics snapshots for RPC payload.
+    Returns None when commitment is not being set (None/<=0).
+    Does not divide by requested_qty<=0.
+    """
+    commitment = optional_float(approved_commitment_qty)
+    if commitment is None or commitment <= 0:
+        return None
+    requested = optional_float(requested_qty)
+    feasible = optional_float(feasible_qty)
+    price = optional_float(unit_price)
+    hours = optional_float(labor_hours)
+    rate = optional_float(labor_rate_per_hour)
+    value = optional_float(plan_value)
+
+    committed_work_value: Optional[float] = None
+    if price is not None and price >= 0:
+        committed_work_value = commitment * price
+    elif requested is not None and requested > 0 and value is not None:
+        committed_work_value = value * commitment / requested
+
+    committed_hours: Optional[float] = None
+    if requested is not None and requested > 0 and hours is not None:
+        committed_hours = hours * commitment / requested
+
+    committed_labor: Optional[float] = None
+    if committed_hours is not None and rate is not None:
+        committed_labor = committed_hours * rate
+
+    return {
+        "requested_qty_snapshot": requested,
+        "feasible_qty_snapshot": feasible,
+        "approved_commitment_qty": commitment,
+        "committed_work_value": committed_work_value,
+        "committed_required_hours": committed_hours,
+        "committed_labor_cost": committed_labor,
+    }
+
+
+def merge_commitment_payload(
+    payload: dict[str, Any],
+    snapshots: Optional[dict[str, Optional[float]]],
+) -> dict[str, Any]:
+    """Attach commitment keys only when snapshots exist. Old apply path omits them."""
+    out = dict(payload)
+    if not snapshots:
+        for key in COMMITMENT_PAYLOAD_KEYS:
+            out.pop(key, None)
+        return out
+    for key in COMMITMENT_PAYLOAD_KEYS:
+        out[key] = snapshots.get(key)
+    return out
 
 
 def normalize_decision_code(decision: Any) -> str:
@@ -232,16 +355,24 @@ def load_management_decisions(project_code: str, month_key: str) -> list[dict[st
 
     project = safe_text(project_code)
     month = safe_text(month_key)
-    response = (
-        supabase.table(TABLE)
-        .select(SELECT_COLS)
-        .eq("project_code", project)
-        .eq("month_key", month)
-        .eq("decision_status", STATUS_ACTIVE)
-        .order("decided_at", desc=True)
-        .limit(5000)
-        .execute()
-    )
+
+    def _select(cols: str):
+        return (
+            supabase.table(TABLE)
+            .select(cols)
+            .eq("project_code", project)
+            .eq("month_key", month)
+            .eq("decision_status", STATUS_ACTIVE)
+            .order("decided_at", desc=True)
+            .limit(5000)
+            .execute()
+        )
+
+    try:
+        response = _select(SELECT_COLS)
+    except Exception:  # noqa: BLE001
+        # Pre-R1.6 schema: new qty columns not deployed yet.
+        response = _select(SELECT_COLS_LEGACY)
     rows = list(response.data or [])
     # Defense in depth: never return CANCELLED even if filter drifts
     return [

@@ -14,17 +14,26 @@ from services.constraint_display import (
 from services.monthly_passport_service import create_monthly_passport
 import services.monthly_passport_service as monthly_passport_service
 from services.constraints_loader import fetch_all_constraints
+from services.monthly_plan_labor_service import load_labor_lines
 from services.monthly_plan_management_decisions import (
     DECISION_DEFER,
     DECISION_EXCLUDE,
     DECISION_INCLUDE,
     DECISION_INCLUDE_RISK,
     apply_management_decision,
+    build_commitment_snapshots,
     cancel_management_decision,
     clear_management_decisions_cache,
     load_management_decisions,
+    merge_commitment_payload,
     normalize_decision_code,
+    optional_float,
+    validate_approved_commitment_qty,
 )
+from services.monthly_plan_resource_economic_service import (
+    theoretical_feasible_qty_by_plan_line,
+)
+from services.monthly_resource_plan_service import load_approved_capacity
 from services.perf_audit import finish_page, stage, start_page
 from services.supabase_client import supabase
 
@@ -1008,6 +1017,12 @@ def wr2_db_decision_to_session_record(db_row: Dict[str, Any]) -> Dict[str, Any]:
         "risk_blocker": safe_str(db_row.get("risk_blocker")) or "—",
         "plan_value": 0.0,
         "labor_hours": 0.0,
+        "requested_qty_snapshot": optional_float(db_row.get("requested_qty_snapshot")),
+        "feasible_qty_snapshot": optional_float(db_row.get("feasible_qty_snapshot")),
+        "approved_commitment_qty": optional_float(db_row.get("approved_commitment_qty")),
+        "committed_work_value": optional_float(db_row.get("committed_work_value")),
+        "committed_required_hours": optional_float(db_row.get("committed_required_hours")),
+        "committed_labor_cost": optional_float(db_row.get("committed_labor_cost")),
         "added_at": safe_str(db_row.get("decided_at")) or datetime.now(timezone.utc).isoformat(),
         "decided_by": safe_str(db_row.get("decided_by")),
         "from_db": True,
@@ -1204,6 +1219,55 @@ def wr2_decision_comment_key(plan_line_id: str) -> str:
     return f"wr2_decision_comment_{wr2_sid(plan_line_id)}"
 
 
+def wr2_commitment_qty_key(plan_line_id: str) -> str:
+    return f"wr2_commitment_qty_{wr2_sid(plan_line_id)}"
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def wr2_load_feasible_qty_map(project_code: str, month_key: str) -> Dict[str, Optional[float]]:
+    if not wr2_is_concrete_mgmt_scope(project_code, month_key):
+        return {}
+    try:
+        lines = load_labor_lines(project_code, month_key)
+        capacity = load_approved_capacity(
+            project_code=project_code,
+            month_key=month_key,
+        )
+        return theoretical_feasible_qty_by_plan_line(lines, capacity)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def wr2_current_feasible_qty(row: pd.Series) -> Optional[float]:
+    pid = safe_str(row.get("plan_line_id"))
+    project_code = safe_str(row.get("project_code"))
+    month_key = safe_str(row.get("month_key"))
+    if not pid:
+        return None
+    mapping = wr2_load_feasible_qty_map(project_code, month_key)
+    return mapping.get(pid)
+
+
+def wr2_format_qty_with_unit(qty: Any, unit: Any) -> str:
+    value = optional_float(qty)
+    unit_txt = display_dash(unit)
+    if unit_txt == "—":
+        unit_txt = ""
+    if value is None:
+        return "—"
+    qty_txt = f"{value:,.3f}".replace(",", " ").rstrip("0").rstrip(".")
+    return f"{qty_txt} {unit_txt}".strip()
+
+
+def wr2_commitment_status_label(record: Optional[Dict[str, Any]]) -> str:
+    if not record:
+        return "ОБЪЁМ НЕ ПРИНЯТ"
+    qty = optional_float(record.get("approved_commitment_qty"))
+    if qty is None or qty <= 0:
+        return "ОБЪЁМ НЕ ПРИНЯТ"
+    return "ОБЪЁМ УТВЕРЖДЁН"
+
+
 def wr2_risk_impact_key(plan_line_id: str) -> str:
     return f"wr2_risk_impact_{wr2_sid(plan_line_id)}"
 
@@ -1319,6 +1383,11 @@ def wr2_hydrate_decision_widgets(
             wr2_decision_comment_key(plan_line_id): safe_str(record.get("comment")),
         }
         wr2_set_widget_defaults(common, force=force)
+        saved_commitment = optional_float(record.get("approved_commitment_qty"))
+        qty_key = wr2_commitment_qty_key(plan_line_id)
+        if saved_commitment is not None and saved_commitment > 0:
+            if force or qty_key not in st.session_state:
+                st.session_state[qty_key] = float(saved_commitment)
 
         if (
             record_decision == WR2_MGMT_INCLUDE_RISK
@@ -1979,6 +2048,12 @@ def wr2_build_decision_record(
         "risk_blocker": safe_str(row.get("blocking_departments")) or "—",
         "plan_value": safe_num(row.get("plan_value_num")),
         "labor_hours": safe_num(row.get("labor_hours")),
+        "requested_qty_snapshot": optional_float(row.get("requested_qty_snapshot")),
+        "feasible_qty_snapshot": optional_float(row.get("feasible_qty_snapshot")),
+        "approved_commitment_qty": optional_float(row.get("approved_commitment_qty")),
+        "committed_work_value": optional_float(row.get("committed_work_value")),
+        "committed_required_hours": optional_float(row.get("committed_required_hours")),
+        "committed_labor_cost": optional_float(row.get("committed_labor_cost")),
         "added_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -1997,6 +2072,7 @@ def wr2_apply_management_decision(
     risk_mitigation_deadline: str = "",
     risk_acceptance_basis: str = "",
     risk_manager_comment: str = "",
+    commitment_qty: Any = None,
 ) -> List[str]:
     errors: List[str] = []
     pid = safe_str(row.get("plan_line_id"))
@@ -2059,6 +2135,28 @@ def wr2_apply_management_decision(
     if not decision_code:
         errors.append(f"Некорректное решение: {decision}")
 
+    snapshots: Optional[Dict[str, Optional[float]]] = None
+    if decision in WR2_PASSPORT_DECISIONS:
+        raw_commitment = commitment_qty
+        if raw_commitment is None:
+            raw_commitment = st.session_state.get(wr2_commitment_qty_key(pid))
+        parsed_commitment = optional_float(raw_commitment)
+        if parsed_commitment is not None and parsed_commitment > 0:
+            feasible_now = wr2_current_feasible_qty(row)
+            qty_error = validate_approved_commitment_qty(raw_commitment, feasible_now)
+            if qty_error:
+                errors.append(qty_error)
+            else:
+                snapshots = build_commitment_snapshots(
+                    requested_qty=row.get("planned_qty"),
+                    feasible_qty=feasible_now,
+                    approved_commitment_qty=raw_commitment,
+                    unit_price=row.get("unit_price"),
+                    plan_value=row.get("plan_value_num") or row.get("plan_value"),
+                    labor_hours=row.get("labor_hours"),
+                    labor_rate_per_hour=row.get("labor_rate_per_hour"),
+                )
+
     if errors:
         return errors
 
@@ -2078,6 +2176,21 @@ def wr2_apply_management_decision(
         risk_acceptance_basis=risk_acceptance_basis,
         risk_manager_comment=risk_manager_comment,
     )
+    if snapshots:
+        record.update(snapshots)
+    else:
+        previous = wr2_get_decision_record(pid)
+        if previous:
+            for key in (
+                "requested_qty_snapshot",
+                "feasible_qty_snapshot",
+                "approved_commitment_qty",
+                "committed_work_value",
+                "committed_required_hours",
+                "committed_labor_cost",
+            ):
+                if previous.get(key) is not None:
+                    record[key] = previous.get(key)
     override = bool(record.get("override"))
     payload = wr2_build_mgmt_rpc_payload(
         row,
@@ -2094,6 +2207,7 @@ def wr2_apply_management_decision(
         risk_manager_comment=risk_manager_comment,
         override=override,
     )
+    payload = merge_commitment_payload(payload, snapshots)
 
     # DB first — session updates only after successful RPC
     rpc_result = apply_management_decision(
@@ -3912,6 +4026,42 @@ def wr2_apply_button_label(row: pd.Series, live_decision: str) -> str:
     return "Обновить решение"
 
 
+def render_war_room_v3_commitment_qty(row: pd.Series, decision: str) -> None:
+    pid = safe_str(row.get("plan_line_id"))
+    unit = row.get("unit") or row.get("unit_of_measure")
+    requested = optional_float(row.get("planned_qty"))
+    feasible = wr2_current_feasible_qty(row)
+    record = wr2_get_decision_record(pid)
+    saved_commitment = optional_float(record.get("approved_commitment_qty")) if record else None
+    st.markdown("#### Объём месячного обязательства")
+    st.markdown(f"**Исходно запрошено:** {wr2_format_qty_with_unit(requested, unit)}")
+    st.markdown(f"**Реально выполнимо:** {wr2_format_qty_with_unit(feasible, unit)}")
+    st.markdown(f"**Рекомендуемый объём:** {wr2_format_qty_with_unit(feasible, unit)}")
+    if decision in WR2_PASSPORT_DECISIONS:
+        st.number_input(
+            "Утверждённое обязательство",
+            min_value=0.0,
+            step=0.001,
+            format="%.3f",
+            key=wr2_commitment_qty_key(pid),
+        )
+        live_commitment = optional_float(st.session_state.get(wr2_commitment_qty_key(pid)))
+        if live_commitment is not None and live_commitment > 0 and requested is not None:
+            remainder = requested - live_commitment
+            st.markdown(f"**Остаток:** {wr2_format_qty_with_unit(remainder, unit)}")
+        elif saved_commitment is not None and saved_commitment > 0 and requested is not None:
+            remainder = requested - saved_commitment
+            st.markdown(f"**Остаток:** {wr2_format_qty_with_unit(remainder, unit)}")
+        else:
+            st.caption("Решение по объёму не принято.")
+    else:
+        st.caption("Количественное обязательство задаётся только для включения в драфт.")
+    if wr2_commitment_status_label(record) == "ОБЪЁМ УТВЕРЖДЁН":
+        st.caption("Объём утверждён.")
+    else:
+        st.caption("Объём обязательства не принят")
+
+
 def wr2_render_management_decision_form(row: pd.Series) -> None:
     pid = safe_str(row.get("plan_line_id"))
     boq = display_dash(row.get("boq_code"))
@@ -3922,6 +4072,7 @@ def wr2_render_management_decision_form(row: pd.Series) -> None:
     render_war_room_v3_decision_basis(row, decision)
     if decision == WR2_MGMT_INCLUDE_RISK:
         render_war_room_v3_risk_protocol(row)
+    render_war_room_v3_commitment_qty(row, decision)
 
     apply_label = wr2_apply_button_label(row, decision)
     if st.button(apply_label, key=f"wr2_apply_{wr2_sid(pid)}"):
@@ -4505,22 +4656,77 @@ def wr2_build_basket_table(
     return pd.DataFrame(rows)
 
 
+WR2_PRE_R16_OBLIGATION_COLUMNS = (
+    "BOQ-код",
+    "Наименование",
+    "Титул",
+    "Дисциплина",
+    "Стоимость",
+    "Ответственный",
+    "Срок пересмотра",
+    "Комментарий",
+)
+
+WR2_R16_OBLIGATION_COLUMNS = (
+    "Исходно запрошено",
+    "Реально выполнимо",
+    "Утверждённое обязательство",
+    "Остаток",
+    "Стоимость утверждённых работ",
+    "Трудозатраты обязательства",
+    "Стоимость труда",
+    "Статус объёма",
+)
+
+
+def wr2_passport_line_ids_from_session() -> set:
+    """Read-only plan_line_id set already in the acting passport. No DB write."""
+    index = wr2_passport_status_index_from_session()
+    by_line = index.get("by_line_id") or {}
+    return {safe_str(pid) for pid in by_line.keys() if safe_str(pid)}
+
+
+def wr2_filter_draft_only_records(
+    records: Dict[str, Dict[str, Any]],
+    passport_line_ids: Optional[Any] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Working draft = INCLUDE/INCLUDE_RISK records whose plan_line_id
+    is not already in monthly_plan_passport_lines.
+    Does not mutate the source dict and does not cancel decisions.
+    """
+    ids = {safe_str(pid) for pid in (passport_line_ids or []) if safe_str(pid)}
+    if not ids:
+        return dict(records)
+    return {
+        pid: item
+        for pid, item in records.items()
+        if pid and pid not in ids
+    }
+
+
 def wr2_build_draft_summary_and_tables(
     month_board: pd.DataFrame,
     *,
     composition: Dict[str, Dict[str, Any]],
     deferred: Dict[str, Dict[str, Any]],
     excluded: Dict[str, Dict[str, Any]],
+    passport_line_ids: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Build four basket tables + per-basket KPIs from session state (no extra DB)."""
     board_lookup = wr2_board_row_lookup(month_board)
+    draft_composition = wr2_filter_draft_only_records(
+        composition, passport_line_ids
+    )
     risk_records = {
         pid: item
-        for pid, item in composition.items()
+        for pid, item in draft_composition.items()
         if item.get("decision") == WR2_MGMT_INCLUDE_RISK
     }
     tables = {
-        "obligation": wr2_build_basket_table(composition, board_lookup),
+        "obligation": wr2_build_obligation_qty_table(
+            draft_composition, board_lookup
+        ),
         "risk": wr2_build_basket_table(
             risk_records, board_lookup, include_risk_columns=True
         ),
@@ -4528,12 +4734,121 @@ def wr2_build_draft_summary_and_tables(
         "excluded": wr2_build_basket_table(excluded, board_lookup),
     }
     summary = {
-        "obligation": wr2_compute_basket_metrics(composition, board_lookup),
+        "obligation": wr2_compute_basket_metrics(draft_composition, board_lookup),
         "risk": wr2_compute_basket_metrics(risk_records, board_lookup),
         "deferred": wr2_compute_basket_metrics(deferred, board_lookup),
         "excluded": wr2_compute_basket_metrics(excluded, board_lookup),
     }
-    return {"tables": tables, "summary": summary, "board_lookup": board_lookup}
+    return {
+        "tables": tables,
+        "summary": summary,
+        "board_lookup": board_lookup,
+        "draft_composition": draft_composition,
+    }
+
+
+def wr2_uncommitted_qty_display(requested: Any, commitment: Any) -> str:
+    req = optional_float(requested)
+    cmt = optional_float(commitment)
+    if cmt is None or cmt <= 0:
+        return "Решение по объёму не принято"
+    if req is None:
+        return "—"
+    return f"{(req - cmt):,.3f}".replace(",", " ").rstrip("0").rstrip(".")
+
+
+def wr2_build_obligation_qty_table(
+    records: Dict[str, Dict[str, Any]],
+    board_lookup: Dict[str, pd.Series],
+) -> pd.DataFrame:
+    """PRE-R1.6 basket columns plus additive R1.6 commitment columns."""
+    base = wr2_build_basket_table(records, board_lookup)
+    if base.empty:
+        return base
+    qty_by_pid: Dict[str, Dict[str, str]] = {}
+    for pid, item in records.items():
+        board_row = board_lookup.get(pid)
+        unit = ""
+        requested = optional_float(item.get("requested_qty_snapshot"))
+        if board_row is not None:
+            unit = safe_str(board_row.get("unit") or board_row.get("unit_of_measure"))
+            if requested is None:
+                requested = optional_float(board_row.get("planned_qty"))
+        feasible = optional_float(item.get("feasible_qty_snapshot"))
+        if feasible is None and board_row is not None:
+            feasible = wr2_current_feasible_qty(board_row)
+        commitment = optional_float(item.get("approved_commitment_qty"))
+        qty_by_pid[pid] = {
+            "Исходно запрошено": wr2_format_qty_with_unit(requested, unit),
+            "Реально выполнимо": wr2_format_qty_with_unit(feasible, unit),
+            "Утверждённое обязательство": (
+                wr2_format_qty_with_unit(commitment, unit)
+                if commitment is not None and commitment > 0
+                else "—"
+            ),
+            "Остаток": wr2_uncommitted_qty_display(requested, commitment),
+            "Стоимость утверждённых работ": (
+                money_ru(item.get("committed_work_value"))
+                if optional_float(item.get("committed_work_value")) is not None
+                else "—"
+            ),
+            "Трудозатраты обязательства": (
+                wr2_format_hours(float(item.get("committed_required_hours") or 0))
+                if optional_float(item.get("committed_required_hours")) is not None
+                else "—"
+            ),
+            "Стоимость труда": (
+                money_ru(item.get("committed_labor_cost"))
+                if optional_float(item.get("committed_labor_cost")) is not None
+                else "—"
+            ),
+            "Статус объёма": wr2_commitment_status_label(item),
+        }
+    out = base.copy()
+    for col in WR2_R16_OBLIGATION_COLUMNS:
+        out[col] = [
+            qty_by_pid.get(safe_str(pid), {}).get(col, "—")
+            for pid in out["_plan_line_id"].astype(str)
+        ]
+    return out
+
+
+def wr2_compute_commitment_kpis(
+    records: Dict[str, Dict[str, Any]],
+    board_lookup: Dict[str, pd.Series],
+) -> Dict[str, Any]:
+    draft_count = 0
+    with_qty = 0
+    without_qty = 0
+    work_value = 0.0
+    hours = 0.0
+    labor_cost = 0.0
+    crews: set[str] = set()
+    for pid, item in records.items():
+        if not pid:
+            continue
+        draft_count += 1
+        commitment = optional_float(item.get("approved_commitment_qty"))
+        if commitment is None or commitment <= 0:
+            without_qty += 1
+            continue
+        with_qty += 1
+        work_value += optional_float(item.get("committed_work_value")) or 0.0
+        hours += optional_float(item.get("committed_required_hours")) or 0.0
+        labor_cost += optional_float(item.get("committed_labor_cost")) or 0.0
+        board_row = board_lookup.get(pid)
+        crew = wr2_plan_crew(board_row.to_dict()) if board_row is not None else ""
+        if crew:
+            crews.add(crew)
+    return {
+        "draft_count": draft_count,
+        "with_qty": with_qty,
+        "without_qty": without_qty,
+        "committed_work_value": work_value,
+        "committed_required_hours": hours,
+        "committed_labor_cost": labor_cost,
+        "crew_count": len(crews),
+    }
 
 
 def wr2_render_draft_basket_summary(
@@ -4848,9 +5163,13 @@ def render_war_room_v3_obligation_draft(
         composition=comp,
         deferred=deferred,
         excluded=excluded,
+        passport_line_ids=wr2_passport_line_ids_from_session(),
     )
     tables = draft["tables"]
     summary = draft["summary"]
+    board_lookup = draft["board_lookup"]
+    draft_composition = draft.get("draft_composition") or {}
+    commitment_kpis = wr2_compute_commitment_kpis(draft_composition, board_lookup)
     full_scope = readiness.get("full_scope", pd.DataFrame())
     clean_scope = readiness.get("clean_scope", pd.DataFrame())
     can_full = bool(readiness.get("can_full"))
@@ -4865,6 +5184,26 @@ def render_war_room_v3_obligation_draft(
     st.metric("Готовность к формированию", ready_status)
     for err in readiness.get("errors", []):
         st.error(err)
+
+    st.markdown("#### Количественное обязательство")
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Кодов в драфте", commitment_kpis.get("draft_count", 0))
+    k2.metric("Кодов с утверждённым объёмом", commitment_kpis.get("with_qty", 0))
+    k3.metric("Кодов без принятого объёма", commitment_kpis.get("without_qty", 0))
+    k4, k5, k6, k7 = st.columns(4)
+    k4.metric(
+        "Стоимость утверждённых работ",
+        money_ru_compact(commitment_kpis.get("committed_work_value", 0)),
+    )
+    k5.metric(
+        "Трудозатраты по обязательству, чел·ч",
+        wr2_format_hours(commitment_kpis.get("committed_required_hours", 0)),
+    )
+    k6.metric(
+        "Стоимость труда",
+        money_ru_compact(commitment_kpis.get("committed_labor_cost", 0)),
+    )
+    k7.metric("Количество задействованных звеньев", commitment_kpis.get("crew_count", 0))
 
     st.markdown("#### Сводка по корзинам")
     s1, s2 = st.columns(2)

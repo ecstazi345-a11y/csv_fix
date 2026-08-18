@@ -330,7 +330,6 @@ UPDATE_TEXT_FIELDS = (
 
 UPDATE_ENUM_FIELDS = (
     "constraint_priority",
-    "deadline_status",
     "deadline_source",
 )
 
@@ -2247,13 +2246,6 @@ if selected_row is not None and selected_constraint_id:
                         format_func=lambda v: "—" if not v else display_constraint_priority(v),
                         key="reg_upd_constraint_priority",
                     )
-                    dl_status_opts = [""] + list(DEADLINE_STATUS_DISPLAY.keys())
-                    deadline_status_v = st.selectbox(
-                        "Статус срока",
-                        options=dl_status_opts,
-                        format_func=lambda v: "—" if not v else display_deadline_status(v),
-                        key="reg_upd_deadline_status",
-                    )
                     dl_source_opts = [""] + list(DEADLINE_SOURCE_DISPLAY.keys())
                     deadline_source_v = st.selectbox(
                         "Источник срока",
@@ -2301,7 +2293,6 @@ if selected_row is not None and selected_constraint_id:
                     },
                     enum_values={
                         "constraint_priority": priority_v,
-                        "deadline_status": deadline_status_v,
                         "deadline_source": deadline_source_v,
                     },
                     date_modes=date_modes_ui,
@@ -2330,7 +2321,6 @@ if selected_row is not None and selected_constraint_id:
                     },
                     enum_values={
                         "constraint_priority": priority_v,
-                        "deadline_status": deadline_status_v,
                         "deadline_source": deadline_source_v,
                     },
                     date_modes=date_modes_ui,

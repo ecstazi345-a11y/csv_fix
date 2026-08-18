@@ -36,14 +36,18 @@ class ConstraintRegistryR2ServiceTests(unittest.TestCase):
     def test_t03_enum_uppercase(self) -> None:
         out = svc.normalize_update_patch(
             {
-                "deadline_status": "confirmed",
                 "deadline_source": "customer",
                 "constraint_priority": "high",
             }
         )
-        self.assertEqual(out["deadline_status"], "CONFIRMED")
         self.assertEqual(out["deadline_source"], "CUSTOMER")
         self.assertEqual(out["constraint_priority"], "HIGH")
+
+    def test_deadline_status_rejected_from_normalize_patch(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            svc.normalize_update_patch({"deadline_status": "RESOLVED"})
+        self.assertIn("Недопустимое поле", str(ctx.exception))
+        self.assertNotIn("deadline_status", svc.UPDATE_PATCH_WHITELIST)
 
     def test_t04_dates_normalize_iso(self) -> None:
         out = svc.normalize_update_patch(

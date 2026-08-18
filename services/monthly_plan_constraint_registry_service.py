@@ -39,6 +39,7 @@ RPC_RESOLVE = "resolve_monthly_plan_constraint"
 RPC_UPDATE = "update_monthly_plan_constraint"
 
 # R2 update patch: only these keys may be sent to update_monthly_plan_constraint.
+# deadline_status is live/computed in SQL and must never be stored.
 UPDATE_PATCH_WHITELIST = frozenset(
     {
         "constraint_occurred_at",
@@ -50,7 +51,6 @@ UPDATE_PATCH_WHITELIST = frozenset(
         "problem_description",
         "problem_impact",
         "required_action",
-        "deadline_status",
         "deadline_source",
         "target_resolution_date",
         "next_control_date",
@@ -67,7 +67,6 @@ UPDATE_DATE_FIELDS = frozenset(
 
 UPDATE_ENUM_FIELDS = frozenset(
     {
-        "deadline_status",
         "deadline_source",
         "constraint_priority",
     }
@@ -917,7 +916,6 @@ def _normalize_patch_enum(field: str, value: Any) -> Optional[str]:
         return None
     code = str(value).strip().upper()
     allowed = {
-        "deadline_status": DEADLINE_STATUS_CODES,
         "deadline_source": DEADLINE_SOURCE_CODES,
         "constraint_priority": CONSTRAINT_PRIORITY_CODES,
     }.get(field)

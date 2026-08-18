@@ -171,6 +171,28 @@ class Page24UpdateFormTests(unittest.TestCase):
         patch = self.mod.build_update_dirty_patch(baseline, current)
         self.assertEqual(patch, {"owner_name": "Exec NEW"})
 
+    def test_deadline_status_omitted_from_update_payload(self) -> None:
+        row = self.row.copy()
+        row["deadline_status"] = "RESOLVED"
+        row["effective_deadline_status"] = "RESOLVED"
+        baseline = self.mod.row_to_update_baseline(row)
+        current = dict(baseline)
+        current["owner_name"] = "Exec NEW"
+        current["deadline_status"] = "RESOLVED"
+        current["effective_deadline_status"] = "RESOLVED"
+        patch = self.mod.build_update_dirty_patch(baseline, current)
+        self.assertNotIn("deadline_status", patch)
+        self.assertNotIn("effective_deadline_status", patch)
+        self.assertEqual(patch.get("owner_name"), "Exec NEW")
+        normalized = self.mod.normalize_update_patch(patch)
+        self.assertNotIn("deadline_status", normalized)
+        self.assertNotIn("effective_deadline_status", normalized)
+        self.assertEqual(normalized.get("owner_name"), "Exec NEW")
+        self.assertNotIn("deadline_status", self.mod.UPDATE_ENUM_FIELDS)
+        self.assertNotIn("deadline_status", self.mod.UPDATE_PATCH_WHITELIST)
+        src = PAGE_PATH.read_text(encoding="utf-8")
+        self.assertNotIn('key="reg_upd_deadline_status"', src)
+
     def test_t03_unchanged_omitted(self) -> None:
         baseline = self.mod.row_to_update_baseline(self.row)
         patch = self.mod.build_update_dirty_patch(baseline, dict(baseline))

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from io import BytesIO
+from statistics import median
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import streamlit as st
 
 from services.supabase_client import supabase
+from utils.month_key import normalize_month_key
 
 try:
     import openpyxl  # noqa: F401
@@ -140,6 +142,129 @@ def kpi_hours_display(value: float) -> str:
     if abs(value - round(value)) < 1e-9:
         return f"{int(round(value)):,}".replace(",", " ") + " чел·ч"
     return f"{value:,.1f}".replace(",", " ").replace(".", ",") + " чел·ч"
+
+
+def candidate_full_month_hours(lab_hours_month: Any, lab_fte_month: Any) -> Optional[float]:
+    hours = safe_num(lab_hours_month)
+    fte = safe_num(lab_fte_month)
+    if hours <= 0 or fte <= 0:
+        return None
+    return hours / fte
+
+
+def derive_person_month_fund_hours(rows: List[Dict[str, Any]] | pd.DataFrame) -> Optional[float]:
+    """Median of lab_hours_month / lab_fte_month for valid MLS rows. No 176/216 fallback."""
+    if rows is None:
+        return None
+    if isinstance(rows, pd.DataFrame):
+        records = rows.to_dict("records")
+    else:
+        records = list(rows)
+    candidates: List[float] = []
+    for row in records:
+        candidate = candidate_full_month_hours(
+            row.get("lab_hours_month"),
+            row.get("lab_fte_month"),
+        )
+        if candidate is None:
+            continue
+        candidates.append(candidate)
+    if not candidates:
+        return None
+    return float(median(candidates))
+
+
+def filter_labor_rows_for_person_month_fund(
+    labor_df: pd.DataFrame,
+    *,
+    project: str,
+    month: str,
+) -> pd.DataFrame:
+    if labor_df is None or labor_df.empty:
+        return pd.DataFrame()
+    project_code = safe_str(project)
+    month_label = safe_str(month)
+    if not project_code or project_code == "Все" or not month_label or month_label == "Все":
+        return pd.DataFrame()
+    canon_month = normalize_month_key(month_label)
+    if not canon_month:
+        return pd.DataFrame()
+    scoped = labor_df.copy()
+    if "project_code" not in scoped.columns or "month_key" not in scoped.columns:
+        return pd.DataFrame()
+    scoped = scoped[scoped["project_code"].astype(str).str.strip() == project_code]
+    scoped = scoped[
+        scoped["month_key"].map(lambda value: normalize_month_key(value) == canon_month)
+    ]
+    return scoped.reset_index(drop=True)
+
+
+def required_person_months(
+    required_hours: Any,
+    fund_hours: Optional[float],
+) -> Optional[float]:
+    hours = safe_num(required_hours)
+    if fund_hours is None:
+        return None
+    fund = safe_num(fund_hours)
+    if fund <= 0:
+        return None
+    if hours < 0:
+        return None
+    return hours / fund
+
+
+def kpi_fund_hours_display(value: Optional[float]) -> str:
+    if value is None or safe_num(value) <= 0:
+        return "—"
+    amount = safe_num(value)
+    if abs(amount - round(amount)) < 0.05:
+        return f"{int(round(amount)):,}".replace(",", " ") + " чел·ч/мес."
+    return f"{amount:,.1f}".replace(",", " ").replace(".", ",") + " чел·ч/мес."
+
+
+def kpi_person_months_display(value: Optional[float]) -> str:
+    if value is None:
+        return "—"
+    amount = safe_num(value)
+    if amount < 0:
+        return "—"
+    return f"{amount:,.2f}".replace(",", " ").replace(".", ",") + " чел.-мес."
+
+
+def person_month_formula_caption(
+    required_hours: Any,
+    fund_hours: Optional[float],
+    person_months: Optional[float],
+) -> Optional[str]:
+    if fund_hours is None or person_months is None:
+        return None
+    hours = safe_num(required_hours)
+    hours_text = kpi_hours_display(hours) if hours > 0 else "0 чел·ч"
+    return (
+        f"{hours_text} / {kpi_fund_hours_display(fund_hours)} = "
+        f"{kpi_person_months_display(person_months)}"
+    )
+
+
+def person_month_fund_composition_caption(fund_hours: Optional[float]) -> Optional[str]:
+    if fund_hours is None:
+        return None
+    fund = safe_num(fund_hours)
+    shift_hours = safe_num(PRODUCTIVE_HOURS_PER_SHIFT)
+    if fund <= 0 or shift_hours <= 0:
+        return None
+    shifts = fund / shift_hours
+    if abs(shifts - round(shifts)) < 0.05:
+        shifts_text = f"{int(round(shifts)):,}".replace(",", " ")
+    else:
+        shifts_text = f"{shifts:,.1f}".replace(",", " ").replace(".", ",")
+    if abs(shift_hours - round(shift_hours)) < 1e-9:
+        shift_text = str(int(round(shift_hours)))
+    else:
+        shift_text = f"{shift_hours:,.1f}".replace(",", " ").replace(".", ",")
+    fund_hours_text = kpi_hours_display(fund)
+    return f"{shifts_text} раб. смен × {shift_text} производительных ч = {fund_hours_text}"
 
 
 def kpi_people_display(value: float) -> str:
@@ -278,6 +403,20 @@ def load_planning_scope_filter_reference() -> pd.DataFrame:
     )
     out["construction_queue"] = out["facility"].apply(derive_construction_queue)
     return out
+
+
+@st.cache_data(ttl=300)
+def load_labor_summary_capacity_rows() -> pd.DataFrame:
+    try:
+        response = (
+            supabase.table(TABLE_LABOR_SUMMARY)
+            .select("project_code,month_key,lab_hours_month,lab_fte_month")
+            .limit(5000)
+            .execute()
+        )
+        return pd.DataFrame(response.data or [])
+    except Exception:  # noqa: BLE001
+        return pd.DataFrame()
 
 
 @st.cache_data(ttl=300)
@@ -930,23 +1069,23 @@ def render_passport_summary_panel(summary: Dict[str, Any]) -> None:
                 "total",
             ),
             _kpi_card_html(
+                "Производительный фонд 1 чел.-мес.",
+                kpi_fund_hours_display(summary.get("person_month_fund_hours")),
+                "open",
+            ),
+            _kpi_card_html(
+                "Требуемая мощность",
+                kpi_person_months_display(summary.get("required_person_months")),
+                "total",
+            ),
+            _kpi_card_html(
                 "Стоимость труда",
                 money_ru(summary["total_labor"]),
                 "total",
             ),
             _kpi_card_html(
-                "Требуемые люди",
-                kpi_people_display(summary["required_people"]),
-                "open",
-            ),
-            _kpi_card_html(
                 "Количество звеньев",
                 str(summary["crew_count"]) if summary["crew_count"] else "—",
-                "open",
-            ),
-            _kpi_card_html(
-                "Средняя длительность, дн.",
-                kpi_days_display(summary["avg_duration_days"]),
                 "open",
             ),
             _kpi_card_html(
@@ -986,6 +1125,14 @@ def render_passport_summary_panel(summary: Dict[str, Any]) -> None:
         """,
         unsafe_allow_html=True,
     )
+    composition = summary.get("person_month_fund_composition")
+    if composition:
+        st.caption(composition)
+    formula = summary.get("person_month_formula")
+    if formula:
+        st.caption(formula)
+    elif summary.get("person_month_fund_missing"):
+        st.caption("Нет данных фонда рабочего времени за выбранный месяц")
 
 
 def render_passport_header(df: pd.DataFrame) -> None:
@@ -1399,6 +1546,24 @@ def render_passport_page(
     render_passport_header(filtered)
 
     summary = compute_passport_summary(filtered)
+    labor_rows = filter_labor_rows_for_person_month_fund(
+        load_labor_summary_capacity_rows(),
+        project=filters.get("project") or "",
+        month=filters.get("month") or "",
+    )
+    fund_hours = derive_person_month_fund_hours(labor_rows)
+    required_hours = float(summary.get("total_hours") or 0.0)
+    person_months = required_person_months(required_hours, fund_hours)
+    summary["person_month_fund_hours"] = fund_hours
+    summary["required_person_months"] = person_months
+    summary["person_month_fund_missing"] = fund_hours is None
+    summary["person_month_formula"] = person_month_formula_caption(
+        required_hours, fund_hours, person_months
+    )
+    summary["person_month_fund_composition"] = person_month_fund_composition_caption(
+        fund_hours
+    )
+    summary["person_month_fund_source_rows"] = int(len(labor_rows))
     st.markdown("### Сводка месячного обязательства")
     render_passport_summary_panel(summary)
 
@@ -1417,15 +1582,27 @@ def render_passport_page(
     render_documents_block()
 
 
-st.title("Паспорт месяца")
-st.caption(
-    "Итоговая витрина утверждённого месячного обязательства после War Room. "
-    "Фильтры → сводка → таблица → разбивки → Excel."
-)
+def _page12_should_autorun() -> bool:
+    if __name__ == "__main__":
+        return True
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
 
-passport_raw = load_passport_dataset()
-v2_df = load_v2_plan_lines()
-passport_df = enrich_passport_dataframe(passport_raw, v2_df)
-scope_ref = load_planning_scope_filter_reference()
+        return get_script_run_ctx() is not None
+    except Exception:  # noqa: BLE001
+        return False
 
-render_passport_page(passport_df, scope_ref, v2_df)
+
+if _page12_should_autorun():
+    st.title("Паспорт месяца")
+    st.caption(
+        "Итоговая витрина утверждённого месячного обязательства после War Room. "
+        "Фильтры → сводка → таблица → разбивки → Excel."
+    )
+
+    passport_raw = load_passport_dataset()
+    v2_df = load_v2_plan_lines()
+    passport_df = enrich_passport_dataframe(passport_raw, v2_df)
+    scope_ref = load_planning_scope_filter_reference()
+
+    render_passport_page(passport_df, scope_ref, v2_df)

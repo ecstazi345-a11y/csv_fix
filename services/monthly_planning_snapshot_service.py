@@ -27,6 +27,7 @@ from services.monthly_planning_boq_service import (
     _v2_apply_boq_availability_metrics,
     _v2_resolve_scope_status_row,
 )
+from services.monthly_planning_scope_read_service import load_monthly_boq_reality
 from services.monthly_resource_plan_service import load_approved_capacity
 from utils.month_key import normalize_month_key
 
@@ -40,6 +41,9 @@ ISSUE_APPROVED_CAPACITY_MISSING = "approved_capacity_missing"
 ISSUE_SCOPE_REMAINING_NOT_JOINED = "scope_remaining_not_joined"
 ISSUE_ADMISSION_UNAVAILABLE = "admission_status_unavailable"
 ISSUE_ZERO_PRICE_PHYSICAL_UNJOINED = "zero_price_physical_not_joined"
+ISSUE_NOT_REQUIRED_NOT_APPLIED = "not_required_adjustments_not_applied"
+ISSUE_SCOPE_READ_FAILED = "scope_read_failed"
+ISSUE_PROJECT_CODE_BLANK = "blank_project_code"
 
 
 def _safe_str(value: Any) -> str:
@@ -132,37 +136,71 @@ def _admission_lookup(admission_df: Optional[pd.DataFrame]) -> dict[str, pd.Seri
     return lookup
 
 
-def _unique_scope_by_boq(scope_df: Optional[pd.DataFrame]) -> dict[str, pd.Series]:
-    """Map boq_code → scope row only when exactly one scope row exists for that BOQ."""
-    if scope_df is None or scope_df.empty or "boq_code" not in scope_df.columns:
-        return {}
+def _key_part(value: Any) -> str:
+    return _safe_str(value).upper()
+
+
+def _line_facility(row: pd.Series) -> str:
+    return _key_part(row.get("facility") or row.get("facility_building"))
+
+
+def _line_discipline(row: pd.Series) -> str:
+    return _key_part(row.get("discipline") or row.get("construction_discipline"))
+
+
+def scope_reality_join_key(row: pd.Series) -> Optional[tuple[str, str, str, str]]:
+    """project + facility + discipline + boq. None if any part is blank (no remap)."""
+    project = _key_part(row.get("project_code"))
+    facility = _line_facility(row)
+    discipline = _line_discipline(row)
+    boq = _key_part(row.get("boq_code"))
+    if not project or not facility or not discipline or not boq:
+        return None
+    return (project, facility, discipline, boq)
+
+
+def _prepare_scope_metrics(scope_df: Optional[pd.DataFrame]) -> pd.DataFrame:
+    if scope_df is None or scope_df.empty:
+        return pd.DataFrame()
     if not all(col in scope_df.columns for col in SCOPE_REQUIRED_COLS):
+        return pd.DataFrame()
+    if "executed_total_qty" in scope_df.columns and "remaining_qty" in scope_df.columns:
+        return scope_df.copy()
+    return _v2_apply_boq_availability_metrics(scope_df.copy())
+
+
+def _unique_scope_by_join_key(scope_df: Optional[pd.DataFrame]) -> dict[tuple[str, str, str, str], pd.Series]:
+    metrics = _prepare_scope_metrics(scope_df)
+    if metrics.empty:
         return {}
-    metrics = _v2_apply_boq_availability_metrics(scope_df.copy())
-    unique: dict[str, pd.Series] = {}
-    counts: dict[str, int] = {}
+    counts: dict[tuple[str, str, str, str], int] = {}
+    unique: dict[tuple[str, str, str, str], pd.Series] = {}
     for _, row in metrics.iterrows():
-        boq = _safe_str(row.get("boq_code"))
-        if not boq:
+        key = scope_reality_join_key(row)
+        if key is None:
             continue
-        counts[boq] = counts.get(boq, 0) + 1
-        unique[boq] = row
-    return {boq: unique[boq] for boq, n in counts.items() if n == 1}
+        counts[key] = counts.get(key, 0) + 1
+        unique[key] = row
+    return {key: unique[key] for key, n in counts.items() if n == 1}
 
 
 def _scope_fields_for_line(
     *,
-    boq_code: str,
-    plan_line_boq_counts: dict[str, int],
-    unique_scope: dict[str, pd.Series],
+    join_key: Optional[tuple[str, str, str, str]],
+    plan_line_key_counts: dict[tuple[str, str, str, str], int],
+    unique_scope: dict[tuple[str, str, str, str], pd.Series],
 ) -> tuple[Optional[float], Optional[float], Optional[bool], Optional[bool], list[str]]:
     missing: list[str] = []
-    if not boq_code or boq_code not in unique_scope or plan_line_boq_counts.get(boq_code, 0) != 1:
+    if (
+        join_key is None
+        or join_key not in unique_scope
+        or plan_line_key_counts.get(join_key, 0) != 1
+    ):
         missing.append(ISSUE_SCOPE_REMAINING_NOT_JOINED)
         missing.append(ISSUE_ZERO_PRICE_PHYSICAL_UNJOINED)
         return None, None, None, None, missing
 
-    row = unique_scope[boq_code]
+    row = unique_scope[join_key]
     remaining = _json_num(row.get("remaining_qty"))
     executed = _json_num(row.get("executed_total_qty"))
     if executed is None:
@@ -172,6 +210,7 @@ def _scope_fields_for_line(
     unit_price = to_num(row.get("unit_price"))
     total_qty = to_num(row.get("total_qty"))
     zero_price_physical = bool(total_qty > 0 and unit_price <= 0)
+    missing.append(ISSUE_NOT_REQUIRED_NOT_APPLIED)
     return remaining, executed, completed, zero_price_physical, missing
 
 
@@ -187,6 +226,7 @@ def build_planning_snapshot(
     crew_code: Optional[str] = None,
     admission_df: Optional[pd.DataFrame] = None,
     scope_df: Optional[pd.DataFrame] = None,
+    scope_meta: Optional[dict[str, Any]] = None,
     roster_df: Optional[pd.DataFrame] = None,
 ) -> dict[str, Any]:
     """
@@ -200,6 +240,18 @@ def build_planning_snapshot(
     dq_issues: list[dict[str, Any]] = []
     if not month_canonical:
         dq_issues.append({"code": ISSUE_MONTH_NORMALIZATION, "detail": str(month_key)})
+    requested_project = _safe_str(project_code)
+    if not requested_project:
+        dq_issues.append({"code": ISSUE_PROJECT_CODE_BLANK, "detail": "requested project_code is blank"})
+
+    scope_meta = dict(scope_meta or {})
+    if scope_meta.get("error"):
+        dq_issues.append(
+            {
+                "code": ISSUE_SCOPE_READ_FAILED,
+                "detail": str(scope_meta.get("error")),
+            }
+        )
 
     filters = {
         "plan_line_id": plan_line_id,
@@ -268,12 +320,15 @@ def build_planning_snapshot(
     }
 
     admission_map = _admission_lookup(admission_df)
-    boq_counts: dict[str, int] = {}
+    plan_line_key_counts: dict[tuple[str, str, str, str], int] = {}
+    line_join_keys: dict[str, Optional[tuple[str, str, str, str]]] = {}
     for _, row in work_lines.iterrows():
-        boq = _safe_str(row.get("boq_code"))
-        if boq:
-            boq_counts[boq] = boq_counts.get(boq, 0) + 1
-    unique_scope = _unique_scope_by_boq(scope_df)
+        key = scope_reality_join_key(row)
+        pid = _safe_str(row.get("plan_line_id"))
+        line_join_keys[pid] = key
+        if key is not None:
+            plan_line_key_counts[key] = plan_line_key_counts.get(key, 0) + 1
+    unique_scope = _unique_scope_by_join_key(scope_df)
 
     plan_lines: list[dict[str, Any]] = []
     blocking_line_count = 0
@@ -318,11 +373,13 @@ def build_planning_snapshot(
             dq_issues.append({"code": ISSUE_APPROVED_CAPACITY_MISSING, "plan_line_id": pid, "crew_code": crew})
 
         remaining, executed, completed, zero_price, scope_missing = _scope_fields_for_line(
-            boq_code=boq,
-            plan_line_boq_counts=boq_counts,
+            join_key=line_join_keys.get(pid),
+            plan_line_key_counts=plan_line_key_counts,
             unique_scope=unique_scope,
         )
         missing_data.extend(scope_missing)
+        if remaining is not None:
+            source_refs.append("monthly_scope_picker_view")
 
         adm = admission_map.get(pid)
         if adm is None:
@@ -429,12 +486,29 @@ def build_planning_snapshot(
             "approved_capacity": "monthly_resource_capacity_v1 via load_approved_capacity",
             "feasibility": "monthly_plan_resource_economic_service.build_resource_economic_models",
             "admission": "monthly_plan_labor_admission_v1 via load_labor_admission",
-            "boq_metrics": "monthly_planning_boq_service (unique boq_code join only)",
+            "boq_reality": "monthly_scope_picker_view via load_monthly_boq_reality",
+            "boq_metrics": "monthly_planning_boq_service (unique project+facility+discipline+boq)",
+            "scope_time_basis": "all_time",
+            "manual_not_required_adjustments_applied": False,
+            "remaining_semantics": "raw_physical_pre_not_required_adjustments",
             "month_normalizer": "utils.month_key.normalize_month_key",
             "mls_used_as_capacity": False,
             "no_llm": True,
+            "scope_read_error": scope_meta.get("error"),
         },
     }
+
+
+def _safe_load_boq_reality(project_code: str) -> tuple[pd.DataFrame, dict[str, Any]]:
+    try:
+        return load_monthly_boq_reality(project_code=project_code)
+    except Exception as exc:  # noqa: BLE001
+        return pd.DataFrame(), {
+            "source": "monthly_scope_picker_view",
+            "error": f"{type(exc).__name__}: {exc}",
+            "manual_not_required_adjustments_applied": False,
+            "scope_time_basis": "all_time",
+        }
 
 
 def load_planning_snapshot(
@@ -450,6 +524,7 @@ def load_planning_snapshot(
     labor = load_labor_lines(project_code=project_code, month_key=month_key)
     capacity = load_approved_capacity(project_code=project_code, month_key=month_key)
     admission = load_labor_admission(project_code=project_code, month_key=month_key)
+    scope_df, scope_meta = _safe_load_boq_reality(project_code)
     return build_planning_snapshot(
         project_code=project_code,
         month_key=month_key,
@@ -460,6 +535,7 @@ def load_planning_snapshot(
         facility_building=facility_building,
         crew_code=crew_code,
         admission_df=admission,
-        scope_df=None,
+        scope_df=scope_df,
+        scope_meta=scope_meta,
         roster_df=None,
     )

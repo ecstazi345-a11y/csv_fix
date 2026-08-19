@@ -16,7 +16,10 @@ from services.monthly_plan_resource_economic_service import (
     PARTIALLY_FEASIBLE,
     build_resource_economic_models,
 )
-from services.monthly_planning_snapshot_service import build_planning_snapshot
+from services.monthly_planning_snapshot_service import (
+    _safe_load_boq_reality,
+    build_planning_snapshot,
+)
 from utils.month_key import normalize_month_key
 
 
@@ -29,6 +32,8 @@ def _line(
     boq: str = "BOQ-A",
     project: str = "PRJ_001",
     month: str = "август-2026",
+    facility: str = "T1",
+    discipline: str = "ELEC",
     labor_hours: float | None = None,
 ) -> dict:
     return {
@@ -37,8 +42,8 @@ def _line(
         "month_key": month,
         "boq_code": boq,
         "boq_name": f"Name {boq}",
-        "facility": "T1",
-        "discipline": "ELEC",
+        "facility": facility,
+        "discipline": discipline,
         "crew": crew,
         "crew_code": crew,
         "crew_size": 2,
@@ -228,6 +233,9 @@ class PlanningSnapshotCoreTests(unittest.TestCase):
         scope = pd.DataFrame(
             [
                 {
+                    "project_code": "PRJ_001",
+                    "facility": "T1",
+                    "discipline": "ELEC",
                     "boq_code": "9000-00-16-007",
                     "total_qty": 5.0,
                     "executed_qty": 1.0,
@@ -251,6 +259,168 @@ class PlanningSnapshotCoreTests(unittest.TestCase):
         self.assertIs(row["completed"], False)
         self.assertIs(row["zero_price_physical"], True)
         self.assertNotIn("scope_remaining_not_joined", row["missing_data"])
+        self.assertIn("not_required_adjustments_not_applied", row["missing_data"])
+        self.assertEqual(snap["source_trace"]["scope_time_basis"], "all_time")
+        self.assertFalse(snap["source_trace"]["manual_not_required_adjustments_applied"])
+
+    def test_same_boq_different_facility_joins_independently(self) -> None:
+        lines = pd.DataFrame(
+            [
+                _line("L-A", boq="2041-02-06-01", facility="16160-13", crew="СУБпо-20"),
+                _line("L-B", boq="2041-02-06-01", facility="26160-17", crew="АСИ-10"),
+            ]
+        )
+        capacity = pd.DataFrame(
+            [
+                _approved_capacity(crew="СУБпо-20", hours=80.0),
+                _approved_capacity(crew="АСИ-10", hours=80.0),
+            ]
+        )
+        scope = pd.DataFrame(
+            [
+                {
+                    "project_code": "PRJ_001",
+                    "facility": "16160-13",
+                    "discipline": "ELEC",
+                    "boq_code": "2041-02-06-01",
+                    "total_qty": 10.0,
+                    "executed_qty": 2.0,
+                    "unit_price": 5.0,
+                    "total_value": 50.0,
+                    "not_required_qty": 0.0,
+                    "already_planned_qty": 0.0,
+                },
+                {
+                    "project_code": "PRJ_001",
+                    "facility": "26160-17",
+                    "discipline": "ELEC",
+                    "boq_code": "2041-02-06-01",
+                    "total_qty": 20.0,
+                    "executed_qty": 5.0,
+                    "unit_price": 5.0,
+                    "total_value": 100.0,
+                    "not_required_qty": 0.0,
+                    "already_planned_qty": 0.0,
+                },
+            ]
+        )
+        snap = build_planning_snapshot(
+            project_code="PRJ_001",
+            month_key="август-2026",
+            labor_lines_df=lines,
+            approved_capacity_df=capacity,
+            scope_df=scope,
+        )
+        by_id = {row["plan_line_id"]: row for row in snap["plan_lines"]}
+        self.assertAlmostEqual(by_id["L-A"]["remaining_qty"], 8.0)
+        self.assertAlmostEqual(by_id["L-A"]["executed_qty"], 2.0)
+        self.assertAlmostEqual(by_id["L-B"]["remaining_qty"], 15.0)
+        self.assertAlmostEqual(by_id["L-B"]["executed_qty"], 5.0)
+
+    def test_duplicate_scope_4key_is_not_guessed(self) -> None:
+        lines = pd.DataFrame([_line("L1", boq="BOQ-DUP")])
+        capacity = pd.DataFrame([_approved_capacity()])
+        scope = pd.DataFrame(
+            [
+                {
+                    "project_code": "PRJ_001",
+                    "facility": "T1",
+                    "discipline": "ELEC",
+                    "boq_code": "BOQ-DUP",
+                    "total_qty": 10.0,
+                    "executed_qty": 1.0,
+                    "unit_price": 1.0,
+                    "total_value": 10.0,
+                    "not_required_qty": 0.0,
+                    "already_planned_qty": 0.0,
+                },
+                {
+                    "project_code": "PRJ_001",
+                    "facility": "T1",
+                    "discipline": "ELEC",
+                    "boq_code": "BOQ-DUP",
+                    "total_qty": 99.0,
+                    "executed_qty": 9.0,
+                    "unit_price": 1.0,
+                    "total_value": 99.0,
+                    "not_required_qty": 0.0,
+                    "already_planned_qty": 0.0,
+                },
+            ]
+        )
+        snap = build_planning_snapshot(
+            project_code="PRJ_001",
+            month_key="август-2026",
+            labor_lines_df=lines,
+            approved_capacity_df=capacity,
+            scope_df=scope,
+        )
+        row = snap["plan_lines"][0]
+        self.assertIsNone(row["remaining_qty"])
+        self.assertIsNone(row["executed_qty"])
+        self.assertIsNone(row["completed"])
+        self.assertIsNone(row["zero_price_physical"])
+        self.assertIn("scope_remaining_not_joined", row["missing_data"])
+
+    def test_blank_project_scope_is_not_reassigned(self) -> None:
+        lines = pd.DataFrame([_line("L1")])
+        capacity = pd.DataFrame([_approved_capacity()])
+        scope = pd.DataFrame(
+            [
+                {
+                    "project_code": "",
+                    "facility": "T1",
+                    "discipline": "ELEC",
+                    "boq_code": "BOQ-A",
+                    "total_qty": 10.0,
+                    "executed_qty": 1.0,
+                    "unit_price": 1.0,
+                    "total_value": 10.0,
+                    "not_required_qty": 0.0,
+                    "already_planned_qty": 0.0,
+                }
+            ]
+        )
+        snap = build_planning_snapshot(
+            project_code="PRJ_001",
+            month_key="август-2026",
+            labor_lines_df=lines,
+            approved_capacity_df=capacity,
+            scope_df=scope,
+        )
+        row = snap["plan_lines"][0]
+        self.assertIsNone(row["remaining_qty"])
+        self.assertIn("scope_remaining_not_joined", row["missing_data"])
+
+    def test_scope_loader_failure_keeps_snapshot_structure(self) -> None:
+        lines = pd.DataFrame([_line("L1")])
+        capacity = pd.DataFrame([_approved_capacity()])
+        snap = build_planning_snapshot(
+            project_code="PRJ_001",
+            month_key="август-2026",
+            labor_lines_df=lines,
+            approved_capacity_df=capacity,
+            scope_df=pd.DataFrame(),
+            scope_meta={"error": "RuntimeError: view unavailable"},
+        )
+        self.assertEqual(len(snap["plan_lines"]), 1)
+        self.assertIsNone(snap["plan_lines"][0]["remaining_qty"])
+        self.assertTrue(
+            any(i["code"] == "scope_read_failed" for i in snap["data_quality"]["issues"])
+        )
+        self.assertEqual(snap["source_trace"]["scope_read_error"], "RuntimeError: view unavailable")
+        self.assertAlmostEqual(snap["plan_lines"][0]["required_hours"], 60.0)
+
+    def test_safe_load_boq_reality_swallows_raise(self) -> None:
+        from unittest.mock import patch
+
+        with patch(
+            "services.monthly_planning_snapshot_service.load_monthly_boq_reality",
+            side_effect=RuntimeError("db down"),
+        ):
+            df, meta = _safe_load_boq_reality("PRJ_001")
+        self.assertTrue(df.empty)
+        self.assertIn("db down", str(meta.get("error")))
 
     def test_no_llm_imports_in_service_module(self) -> None:
         import services.monthly_planning_snapshot_service as mod

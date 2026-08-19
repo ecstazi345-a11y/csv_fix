@@ -4,10 +4,10 @@
 Поток: Plan Lines v2 (primary) / Review Queue (legacy fallback)
      → Constraints → War Room → Passport → Week → Day
 
-Release 1 (cumulative working passport):
-- one active passport per project_code + month_key;
-- rebuild keeps the same passport_id and atomically replaces lines via RPC;
-- APPROVED means ACTIVE WORKING PASSPORT (rebuildable); CLOSE/LOCK later;
+R1.6C:
+- existing APPROVED passport is not rebuilt by the normal create path;
+- new passport qty/value/hours/labor come from approved_commitment snapshots;
+- NULL / incomplete commitment blocks with zero writes.
 - revision/history is not stored (R2);
 - Page 12 / Excel only read current lines and do not finalize or lock the passport.
 """
@@ -21,6 +21,10 @@ from typing import Any, Dict, List, Optional, Tuple, TypedDict
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
+from services.monthly_plan_management_decisions import (
+    STATUS_ACTIVE,
+    optional_float,
+)
 from services.supabase_client import supabase
 
 load_dotenv()
@@ -29,7 +33,16 @@ TABLE_QUEUE = "monthly_plan_review_queue"
 TABLE_PLAN_LINES_V2 = "monthly_plan_lines_v2"
 TABLE_PASSPORTS = "monthly_plan_passports"
 TABLE_PASSPORT_LINES = "monthly_plan_passport_lines"
+TABLE_MANAGEMENT_DECISIONS = "monthly_plan_management_decisions"
 
+MSG_APPROVED_PASSPORT_EXISTS = (
+    "Паспорт месяца уже утверждён. "
+    "Существующий паспорт не пересобирается автоматически."
+)
+MSG_COMMITMENT_MISSING = "Не утверждён объём месячного обязательства"
+MSG_SNAPSHOT_INCOMPLETE = (
+    "Обязательство утверждено, но расчётные снимки обязательства неполные"
+)
 _raw_passport_source_mode = os.getenv("PASSPORT_SOURCE_MODE", "v2_primary").strip().lower()
 PASSPORT_SOURCE_MODE = (
     _raw_passport_source_mode
@@ -187,6 +200,219 @@ def _map_queue_row_to_passport_source_row(queue_row: Dict[str, Any]) -> Dict[str
     mapped = dict(queue_row)
     mapped["source_kind"] = "legacy_queue"
     return mapped
+
+
+def _empty_create_summary() -> PassportSummary:
+    return {
+        "status": "error",
+        "passport_id": None,
+        "created_lines": 0,
+        "skipped_blocked": 0,
+        "blocked_without_override": 0,
+        "override_included_rows": 0,
+        "skipped_waiting": 0,
+        "total_value": 0.0,
+        "total_hours": 0.0,
+        "errors": [],
+        "source_kind": None,
+        "previous_rows": 0,
+        "current_rows": 0,
+        "added_count": 0,
+        "removed_count": 0,
+        "updated_count": 0,
+    }
+
+
+def _commitment_line_label(boq_code: Any, plan_line_id: Any) -> str:
+    boq = str(boq_code or "").strip() or "—"
+    line_id = str(plan_line_id or "").strip() or "—"
+    return f"{boq} / {line_id}"
+
+
+def find_active_approved_passport(
+    project_code: str,
+    month_key: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """
+    Read-only lookup of an APPROVED passport for project+month.
+
+    Returns (row, None) when found, (None, None) when absent,
+    (None, error) when the check itself failed (fail closed).
+    """
+    try:
+        response = (
+            supabase.table(TABLE_PASSPORTS)
+            .select("passport_id,passport_status,project_code,month_key")
+            .eq("project_code", project_code)
+            .eq("month_key", month_key)
+            .eq("passport_status", "APPROVED")
+            .limit(5)
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        return None, f"Не удалось проверить существующий паспорт: {exc}"
+    rows = list(response.data or [])
+    if not rows:
+        return None, None
+    row = dict(rows[0])
+    return row, None
+
+
+def fetch_commitment_by_plan_line_id(
+    project_code: str,
+    month_key: str,
+) -> Tuple[Dict[str, Dict[str, Any]], Optional[str]]:
+    """ACTIVE management decisions keyed by plan_line_id (latest decided_at wins)."""
+    cols = (
+        "plan_line_id,boq_code,decision,decision_status,"
+        "approved_commitment_qty,committed_work_value,"
+        "committed_required_hours,committed_labor_cost,decided_at"
+    )
+    try:
+        response = (
+            supabase.table(TABLE_MANAGEMENT_DECISIONS)
+            .select(cols)
+            .eq("project_code", project_code)
+            .eq("month_key", month_key)
+            .eq("decision_status", STATUS_ACTIVE)
+            .order("decided_at", desc=True)
+            .limit(5000)
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {}, f"Не удалось загрузить утверждённые обязательства: {exc}"
+
+    by_line: Dict[str, Dict[str, Any]] = {}
+    for row in response.data or []:
+        if str(row.get("decision_status") or "").strip().upper() != STATUS_ACTIVE:
+            continue
+        line_id = str(row.get("plan_line_id") or "").strip()
+        if not line_id or line_id in by_line:
+            continue
+        by_line[line_id] = dict(row)
+    return by_line, None
+
+
+def commitment_error_for_line(
+    *,
+    plan_line_id: str,
+    boq_code: Any,
+    decision_row: Optional[Dict[str, Any]],
+) -> Optional[str]:
+    label = _commitment_line_label(boq_code, plan_line_id)
+    if not decision_row:
+        return f"{label}: {MSG_COMMITMENT_MISSING}"
+
+    qty = optional_float(decision_row.get("approved_commitment_qty"))
+    if qty is None or qty <= 0:
+        return f"{label}: {MSG_COMMITMENT_MISSING}"
+
+    work_value = optional_float(decision_row.get("committed_work_value"))
+    hours = optional_float(decision_row.get("committed_required_hours"))
+    labor = optional_float(decision_row.get("committed_labor_cost"))
+    if work_value is None or hours is None or labor is None:
+        return f"{label}: {MSG_SNAPSHOT_INCOMPLETE}"
+    return None
+
+
+def apply_commitment_snapshots_to_source_row(
+    source_row: Dict[str, Any],
+    decision_row: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Overwrite commitment-sensitive metrics. Identity fields stay from v2."""
+    mapped = dict(source_row)
+    mapped["planned_qty"] = optional_float(decision_row.get("approved_commitment_qty"))
+    mapped["plan_value"] = optional_float(decision_row.get("committed_work_value"))
+    mapped["required_hours"] = optional_float(decision_row.get("committed_required_hours"))
+    mapped["labor_cost"] = optional_float(decision_row.get("committed_labor_cost"))
+    return mapped
+
+
+def validate_inclusion_commitments(
+    project_code: str,
+    month_key: str,
+    line_ids: List[str],
+    boq_by_line_id: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[str], Optional[str]]:
+    """Validate INCLUDE lines before any product write. Empty line_ids → no errors."""
+    unique_ids = [lid for lid in dict.fromkeys(line_ids) if str(lid).strip()]
+    if not unique_ids:
+        return [], None
+    by_line, fetch_error = fetch_commitment_by_plan_line_id(project_code, month_key)
+    if fetch_error:
+        return [], fetch_error
+    lookup = boq_by_line_id or {}
+    errors: List[str] = []
+    for line_id in unique_ids:
+        decision_row = by_line.get(line_id)
+        boq = None
+        if decision_row is not None:
+            boq = decision_row.get("boq_code")
+        if not boq:
+            boq = lookup.get(line_id)
+        err = commitment_error_for_line(
+            plan_line_id=line_id,
+            boq_code=boq,
+            decision_row=decision_row,
+        )
+        if err:
+            errors.append(err)
+    return errors, None
+
+
+def preflight_new_passport(
+    project_code: str,
+    month_key: str,
+    inclusion_line_ids: Optional[List[str]] = None,
+    boq_by_line_id: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Read-only pre-flight for a new passport.
+
+    Must run before override/admission patches and before RPC.
+    """
+    existing, check_error = find_active_approved_passport(project_code, month_key)
+    if check_error:
+        return {
+            "ok": False,
+            "status": "blocked_passport_check_failed",
+            "passport_id": None,
+            "errors": [check_error],
+        }
+    if existing:
+        return {
+            "ok": False,
+            "status": "blocked_approved_exists",
+            "passport_id": str(existing.get("passport_id") or "") or None,
+            "errors": [MSG_APPROVED_PASSPORT_EXISTS],
+        }
+
+    errors, fetch_error = validate_inclusion_commitments(
+        project_code,
+        month_key,
+        list(inclusion_line_ids or []),
+        boq_by_line_id,
+    )
+    if fetch_error:
+        return {
+            "ok": False,
+            "status": "blocked_commitment",
+            "passport_id": None,
+            "errors": [fetch_error],
+        }
+    if errors:
+        return {
+            "ok": False,
+            "status": "blocked_commitment",
+            "passport_id": None,
+            "errors": errors,
+        }
+    return {
+        "ok": True,
+        "status": "ok",
+        "passport_id": None,
+        "errors": [],
+    }
 
 
 def load_passport_source_rows(
@@ -511,40 +737,26 @@ def create_monthly_passport(
     created_by: str = "Пользователь Streamlit",
 ) -> PassportSummary:
     """
-    Формирует или атомарно пересобирает Approved Monthly Plan Passport
-    через RPC replace_monthly_passport (одна Postgres-транзакция).
+    Формирует новый Approved Monthly Plan Passport через RPC
+    replace_monthly_passport (одна Postgres-транзакция).
 
     Источник: v2 plan lines (primary) / Review Queue (legacy fallback) + constraints.
     Включает READY_WITH_RISK, APPROVED_TO_EXECUTE, APPROVED_BY_OVERRIDE.
 
-    Release 1: rebuild replaces the current passport composition in place.
-    Passport revision / version history is not stored yet (technical debt for R2).
-    Status APPROVED means ACTIVE WORKING PASSPORT (rebuildable), not a closed month.
+    R1.6C: existing APPROVED passport is not rebuilt. Qty/value/hours/labor
+    come from approved_commitment snapshots, not requested v2 qty.
     """
-    summary: PassportSummary = {
-        "status": "error",
-        "passport_id": None,
-        "created_lines": 0,
-        "skipped_blocked": 0,
-        "blocked_without_override": 0,
-        "override_included_rows": 0,
-        "skipped_waiting": 0,
-        "total_value": 0.0,
-        "total_hours": 0.0,
-        "errors": [],
-        "source_kind": None,
-        "previous_rows": 0,
-        "current_rows": 0,
-        "added_count": 0,
-        "removed_count": 0,
-        "updated_count": 0,
-    }
+    summary: PassportSummary = _empty_create_summary()
 
-    write_client = get_write_client()
-    if write_client is None:
-        summary["errors"].append(
-            "SUPABASE_SECRET_KEY не задан в .env — запись в monthly_plan_passports недоступна."
-        )
+    existing, check_error = find_active_approved_passport(project_code, month_key)
+    if check_error:
+        summary["status"] = "blocked_passport_check_failed"
+        summary["errors"].append(check_error)
+        return summary
+    if existing:
+        summary["status"] = "blocked_approved_exists"
+        summary["passport_id"] = str(existing.get("passport_id") or "") or None
+        summary["errors"].append(MSG_APPROVED_PASSPORT_EXISTS)
         return summary
 
     source_rows, read_errors, source_kind = load_passport_source_rows(
@@ -643,6 +855,37 @@ def create_monthly_passport(
         )
         return summary
 
+    commitments, commitment_fetch_error = fetch_commitment_by_plan_line_id(
+        project_code, month_key
+    )
+    if commitment_fetch_error:
+        summary["status"] = "blocked_commitment"
+        summary["errors"].append(commitment_fetch_error)
+        return summary
+
+    commitment_errors: List[str] = []
+    for item in lines_to_insert:
+        source_row = item["_source_row"]
+        line_id = str(source_row.get("line_id") or "").strip()
+        decision_row = commitments.get(line_id)
+        err = commitment_error_for_line(
+            plan_line_id=line_id,
+            boq_code=source_row.get("boq_code")
+            or (decision_row or {}).get("boq_code"),
+            decision_row=decision_row,
+        )
+        if err:
+            commitment_errors.append(err)
+            continue
+        assert decision_row is not None
+        item["_source_row"] = apply_commitment_snapshots_to_source_row(
+            source_row, decision_row
+        )
+    if commitment_errors:
+        summary["status"] = "blocked_commitment"
+        summary["errors"].extend(commitment_errors)
+        return summary
+
     total_value = sum(
         _safe_float(item["_source_row"].get("plan_value")) for item in lines_to_insert
     )
@@ -674,6 +917,13 @@ def create_monthly_passport(
         summary["status"] = "validation_error"
         return summary
 
+    write_client = get_write_client()
+    if write_client is None:
+        summary["errors"].append(
+            "SUPABASE_SECRET_KEY не задан в .env — запись в monthly_plan_passports недоступна."
+        )
+        return summary
+
     draft_uuid: Optional[str] = None
     if resolved_draft_id not in (None, ""):
         draft_uuid = str(resolved_draft_id)
@@ -687,7 +937,6 @@ def create_monthly_passport(
     }
 
     try:
-        # Release 1: rebuild replaces current composition; no revision history yet.
         rpc_result = _call_replace_monthly_passport(
             write_client,
             project_code=project_code,

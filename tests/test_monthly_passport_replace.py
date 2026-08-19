@@ -57,7 +57,37 @@ class ValidatePayloadTests(unittest.TestCase):
         self.assertEqual(mps.validate_passport_line_payloads("P", "август-2026", lines), [])
 
 
+class _AutoCommitmentMap(dict):
+    def get(self, key, default=None):  # type: ignore[override]
+        if key in (None, ""):
+            return default
+        if key not in self:
+            self[key] = {
+                "plan_line_id": key,
+                "boq_code": "AUTO",
+                "approved_commitment_qty": 10.0,
+                "committed_work_value": 100.0,
+                "committed_required_hours": 2.0,
+                "committed_labor_cost": 50.0,
+            }
+        return super().get(key, default)
+
+
 class CreateMonthlyPassportRpcTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._p_approved = patch.object(
+            mps, "find_active_approved_passport", return_value=(None, None)
+        )
+        self._p_commit = patch.object(
+            mps,
+            "fetch_commitment_by_plan_line_id",
+            return_value=(_AutoCommitmentMap(), None),
+        )
+        self._p_approved.start()
+        self._p_commit.start()
+        self.addCleanup(self._p_approved.stop)
+        self.addCleanup(self._p_commit.stop)
+
     def _source_rows(self, n: int = 2) -> List[Dict[str, Any]]:
         rows = []
         for i in range(n):
@@ -130,27 +160,30 @@ class CreateMonthlyPassportRpcTests(unittest.TestCase):
         mock_source: MagicMock,
         mock_write: MagicMock,
     ) -> None:
-        sources = self._source_rows(4)
-        mock_source.return_value = (sources, [], "v2")
-        mock_constraints.return_value = {
-            r["line_id"]: [{"check_status": "PASS"}] for r in sources
-        }
-        mock_write.return_value = self._mock_write_client(
-            {
-                "status": "rebuilt",
-                "passport_id": "pppppppp-pppp-pppp-pppp-pppppppppppp",
-                "previous_rows": 1,
-                "current_rows": 4,
-                "added_count": 3,
-                "removed_count": 0,
-                "updated_count": 1,
-            }
+        """R1.6C: APPROVED passport is a hard block, not a rebuild."""
+        self._p_approved.stop()
+        with patch.object(
+            mps,
+            "find_active_approved_passport",
+            return_value=(
+                {
+                    "passport_id": "pppppppp-pppp-pppp-pppp-pppppppppppp",
+                    "passport_status": "APPROVED",
+                },
+                None,
+            ),
+        ):
+            summary = mps.create_monthly_passport("PRJ_TEST", "август-2026")
+        self.assertEqual(summary["status"], "blocked_approved_exists")
+        self.assertEqual(
+            summary["passport_id"], "pppppppp-pppp-pppp-pppp-pppppppppppp"
         )
-        summary = mps.create_monthly_passport("PRJ_TEST", "август-2026")
-        self.assertEqual(summary["status"], "rebuilt")
-        self.assertEqual(summary["passport_id"], "pppppppp-pppp-pppp-pppp-pppppppppppp")
-        self.assertEqual(summary["previous_rows"], 1)
-        self.assertEqual(summary["current_rows"], 4)
+        self.assertTrue(
+            any("уже утверждён" in e for e in summary["errors"])
+        )
+        mock_source.assert_not_called()
+        mock_write.assert_not_called()
+        mock_constraints.assert_not_called()
 
     @patch.object(mps, "get_write_client")
     @patch.object(mps, "load_passport_source_rows")
@@ -161,27 +194,20 @@ class CreateMonthlyPassportRpcTests(unittest.TestCase):
         mock_source: MagicMock,
         mock_write: MagicMock,
     ) -> None:
-        """Existing passport must still call RPC (rebuilt), not already_exists."""
-        sources = self._source_rows(1)
-        mock_source.return_value = (sources, [], "v2")
-        mock_constraints.return_value = {
-            sources[0]["line_id"]: [{"check_status": "PASS"}]
-        }
-        mock_write.return_value = self._mock_write_client(
-            {
-                "status": "rebuilt",
-                "passport_id": "existing-id",
-                "previous_rows": 1,
-                "current_rows": 1,
-                "added_count": 0,
-                "removed_count": 0,
-                "updated_count": 1,
-            }
-        )
-        summary = mps.create_monthly_passport("PRJ_TEST", "август-2026")
+        """Existing APPROVED passport blocks create; RPC is not called."""
+        self._p_approved.stop()
+        with patch.object(
+            mps,
+            "find_active_approved_passport",
+            return_value=({"passport_id": "existing-id", "passport_status": "APPROVED"}, None),
+        ):
+            summary = mps.create_monthly_passport("PRJ_TEST", "август-2026")
         self.assertNotEqual(summary["status"], "already_exists")
-        self.assertEqual(summary["status"], "rebuilt")
-        mock_write.return_value.rpc.assert_called_once()
+        self.assertNotEqual(summary["status"], "rebuilt")
+        self.assertEqual(summary["status"], "blocked_approved_exists")
+        mock_source.assert_not_called()
+        mock_write.assert_not_called()
+        mock_constraints.assert_not_called()
 
     @patch.object(mps, "get_write_client")
     @patch.object(mps, "load_passport_source_rows")

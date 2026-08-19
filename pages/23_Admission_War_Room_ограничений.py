@@ -2668,6 +2668,10 @@ def wr2_create_monthly_passport_with_overrides(
         safe_str(row.get("plan_line_id")) for row in inclusion_rows
     }
     expected_included_count = len(inclusion_ids)
+    boq_by_line_id = {
+        safe_str(row.get("plan_line_id")): row.get("boq_code")
+        for row in inclusion_rows
+    }
 
     empty_summary: Dict[str, Any] = {
         "status": "error",
@@ -2686,6 +2690,18 @@ def wr2_create_monthly_passport_with_overrides(
         "previous_rows": 0,
         "current_rows": 0,
     }
+
+    preflight = monthly_passport_service.preflight_new_passport(
+        project_code,
+        month_key,
+        inclusion_line_ids=sorted(inclusion_ids),
+        boq_by_line_id=boq_by_line_id,
+    )
+    if not preflight.get("ok"):
+        empty_summary["status"] = str(preflight.get("status") or "error")
+        empty_summary["passport_id"] = preflight.get("passport_id")
+        empty_summary["errors"] = list(preflight.get("errors") or [])
+        return empty_summary
 
     validation_errors = wr2_collect_passport_override_errors(
         board_df, allow_risk=allow_risk

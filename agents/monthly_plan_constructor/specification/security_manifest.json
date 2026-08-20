@@ -1,0 +1,118 @@
+{
+  "agent_code": "MONTHLY_PLAN_CONSTRUCTOR",
+  "agent_name": "Агент формирования кандидатного состава месячного плана",
+  "agent_version": "0.1",
+  "security_tier": "TIER_0_READ_ONLY_DETERMINISTIC",
+  "security_policy_version": "EOS-SEC-1.1",
+  "llm_enabled": false,
+  "read_access": true,
+  "write_access": false,
+  "execution_context_required": true,
+  "trusted_executor_required": true,
+  "project_scope_enforced": true,
+  "credential_exposed_to_agent": false,
+  "allowed_tools": [
+    "load_constructor_scope",
+    "load_constructor_adjustments",
+    "load_constructor_month_plan_lines"
+  ],
+  "allowed_write_tools": [],
+  "read_sources": [
+    "monthly_scope_picker_view",
+    "monthly_scope_manual_adjustments",
+    "monthly_plan_lines_v2"
+  ],
+  "read_fields_by_source": {
+    "monthly_scope_picker_view": [
+      "project_code",
+      "facility_building",
+      "construction_discipline",
+      "boq_code",
+      "boq_name",
+      "unit_of_measure",
+      "total_project_qty",
+      "executed_qty_all_time",
+      "manual_executed_before_system",
+      "manual_verified_remaining_qty",
+      "planning_remaining_qty",
+      "unit_price",
+      "total_project_value",
+      "system_label",
+      "iwp_id"
+    ],
+    "monthly_scope_manual_adjustments": [
+      "project_code",
+      "facility_building",
+      "construction_discipline",
+      "boq_code",
+      "not_required_qty",
+      "not_required_reason"
+    ],
+    "monthly_plan_lines_v2": [
+      "plan_line_id",
+      "client_line_uid",
+      "project_code",
+      "month_key",
+      "facility",
+      "discipline",
+      "system",
+      "iwp",
+      "boq_code",
+      "planned_qty",
+      "crew",
+      "status"
+    ]
+  },
+  "credential_policy": {
+    "load_constructor_scope": "PUBLISHABLE_READ",
+    "load_constructor_month_plan_lines": "PUBLISHABLE_READ",
+    "load_constructor_adjustments": "TRANSITIONAL_PRIVILEGED_READ",
+    "transitional_privileged_read_sources": [
+      "monthly_scope_manual_adjustments"
+    ],
+    "notes": "TRANSITIONAL_INFRASTRUCTURE_EXCEPTION: adjustments use SUPABASE_SECRET_KEY only inside trusted executor. Not silent KEY→SECRET fallback. Not verified human identity."
+  },
+  "transitional_privileged_read_sources": [
+    "monthly_scope_manual_adjustments"
+  ],
+  "human_gate_required_for": [
+    "create_plan_lines",
+    "set_planned_qty",
+    "set_crew",
+    "force_include",
+    "send_to_admission",
+    "approve_month",
+    "write_adjustment_not_required",
+    "product_insert",
+    "product_update",
+    "product_delete"
+  ],
+  "data_classes_allowed": [
+    "INTERNAL"
+  ],
+  "data_classes_forbidden": [
+    "RESTRICTED",
+    "SECRET",
+    "payroll",
+    "hr_salary",
+    "banking",
+    "contracts_commercial_full"
+  ],
+  "untrusted_input_sources": [
+    "monthly_scope_picker_view",
+    "monthly_scope_manual_adjustments",
+    "monthly_plan_lines_v2",
+    "free_text_fields",
+    "comments",
+    "reasons"
+  ],
+  "secrets_allowed_in_context": false,
+  "external_network_access": "supabase_read_only_via_narrow_tools",
+  "arbitrary_sql_allowed": false,
+  "arbitrary_shell_allowed": false,
+  "arbitrary_code_execution_allowed": false,
+  "fail_closed": true,
+  "trace_redaction_required": true,
+  "kill_switch_required": false,
+  "notes": "EOS-SEC-1.1 SEC-STEP-1/2. MODEL IS NEVER CREDENTIAL HOLDER. Actor LOCAL_APPLICATION is NOT verified human identity."
+}

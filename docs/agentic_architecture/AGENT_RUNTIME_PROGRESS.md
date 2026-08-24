@@ -8,6 +8,17 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 **Stack law:** Python + LangGraph + Supabase shared state + EOS-SEC + replaceable LLM adapter + Streamlit Control Room<br>
 **Decomposition law:** one major professional role = one specialized agent. Shared capabilities are not agents.
 
+## Current snapshot (not a checkpoint)
+
+- **Program:** Monthly Planning Agentic Orchestration
+- **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
+- **Progress:** **3 / 10**
+- **DONE:** [1] Mission Scope · [2] Candidate Package · [3] Secure Read Tool Adapters
+- **NEXT:** [4] Labor Norm Resolver integration
+- **Recovery HEAD:** `af2e9afc169093fa2cead1953e8396d011b5417c` (LOCAL == REMOTE)
+
+Historical checkpoints below are append-only and are **not** rewritten.
+
 ---
 
 ============================================================
@@ -212,3 +223,194 @@ NEXT
 Increment 3 — Secure Read Tool Adapters.
 
 Должен дать агенту право читать операционную реальность **только** через trusted executor + tool allowlist + mission scope (no service bypass), ещё без LangGraph, SQL schema и production writes.
+
+---
+
+============================================================
+CHECKPOINT — 2026-08-24 — CONSTRUCTOR AGENT — INCREMENT 3
+============================================================
+
+PROGRAM:
+Monthly Planning Agentic Orchestration
+
+CURRENT AGENT:
+MONTHLY_PLAN_CONSTRUCTOR<br>
+Агент формирования кандидатного состава месячного плана
+
+CURRENT INCREMENT:
+[3] Secure Read Tool Adapters
+
+STATUS:
+DONE
+
+------------------------------------------------------------
+WHAT WE BUILT
+------------------------------------------------------------
+
+- Isolated `read_constructor_reality` adapter (`af2e9af`).
+- `AgentExecutionContext` participates in authorization; expired / missing context fail closed.
+- Mission project must equal authorized project (`SECURITY_DENIED` otherwise).
+- Read-time mission scope is passed into the trusted-read port (LAYER 1).
+- Post-read assertion reuses Increment 1 (LAYER 2). Extra-scope rows fail closed.
+- Double scope defence: no silent widen to whole project.
+- Only allowlisted tool `load_constructor_scope` via `validate_context_for_tool`.
+- No service bypass: adapter does not import dirty `read_service` / `tools.py` / economics.
+- Bounded `ConstructorRealityRead` with provenance (`read_id`, `read_at`, tool, authorization).
+- Zero-row result is valid. Public contract is not a DataFrame. Read result ≠ CandidatePackage.
+- Regression: scoped mission FACILITY_TARGET + Вентиляция → 17 rows, not 447.
+- 22 new tests PASS; Increment 1 (20) and Increment 2 (20) regressions PASS.
+- Query-side SQL filter in dirty `monthly_plan_constructor_read_service.py` was **not** added. `queue_scope` without capability fail closed.
+
+------------------------------------------------------------
+WHAT THIS GIVES THE SYSTEM
+------------------------------------------------------------
+
+Теперь Constructor Agent получил **безопасные глаза**: он может получать необходимую операционную реальность через разрешённый trusted read boundary и **только** в пределах своей Mission Scope. Он не ходит в базу напрямую и не вызывает существующие services в обход allowlist.
+
+Это ещё не полный runtime. Это доказанный secure-read contract.
+
+------------------------------------------------------------
+WHERE WE ARE IN THE AGENT ROADMAP
+------------------------------------------------------------
+
+Constructor Agent Runtime v0.1 (одна роль, десять инкрементов — не десять агентов):
+
+[1] Mission Scope Contract — **DONE**
+[2] Candidate Package Artifact — **DONE**
+[3] Secure Read Tool Adapters — **DONE** (this checkpoint)
+[4] Labor Norm Resolver integration — **NEXT**
+[5] Exception Engine — **NOT STARTED**
+[6] Pure Python Lifecycle — **NOT STARTED**
+[7] LangGraph Runtime — **NOT STARTED**
+[8] Durable HITL / Resume — **NOT STARTED**
+[9] Structured Handoff — **NOT STARTED**
+[10] Agent Control Room Integration — **NOT STARTED**
+
+Progress: **3 / 10**
+
+------------------------------------------------------------
+WHERE WE ARE IN THE MONTHLY PLANNING PROGRAM
+------------------------------------------------------------
+
+MONTHLY PLAN ORCHESTRATOR<br>
+→ **1. CONSTRUCTOR AGENT — CURRENT (increments 1–3 of 10)**<br>
+→ 2. ADMISSION AGENT — not started<br>
+→ 3. CONSTRAINT AGENT — not started<br>
+→ 4. RESOURCE CAPACITY AGENT — not started<br>
+→ 5. ECONOMIC EVALUATION AGENT — not started<br>
+→ 6. MANAGEMENT DECISION AGENT — not started<br>
+→ HUMAN DECISION GATE<br>
+→ ПАСПОРТ МЕСЯЧНОГО ПРОИЗВОДСТВЕННОГО ОБЯЗАТЕЛЬСТВА
+
+------------------------------------------------------------
+CURRENT AGENT CAPABILITIES
+------------------------------------------------------------
+
+| Capability | Status |
+|------------|--------|
+| Mission scope contract + binder | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`775993f`) |
+| Candidate Package artifact | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`862279b`) |
+| Secure read adapter | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`af2e9af`) |
+| EOS-SEC issuer + trusted read executor | EXISTS (MPCA-001). Increment 3 calls `validate_context_for_tool` / optional executor wrapper. |
+| LaborNormResolver | NEXT (Increment 4). Economics tool not on `MPCA_ALLOWED_TOOLS`. |
+| Exception / lifecycle / LangGraph / HITL / handoff / Control Room | NOT IMPLEMENTED |
+| MPCA-001 predecessor runtime | EXISTS, not wired to Increments 1–3 |
+| MPCA-002/003 dirty worktree | PRESERVED experiment, not this runtime |
+
+**TOOLS (implemented increment):** `read_constructor_reality` → allowlisted `load_constructor_scope`
+
+**READ ARTIFACT:** `ConstructorRealityRead` / `ConstructorRealityRow` / `ConstructorReadProvenance`
+
+**TESTS:**<br>
+`tests/test_monthly_plan_constructor_secure_read_tools.py` — 22 PASS<br>
+Increment 1 — 20 PASS<br>
+Increment 2 — 20 PASS
+
+------------------------------------------------------------
+WHAT IS NOT BUILT YET
+------------------------------------------------------------
+
+- LaborNormResolver as registered capability (Increment 4)
+- Exception engine
+- Pure Python lifecycle / freshness gate
+- LangGraph
+- Durable checkpoint / HITL
+- Structured ConstructorHandoff
+- Agent Control Room
+- Admission and later professional agents
+- Query-side SQL filters in the existing (dirty) read service
+- Integration of Increments 1–3 into `runtime.py` or Page10B
+- Production writes
+
+------------------------------------------------------------
+ARCHITECTURE QUALITY CHECK
+------------------------------------------------------------
+
+AGENT != DASHBOARD: **PASS**<br>
+STRUCTURED BUSINESS ARTIFACT: **PASS** (package still Increment 2; read result is a separate artifact)<br>
+STATEFUL DESIGN: **FUTURE**<br>
+STRUCTURED HANDOFF: **FUTURE**<br>
+DURABLE HITL: **FUTURE**<br>
+DETERMINISTIC FIRST: **PASS**<br>
+REPLACEABLE LLM: **PASS**<br>
+EOS-SEC: **PASS** (context, allowlist, no service bypass, fail closed)<br>
+NO AGENT ZOO: **PASS**<br>
+NO HIDDEN AGENT CHAT: **PASS**<br>
+FRESH REALITY LAW: **FUTURE**<br>
+OBSERVABILITY READY: **FUTURE**
+
+ARCHITECTURE DRIFT: **NO**
+
+------------------------------------------------------------
+FILES
+------------------------------------------------------------
+
+CREATED:
+
+- `agents/monthly_plan_constructor/secure_read_tools.py`
+- `tests/test_monthly_plan_constructor_secure_read_tools.py`
+
+MODIFIED:
+- none for Increment 3 product/docs in that commit
+
+------------------------------------------------------------
+TESTS
+------------------------------------------------------------
+
+NEW TESTS (Increment 3): 22 passed / 0 failed<br>
+INCREMENT 1 REGRESSION: 20 passed / 0 failed<br>
+INCREMENT 2 REGRESSION: 20 passed / 0 failed
+
+------------------------------------------------------------
+GIT CHECKPOINT
+------------------------------------------------------------
+
+COMMIT: `af2e9afc169093fa2cead1953e8396d011b5417c`
+
+MESSAGE: `feat(agents): add constructor secure read adapters`
+
+PUSH: YES
+
+LOCAL HEAD: `af2e9afc169093fa2cead1953e8396d011b5417c`
+
+REMOTE HEAD: `af2e9afc169093fa2cead1953e8396d011b5417c`
+
+LOCAL == REMOTE: YES
+
+Recovery point for this stage: **`af2e9af`**.
+
+Worktree remains dirty with preserved MPCA-002/003 files (not part of this checkpoint).
+
+------------------------------------------------------------
+ONE-LINE SUMMARY
+------------------------------------------------------------
+
+На этом этапе мы дали агенту безопасные глаза: trusted read только внутри Mission Scope, без обхода allowlist.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+Increment 4 — Labor Norm Resolver integration.
+
+Должен дать Constructor возможность прикреплять labor-norm **metadata** (VALIDATED / PROVISIONAL / UNRESOLVED) без выдуманных норм, без блокировки physical candidate отсутствием P50, и без вызова незарегистрированного economics tool.

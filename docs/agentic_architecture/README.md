@@ -10,6 +10,17 @@
 
 ---
 
+## Навигация
+
+| Сначала | Зачем |
+|---------|--------|
+| [AGENT_RUNTIME_PROGRESS.md](AGENT_RUNTIME_PROGRESS.md) | Где мы сейчас (журнал программы, append-only checkpoints). |
+| [DIGITAL_EMPLOYEE_ANATOMY.md](DIGITAL_EMPLOYEE_ANATOMY.md) | Как профессионально устроен цифровой сотрудник. |
+| [ARCHITECTURE_BASELINE.md](ARCHITECTURE_BASELINE.md) | Как устроена целевая архитектура. |
+| [RECOVERY_CONTEXT.md](RECOVERY_CONTEXT.md) | Как восстановить контекст после паузы. |
+
+---
+
 ## Что это
 
 **Execution OS** — операционная система физического исполнения строительных работ: план → допуск → исполнение → приёмка → деньги.
@@ -54,14 +65,13 @@ Page52 **не отменяется**. Она остаётся каноном **�
 
 ## Порядок чтения
 
-1. [RECOVERY_CONTEXT.md](RECOVERY_CONTEXT.md) — если сессия новая: вставить как контекст и **не** проектировать систему заново.
-2. [ARCHITECTURE_BASELINE.md](ARCHITECTURE_BASELINE.md) — общий закон системы.
-3. [MONTHLY_PLAN_CONSTRUCTOR_AGENT.md](MONTHLY_PLAN_CONSTRUCTOR_AGENT.md) — первый цифровой сотрудник.
-4. [ORCHESTRATION_AND_HANDOFF.md](ORCHESTRATION_AND_HANDOFF.md) — жизненный цикл, оркестратор, передача работы, Human Interrupt.
-5. [LABOR_NORM_RESOLUTION.md](LABOR_NORM_RESOLUTION.md) — нормативы трудоёмкости, provenance, отсутствие своей истории.
-6. [DECISION_LOG.md](DECISION_LOG.md) — что уже решено и что отвергнуто.
+1. [AGENT_RUNTIME_PROGRESS.md](AGENT_RUNTIME_PROGRESS.md) — где мы сейчас.
+2. [DIGITAL_EMPLOYEE_ANATOMY.md](DIGITAL_EMPLOYEE_ANATOMY.md) — базовые понятия и устройство цифрового сотрудника.
+3. [ARCHITECTURE_BASELINE.md](ARCHITECTURE_BASELINE.md) — целевая архитектура системы.
+4. [AGENT_RUNTIME_V0_1_CONSTRUCTOR_MISSION.md](AGENT_RUNTIME_V0_1_CONSTRUCTOR_MISSION.md) — runtime specification Constructor Agent.
+5. [RECOVERY_CONTEXT.md](RECOVERY_CONTEXT.md) — быстрое восстановление после длинной паузы / другого компьютера.
 
-Не начинать новый агент, таблицу или LangGraph runtime, не прочитав baseline + decision log.
+Остальные файлы каталога (спецификация роли, orchestration, labor norms, decision log) читать по задаче. Не начинать новый агент, таблицу или LangGraph runtime, не прочитав baseline + decision log.
 
 ---
 
@@ -69,6 +79,8 @@ Page52 **не отменяется**. Она остаётся каноном **�
 
 | Файл | Назначение |
 |------|------------|
+| [AGENT_RUNTIME_PROGRESS.md](AGENT_RUNTIME_PROGRESS.md) | Журнал программы: что доказано, где мы, что дальше. |
+| [DIGITAL_EMPLOYEE_ANATOMY.md](DIGITAL_EMPLOYEE_ANATOMY.md) | Учебная анатомия профессионального цифрового сотрудника. |
 | [ARCHITECTURE_BASELINE.md](ARCHITECTURE_BASELINE.md) | Общий закон: stack, AGENT ≠ dashboard, организация цифровых сотрудников, EOS-SEC, LLM boundary, anti-patterns, next release. |
 | [MONTHLY_PLAN_CONSTRUCTOR_AGENT.md](MONTHLY_PLAN_CONSTRUCTOR_AGENT.md) | Спецификация Агента формирования кандидатного состава: mission, scope, lifecycle, human role, quantity, missing labor norm. |
 | [ORCHESTRATION_AND_HANDOFF.md](ORCHESTRATION_AND_HANDOFF.md) | Оркестратор, shared state, structured handoff, pause/resume, Control Room, KPI routine removal. |
@@ -88,9 +100,7 @@ Page52 **не отменяется**. Она остаётся каноном **�
 - не отменяют EOS-SEC;
 - не делают Page10B runtime агента.
 
-Следующий инженерный релиз после этого checkpoint:
+Текущая программа: **Constructor Agent Runtime v0.1** (progress **3 / 10**).<br>
+Следующий шаг: Increment 4 — Labor Norm Resolver integration.
 
-**AGENT RUNTIME v0.1 — CONSTRUCTOR MISSION**<br>
-(не MPCA-004 table).
-
-См. [ARCHITECTURE_BASELINE.md](ARCHITECTURE_BASELINE.md) § Next engineering release.
+Актуальное состояние смотреть только в [AGENT_RUNTIME_PROGRESS.md](AGENT_RUNTIME_PROGRESS.md). Этот README не является журналом программы.

@@ -12,10 +12,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
-- **Progress:** **4 / 10**
-- **DONE:** [1] Mission Scope · [2] Candidate Package · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver
-- **NEXT:** [5] Exception Engine
-- **Recovery HEAD:** `f0062e7d38cdae40342d04e2453069aec931489c` (LOCAL == REMOTE)
+- **Progress:** **5 / 10**
+- **DONE:** [1] Mission Scope · [2] Candidate Package · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine
+- **NEXT:** [6] Pure Python Lifecycle
+- **Recovery HEAD:** `38cd42ff7fa256500a602614bf22e854ab763eff` (LOCAL == REMOTE)
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -625,3 +625,311 @@ NEXT
 Increment 5 — Exception Engine.
 
 Превратит unresolved/ambiguous условия в формальные machine-readable exceptions и решит, какие случаи могут продолжаться автоматически, а какие требуют human/professional attention. Increment 5 **не** реализован.
+
+---
+
+============================================================
+CHECKPOINT — 2026-08-25 — CONSTRUCTOR AGENT — INCREMENT 5 — EXCEPTION ENGINE
+============================================================
+
+PROGRAM:
+Monthly Planning Agentic Orchestration
+
+CURRENT AGENT:
+MONTHLY_PLAN_CONSTRUCTOR<br>
+Агент формирования кандидатного состава месячного плана
+
+CURRENT INCREMENT:
+[5] Exception Engine
+
+STATUS:
+DONE
+
+------------------------------------------------------------
+WHAT WE BUILT
+------------------------------------------------------------
+
+- Isolated capability `Exception Engine` (`38cd42f`).
+- Public immutable artifacts: `ConstructorException`, `ConstructorExceptionSet`.
+- Deterministic hard-failure mapper: `exception_from_failure` (machine-readable failure codes only; does not execute Increment 1–4 capabilities).
+- Labor adapter: `exceptions_from_labor_resolutions` (consumes `LaborNormResolutionSet`; does not recompute norms).
+- Set builder with semantic dedup + `PackageExceptionSummary` reuse (schema of Increment 2 **not** mutated).
+- Declarative helpers for future lifecycle: `codes()`, `blocking()`, `handoff_allowed()`.
+- Exception Engine is a **CAPABILITY / SERVICE** inside Constructor Agent. It is **not** a separate agent, not LLM, not LangGraph, not a workflow/retry engine, not a generic logging framework, not a Python traceback wrapper, not Streamlit UI.
+- Increments 1–4 product files unchanged. Engine may import their public types/constants only.
+
+------------------------------------------------------------
+WHAT THIS GIVES THE SYSTEM
+------------------------------------------------------------
+
+До Increment 5 разные способности Constructor сталкивались с проблемами в разных формах: hard fail-closed codes, Secure Read failures, soft `UNRESOLVED` labor outcomes.
+
+После Increment 5 у Constructor Agent есть **единый structured machine-readable professional language** исключений:
+
+- что произошло (`exception_code`);
+- что затронуто (`package_id` / `candidate_id` / `resolution_id` + bounded details);
+- блокируется ли нормальный путь (`severity`);
+- разрешено ли автоматическое продолжение (`route` / derived continuation flags);
+- какой future resolution route применяется (`FAIL_RUN` / `WAIT_HUMAN` / `CONTINUE`).
+
+Это **вход для решений Increment 6 lifecycle**. Exception Engine **не** выполняет lifecycle transitions сам.
+
+------------------------------------------------------------
+ACTIVE TAXONOMY (v0.1)
+------------------------------------------------------------
+
+Canonical active codes only:
+
+| Code | Severity | Route |
+|------|----------|-------|
+| `DATA_CONTRACT_BLOCKER` | BLOCKING | FAIL_RUN |
+| `AMBIGUOUS_SCOPE` | BLOCKING | WAIT_HUMAN |
+| `SECURITY_DENIED` | BLOCKING | FAIL_RUN |
+| `READ_FAILED` | BLOCKING | FAIL_RUN |
+| `LABOR_NORM_UNRESOLVED` | NON_BLOCKING | CONTINUE |
+
+Security aliases normalize to `SECURITY_DENIED` with original lower-level code preserved in structured details:
+
+- `TOOL_NOT_ALLOWED`
+- `CONTEXT_EXPIRED`
+- `CONTEXT_MISSING`
+
+Speculative lifecycle codes (`STALE_REALITY`, `HANDOFF_NOT_READY`, …) are **not** active taxonomy in Increment 5.
+
+`EXCEPTION_ENGINE_CONTRACT_BLOCKER` is an **engine programming/contract** fail-closed error — not a professional Constructor taxonomy item.
+
+------------------------------------------------------------
+CRITICAL BUSINESS LAW
+------------------------------------------------------------
+
+**PHYSICAL CANDIDATE ≠ LABOR NORM AVAILABILITY**
+
+Therefore `LABOR_NORM_UNRESOLVED` does **not**:
+
+- delete the physical candidate;
+- zero physical quantity;
+- manufacture a labor norm;
+- block candidate/package merely because labor is unresolved.
+
+Physical candidate survives. Labor-only NON_BLOCKING exceptions do **not** make `handoff_allowed()` false.
+
+------------------------------------------------------------
+SECURITY LAW
+------------------------------------------------------------
+
+Security failures cannot downgrade.
+
+Security denial always means: **BLOCKING + FAIL_RUN**.
+
+No:
+
+- WARNING downgrade;
+- NON_BLOCKING downgrade;
+- CONTINUE;
+- human override inside Exception Engine.
+
+Unknown / unapproved failure codes fail closed via Exception Engine contract protection.
+
+------------------------------------------------------------
+WHERE WE ARE IN THE AGENT ROADMAP
+------------------------------------------------------------
+
+Constructor Agent Runtime v0.1 (одна роль, десять инкрементов — не десять агентов):
+
+[1] Mission Scope Contract — **DONE**<br>
+[2] Candidate Package Artifact — **DONE**<br>
+[3] Secure Read Tool Adapters — **DONE**<br>
+[4] Labor Norm Resolver — **DONE**<br>
+[5] Exception Engine — **DONE** (this checkpoint)<br>
+[6] Pure Python Lifecycle — **NEXT**<br>
+[7] LangGraph Runtime — **NOT STARTED**<br>
+[8] Durable HITL / Resume — **NOT STARTED**<br>
+[9] Structured Handoff — **NOT STARTED**<br>
+[10] Agent Control Room Integration — **NOT STARTED**
+
+Progress: **5 / 10**
+
+------------------------------------------------------------
+WHERE WE ARE IN THE MONTHLY PLANNING PROGRAM
+------------------------------------------------------------
+
+MONTHLY PLAN ORCHESTRATOR<br>
+→ **1. CONSTRUCTOR AGENT — CURRENT (increments 1–5 of 10)**<br>
+→ 2. ADMISSION AGENT — not started<br>
+→ 3. CONSTRAINT AGENT — not started<br>
+→ 4. RESOURCE CAPACITY AGENT — not started<br>
+→ 5. ECONOMIC EVALUATION AGENT — not started<br>
+→ 6. MANAGEMENT DECISION AGENT — not started<br>
+→ HUMAN DECISION GATE<br>
+→ ПАСПОРТ МЕСЯЧНОГО ПРОИЗВОДСТВЕННОГО ОБЯЗАТЕЛЬСТВА
+
+------------------------------------------------------------
+CURRENT AGENT CAPABILITIES
+------------------------------------------------------------
+
+| Capability | Status |
+|------------|--------|
+| Mission scope contract + binder | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`775993f`) |
+| Candidate Package artifact | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`862279b`) |
+| Secure read adapter | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`af2e9af`) |
+| LaborNormResolver | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`f0062e7`) |
+| Exception Engine | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`38cd42f`) |
+| Lifecycle / LangGraph / HITL / handoff / Control Room | NOT IMPLEMENTED |
+| MPCA-001 predecessor runtime | EXISTS, not wired to Increments 1–5 |
+| MPCA-002/003 | NOT REQUIRED on this computer; not part of Constructor Runtime |
+
+**CAPABILITY (this increment):** Exception Engine — shared service, not an agent.
+
+**EXCEPTION ARTIFACTS:** `ConstructorException` / `ConstructorExceptionSet`
+
+**PUBLIC MAPPERS:** `exception_from_failure`, `exceptions_from_labor_resolutions`, `build_exception_set`
+
+------------------------------------------------------------
+INCREMENT BOUNDARY
+------------------------------------------------------------
+
+Increment 5 does **NOT**:
+
+- catch existing Increment 1–4 capability failures automatically;
+- run lifecycle / state transitions;
+- pause / resume;
+- perform HITL;
+- retry reads;
+- persist exceptions to Supabase;
+- execute handoff;
+- implement freshness detection;
+- start LangGraph.
+
+Existing Increment 1–4 fail-closed behavior remains intact.
+
+`AMBIGUOUS_SCOPE → WAIT_HUMAN` is **future resolution semantics** only; it does not weaken Mission Scope / Secure Read fail-closed throws.
+
+Secure Read economics/tool string warnings are **not** converted into `LABOR_NORM_UNRESOLVED`.
+
+Future Increment 6 will consume Exception Engine outputs and decide deterministic lifecycle transitions.
+
+------------------------------------------------------------
+ARCHITECTURE QUALITY CHECK
+------------------------------------------------------------
+
+AGENT != CHATBOT: **PASS**<br>
+AGENT != DATAFRAME: **PASS**<br>
+ONE PROFESSIONAL ROLE = ONE AGENT: **PASS**<br>
+Exception Engine = capability, not agent: **PASS**<br>
+DETERMINISTIC-FIRST: **PASS**<br>
+LLM NOT REQUIRED: **PASS**<br>
+LANGGRAPH NOT USED: **PASS**<br>
+STREAMLIT NOT USED: **PASS**<br>
+SUPABASE WRITES: **NO**<br>
+NO DATAFRAME PUBLIC CONTRACT: **PASS**<br>
+NO MPCA-001/002/003 DEPENDENCY: **PASS**<br>
+INCREMENT 1–4 FILES UNCHANGED: **YES**<br>
+CANDIDATE_PACKAGE SCHEMA CHANGED: **NO**<br>
+PackageExceptionSummary reused without schema mutation: **YES**<br>
+PHYSICAL CANDIDATE PRESERVATION: **PASS**<br>
+SECURITY NON-DOWNGRADE: **PASS**<br>
+UNKNOWN CODE FAIL-CLOSED: **PASS**<br>
+INCREMENT 6 BOUNDARY PRESERVED: **PASS**<br>
+EOS-SEC: **PASS**<br>
+SEMANTIC ARCHITECTURE REVIEW: **PASS**<br>
+CODE QUALITY REVIEW: **PASS**<br>
+NO AGENT ZOO: **PASS**
+
+ARCHITECTURE DRIFT: **NO**
+
+------------------------------------------------------------
+SECURITY / EOS-SEC
+------------------------------------------------------------
+
+MODEL IS NOT A SECURITY BOUNDARY.<br>
+DATA != INSTRUCTION.<br>
+Fail closed. Mandatory machine-readable provenance.<br>
+Security cannot downgrade to WARNING / NON_BLOCKING / CONTINUE / WAIT_HUMAN.<br>
+No arbitrary SQL. No shell/exec. No Supabase writes. No secrets in exception reason/details by design of callers.
+
+------------------------------------------------------------
+FILES
+------------------------------------------------------------
+
+CREATED:
+
+- `agents/monthly_plan_constructor/exception_engine.py`
+- `tests/test_monthly_plan_constructor_exception_engine.py`
+
+MODIFIED (product Increment 5 commit):
+- none — exactly those two files
+
+------------------------------------------------------------
+TESTS
+------------------------------------------------------------
+
+NEW TESTS (Increment 5): 31 passed / 0 failed<br>
+INCREMENT 1 REGRESSION: 20 passed / 0 failed<br>
+INCREMENT 2 REGRESSION: 20 passed / 0 failed<br>
+INCREMENT 3 REGRESSION: 22 passed / 0 failed<br>
+INCREMENT 4 REGRESSION: 26 passed / 0 failed<br>
+PY_COMPILE: PASS<br>
+GIT DIFF CHECK: PASS<br>
+SEMANTIC ARCHITECTURE: PASS<br>
+CODE QUALITY: PASS<br>
+EOS-SEC: PASS
+
+------------------------------------------------------------
+GIT CHECKPOINT
+------------------------------------------------------------
+
+PRODUCT COMMIT: `38cd42ff7fa256500a602614bf22e854ab763eff`
+
+MESSAGE: `feat(agents): add constructor exception engine`
+
+PUSH: YES
+
+LOCAL HEAD: `38cd42ff7fa256500a602614bf22e854ab763eff`
+
+REMOTE HEAD: `38cd42ff7fa256500a602614bf22e854ab763eff`
+
+LOCAL == REMOTE: YES
+
+FILE COUNT IN PRODUCT COMMIT: 2
+
+Files:
+
+- `agents/monthly_plan_constructor/exception_engine.py`
+- `tests/test_monthly_plan_constructor_exception_engine.py`
+
+Recovery point for this stage: **`38cd42f`**.
+
+LESSONS_2 GATE: PASS (READ-ONLY; unchanged)<br>
+LESSONS_2 PATH: `C:\Users\Андрей\lesson_2`<br>
+LESSONS_2 HEAD: `2c4445840cf68ff64cffecbe5a9a9dd21808be04`
+
+Worktree after product push: CLEAN.
+
+------------------------------------------------------------
+WHAT IS NOT BUILT YET
+------------------------------------------------------------
+
+- Pure Python Lifecycle (Increment 6) — **NEXT / NOT YET BUILT**
+- LangGraph Runtime (Increment 7)
+- Durable HITL / Resume (Increment 8)
+- Structured Handoff (Increment 9)
+- Agent Control Room Integration (Increment 10)
+- Wiring Increments 1–5 into `runtime.py` / Page10B
+- Admission and later professional agents
+- Production writes
+
+------------------------------------------------------------
+ONE-LINE SUMMARY
+------------------------------------------------------------
+
+На этом этапе Constructor получил детерминированный Exception Engine: единый machine-readable язык исключений (severity + route + refs), без lifecycle и без удаления физического кандидата при UNRESOLVED labor.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+Increment 6 — Pure Python Lifecycle.
+
+Свяжет уже построенные способности Constructor в детерминированный профессиональный lifecycle и по structured outputs / Exception Engine semantics решит: продолжать нормально, fail closed, ждать human resolution, позже требовать refreshed reality, или стать eligible for handoff.
+
+Increment 6 **не** реализован в этом checkpoint.

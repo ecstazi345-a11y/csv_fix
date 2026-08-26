@@ -12,10 +12,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
-- **Progress:** **5 / 10**
-- **DONE:** [1] Mission Scope · [2] Candidate Package · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine
-- **NEXT:** [6] Pure Python Lifecycle
-- **Recovery HEAD:** `38cd42ff7fa256500a602614bf22e854ab763eff` (LOCAL == REMOTE)
+- **Progress:** **6 / 10**
+- **DONE:** [1] Mission Scope · [2] Candidate Package · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle
+- **NEXT:** [7] LangGraph Runtime
+- **Recovery HEAD:** `c35957fd3caeeb4c5c82909a35972248dc8707ea` (LOCAL == REMOTE)
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -933,3 +933,394 @@ Increment 6 — Pure Python Lifecycle.
 Свяжет уже построенные способности Constructor в детерминированный профессиональный lifecycle и по structured outputs / Exception Engine semantics решит: продолжать нормально, fail closed, ждать human resolution, позже требовать refreshed reality, или стать eligible for handoff.
 
 Increment 6 **не** реализован в этом checkpoint.
+
+---
+
+============================================================
+CHECKPOINT — 2026-08-26 — CONSTRUCTOR AGENT — INCREMENT 6 — PURE PYTHON LIFECYCLE
+============================================================
+
+PROGRAM:
+Monthly Planning Agentic Orchestration
+
+CURRENT AGENT:
+MONTHLY_PLAN_CONSTRUCTOR<br>
+Агент формирования кандидатного состава месячного плана
+
+CURRENT INCREMENT:
+[6] Pure Python Lifecycle
+
+STATUS:
+DONE
+
+------------------------------------------------------------
+WHAT WE BUILT
+------------------------------------------------------------
+
+- Isolated Pure Python Lifecycle (`c35957f`).
+- Public immutable artifacts: `ConstructorLifecycleState`, `LifecycleTransition`.
+- Public entry point: `run_constructor_lifecycle(...)` — one Constructor mission run to a terminal status.
+- Progressive optional artifacts: CREATED may have `scope=None`; later statuses enforce required artifacts via invariants.
+- Deterministic transition law + append-only transition trace (not an observability platform).
+- Injected `CandidateAssembler` / `CandidateAssemblyResult` port — lifecycle does **not** invent physical remainder / classification.
+- Reuses Increments 1–5 public capabilities; does not duplicate their professional logic.
+- Increments 1–5 product files unchanged.
+
+Before Increment 6 Constructor was a set of separate capabilities. Increment 6 connects them into one controlled mission runtime:
+
+MISSION
+→ TRUSTED REALITY
+→ CANDIDATE ASSEMBLY PORT
+→ CANDIDATE PACKAGE
+→ LABOR RESOLUTION
+→ EXCEPTION EVALUATION
+→ READY / WAIT / FAIL
+
+------------------------------------------------------------
+WHAT THIS GIVES THE DIGITAL EMPLOYEE
+------------------------------------------------------------
+
+Constructor Agent больше не только набор отдельных модулей.
+
+Он умеет исполнить одну профессиональную mission как controlled lifecycle:
+
+- где сейчас находится run;
+- какие бизнес-артефакты уже созданы;
+- какая capability идёт дальше;
+- когда нормальная обработка может продолжаться;
+- когда execution must fail closed;
+- когда требуется human resolution (логически);
+- когда текущая работа Constructor завершена и run eligible for future handoff.
+
+Это **первый реальный runtime** цифрового сотрудника Constructor.
+
+Важно: Increment 6 — still an **in-memory deterministic Python** runtime. Это ещё не final production orchestration infrastructure (LangGraph / durable HITL / handoff persistence).
+
+------------------------------------------------------------
+LIFECYCLE GRAIN
+------------------------------------------------------------
+
+One lifecycle execution = **one Constructor mission run**.
+
+Runtime identity: `run_id`<br>
+Professional boundary: `ConstructorMissionScope` (project + month + optional dimensions)
+
+Not: BOQ row · individual candidate · Streamlit session · whole project without mission scope.
+
+------------------------------------------------------------
+ACTIVE LIFECYCLE STATES
+------------------------------------------------------------
+
+Active statuses:
+
+`CREATED` → `MISSION_BOUND` → `REALITY_LOADED` → `PACKAGE_BUILT` → `LABOR_RESOLVED`
+
+Terminal:
+
+`READY_FOR_HANDOFF` · `WAITING_FOR_HUMAN` · `FAILED`
+
+Normal path:
+
+CREATED
+→ MISSION_BOUND
+→ REALITY_LOADED
+→ PACKAGE_BUILT
+→ LABOR_RESOLVED
+→ READY_FOR_HANDOFF
+
+------------------------------------------------------------
+READY_FOR_HANDOFF LAW
+------------------------------------------------------------
+
+In Increment 6, `READY_FOR_HANDOFF` means:
+
+Constructor completed its deterministic professional work for this run and is **eligible for future structured handoff**.
+
+It does **NOT** mean:
+
+- handoff artifact already exists;
+- Admission Agent called;
+- Supabase write performed;
+- freshness gate executed;
+- the whole Monthly Planning process is complete.
+
+Structured Handoff = Increment 9.
+
+Predicate is fact-based (`is_ready_for_handoff`), not status-string alone: scope + reality + package + labor resolutions + exceptions; resolution cardinality matches candidates; no BLOCKING; `handoff_allowed()`.
+
+------------------------------------------------------------
+WAITING_FOR_HUMAN LAW
+------------------------------------------------------------
+
+`AMBIGUOUS_SCOPE` → BLOCKING + WAIT_HUMAN → lifecycle `WAITING_FOR_HUMAN`.
+
+Increment 6 implements the **logical** terminal only.
+
+It does **NOT** yet implement: durable pause · persisted checkpoint · human decision contract · resume · fresh reality reload · stale-decision prevention.
+
+Those belong primarily to Increment 8.
+
+------------------------------------------------------------
+FAIL-CLOSED LAW
+------------------------------------------------------------
+
+Known professional failures map deterministically to terminal behavior:
+
+| Code | Terminal |
+|------|----------|
+| `DATA_CONTRACT_BLOCKER` | FAILED |
+| `SECURITY_DENIED` (+ aliases) | FAILED |
+| `READ_FAILED` | FAILED |
+| `AMBIGUOUS_SCOPE` | WAITING_FOR_HUMAN |
+
+Security cannot downgrade into CONTINUE / WARNING / WAIT_HUMAN override / READY_FOR_HANDOFF.
+
+Typed catches only (`MissionScopeError`, `CandidatePackageError`, `SecureReadError`, `LaborNormResolverError`, `ExceptionEngineError`). Broad `except Exception` is **not** used as lifecycle business control flow.
+
+`ExceptionEngineError` → FAILED safely; no recursive remapping; no fabricated successful ExceptionSet.
+
+Partial valid artifacts are preserved on late failures.
+
+------------------------------------------------------------
+PHYSICAL CANDIDATE / LABOR LAW
+------------------------------------------------------------
+
+**PHYSICAL CANDIDATE ≠ LABOR NORM AVAILABILITY**
+
+`LABOR_NORM_UNRESOLVED` remains NON_BLOCKING + CONTINUE and does **not** by itself prevent `READY_FOR_HANDOFF`.
+
+Even an all-UNRESOLVED package may finish the Constructor lifecycle if no other blocking exception exists.
+
+------------------------------------------------------------
+ZERO-CANDIDATE LAW
+------------------------------------------------------------
+
+Successful trusted read + valid empty candidate assembly is a valid professional result.
+
+Zero candidates does **not** automatically mean FAILED or WAITING_FOR_HUMAN.
+
+An empty valid package may reach `READY_FOR_HANDOFF` when contracts are satisfied and there are no blocking exceptions.
+
+------------------------------------------------------------
+CANDIDATE ASSEMBLY BOUNDARY
+------------------------------------------------------------
+
+Increment 6 does **NOT** implement physical remainder / candidate classification business logic.
+
+Lifecycle uses injected `CandidateAssembler` → `CandidateAssemblyResult`.
+
+This prevents lifecycle from absorbing BOQ remainder math, classification, feasible/commitment quantities, or old MPCA-001 workbench/domain logic.
+
+Lifecycle coordinates capabilities. It does not become a second business-domain engine.
+
+------------------------------------------------------------
+STATE / TRACE
+------------------------------------------------------------
+
+`ConstructorLifecycleState` — immutable/frozen; professional artifacts appear progressively; CREATED does not fabricate scope/package/labor.
+
+`LifecycleTransition` — minimal append-only deterministic stage trace.
+
+Not yet: observability platform · audit database · LangGraph checkpoint system.
+
+Authorization safety: stores `authorization_id` only from `AgentExecutionContext`; never full context/secrets. Secure Read remains the authorization authority for tools.
+
+------------------------------------------------------------
+WHERE WE ARE IN THE AGENT ROADMAP
+------------------------------------------------------------
+
+Constructor Agent Runtime v0.1 (одна роль, десять инкрементов — не десять агентов):
+
+[1] Mission Scope Contract — **DONE**<br>
+[2] Candidate Package Artifact — **DONE**<br>
+[3] Secure Read Tool Adapters — **DONE**<br>
+[4] Labor Norm Resolver — **DONE**<br>
+[5] Exception Engine — **DONE**<br>
+[6] Pure Python Lifecycle — **DONE** (this checkpoint)<br>
+[7] LangGraph Runtime — **NEXT**<br>
+[8] Durable HITL / Resume — **NOT STARTED**<br>
+[9] Structured Handoff — **NOT STARTED**<br>
+[10] Agent Control Room Integration — **NOT STARTED**
+
+Progress: **6 / 10**
+
+------------------------------------------------------------
+WHERE WE ARE IN THE MONTHLY PLANNING PROGRAM
+------------------------------------------------------------
+
+MONTHLY PLAN ORCHESTRATOR<br>
+→ **1. CONSTRUCTOR AGENT — CURRENT (increments 1–6 of 10)**<br>
+→ 2. ADMISSION AGENT — not started<br>
+→ 3. CONSTRAINT AGENT — not started<br>
+→ 4. RESOURCE CAPACITY AGENT — not started<br>
+→ 5. ECONOMIC EVALUATION AGENT — not started<br>
+→ 6. MANAGEMENT DECISION AGENT — not started<br>
+→ HUMAN DECISION GATE<br>
+→ ПАСПОРТ МЕСЯЧНОГО ПРОИЗВОДСТВЕННОГО ОБЯЗАТЕЛЬСТВА
+
+------------------------------------------------------------
+CURRENT AGENT CAPABILITIES
+------------------------------------------------------------
+
+| Capability | Status |
+|------------|--------|
+| Mission scope contract + binder | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`775993f`) |
+| Candidate Package artifact | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`862279b`) |
+| Secure read adapter | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`af2e9af`) |
+| LaborNormResolver | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`f0062e7`) |
+| Exception Engine | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`38cd42f`) |
+| Pure Python Lifecycle | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`c35957f`) |
+| LangGraph / durable HITL / handoff / Control Room | NOT IMPLEMENTED |
+| MPCA-001 predecessor runtime | EXISTS, not wired as Increment runtime |
+| MPCA-002/003 | NOT REQUIRED on this computer; not Constructor Runtime |
+
+**CAPABILITY (this increment):** Pure Python Lifecycle — internal coordination, not an agent.
+
+**STATE ARTIFACTS:** `ConstructorLifecycleState` / `LifecycleTransition`
+
+**PUBLIC ENTRY:** `run_constructor_lifecycle`
+
+------------------------------------------------------------
+INCREMENT BOUNDARY
+------------------------------------------------------------
+
+Increment 6 does **NOT** yet provide:
+
+- LangGraph Runtime;
+- durable checkpoint persistence;
+- durable HITL / resume;
+- fresh-reality loop;
+- structured Constructor → Admission handoff;
+- Supabase lifecycle persistence;
+- Agent Control Room.
+
+------------------------------------------------------------
+ARCHITECTURE QUALITY CHECK
+------------------------------------------------------------
+
+AGENT != CHATBOT: **PASS**<br>
+ONE PROFESSIONAL ROLE = ONE AGENT: **PASS**<br>
+Lifecycle = capability coordination, not Lifecycle Agent: **PASS**<br>
+DETERMINISTIC-FIRST: **PASS**<br>
+LLM NOT REQUIRED: **PASS**<br>
+LANGGRAPH NOT USED: **PASS**<br>
+STREAMLIT NOT USED: **PASS**<br>
+SUPABASE WRITES: **NO**<br>
+NO MPCA-001/002/003 DEPENDENCY: **PASS**<br>
+NO BROAD `except Exception` BUSINESS ROUTING: **PASS**<br>
+INCREMENT 1–5 FILES UNCHANGED: **YES**<br>
+CAPABILITY REUSE (no duplicated professional calc): **PASS**<br>
+CANDIDATE ASSEMBLY BOUNDARY: **PASS**<br>
+PHYSICAL CANDIDATE PRESERVATION: **PASS**<br>
+ZERO-CANDIDATE VALID: **PASS**<br>
+SECURITY NON-DOWNGRADE: **PASS**<br>
+PARTIAL ARTIFACT PRESERVATION: **PASS**<br>
+INCREMENT 8 HITL BOUNDARY PRESERVED: **YES**<br>
+INCREMENT 9 HANDOFF BOUNDARY PRESERVED: **YES**<br>
+READY FOR LANGGRAPH WRAPPING LATER: **YES**<br>
+EOS-SEC: **PASS**<br>
+SEMANTIC ARCHITECTURE REVIEW: **PASS**<br>
+CODE QUALITY REVIEW: **PASS**
+
+ARCHITECTURE DRIFT: **NO**
+
+------------------------------------------------------------
+SECURITY / EOS-SEC
+------------------------------------------------------------
+
+MODEL IS NOT A SECURITY BOUNDARY.<br>
+DATA != INSTRUCTION.<br>
+Fail closed. Security denial → FAILED only.<br>
+No arbitrary SQL / shell / Supabase writes / LLM lifecycle decisions.<br>
+Tool allowlist + context remain enforced by Secure Read.
+
+------------------------------------------------------------
+FILES
+------------------------------------------------------------
+
+CREATED:
+
+- `agents/monthly_plan_constructor/lifecycle.py`
+- `tests/test_monthly_plan_constructor_lifecycle.py`
+
+MODIFIED (product Increment 6 commit):
+- none — exactly those two files
+
+------------------------------------------------------------
+TESTS
+------------------------------------------------------------
+
+NEW TESTS (Increment 6): 34 passed / 0 failed<br>
+INCREMENT 1 REGRESSION: 20 passed / 0 failed<br>
+INCREMENT 2 REGRESSION: 20 passed / 0 failed<br>
+INCREMENT 3 REGRESSION: 22 passed / 0 failed<br>
+INCREMENT 4 REGRESSION: 26 passed / 0 failed<br>
+INCREMENT 5 REGRESSION: 31 passed / 0 failed<br>
+PY_COMPILE: PASS<br>
+GIT DIFF CHECK: PASS<br>
+SEMANTIC ARCHITECTURE: PASS<br>
+CODE QUALITY: PASS<br>
+EOS-SEC: PASS
+
+------------------------------------------------------------
+GIT CHECKPOINT
+------------------------------------------------------------
+
+PRODUCT COMMIT: `c35957fd3caeeb4c5c82909a35972248dc8707ea`
+
+MESSAGE: `feat(agents): add constructor pure python lifecycle`
+
+PUSH: YES
+
+LOCAL HEAD: `c35957fd3caeeb4c5c82909a35972248dc8707ea`
+
+REMOTE HEAD: `c35957fd3caeeb4c5c82909a35972248dc8707ea`
+
+LOCAL == REMOTE: YES
+
+FILE COUNT IN PRODUCT COMMIT: 2
+
+Files:
+
+- `agents/monthly_plan_constructor/lifecycle.py`
+- `tests/test_monthly_plan_constructor_lifecycle.py`
+
+Recovery point for this stage: **`c35957f`**.
+
+LESSONS_2 GATE: PASS (READ-ONLY; unchanged)<br>
+LESSONS_2 PATH: `C:\Users\Андрей\lesson_2`<br>
+LESSONS_2 HEAD: `2c4445840cf68ff64cffecbe5a9a9dd21808be04`
+
+Worktree after product push: CLEAN.
+
+------------------------------------------------------------
+WHAT IS NOT BUILT YET
+------------------------------------------------------------
+
+- LangGraph Runtime (Increment 7) — **NEXT / NOT YET BUILT**
+- Durable HITL / Resume (Increment 8)
+- Structured Handoff (Increment 9)
+- Agent Control Room Integration (Increment 10)
+- Production candidate classification capability (outside injected assembly port)
+- Wiring into Page10B / production writes
+- Admission and later professional agents
+
+------------------------------------------------------------
+ONE-LINE SUMMARY
+------------------------------------------------------------
+
+На этом этапе Constructor получил первый complete deterministic Pure Python Lifecycle: одна mission run с controlled stages READY / WAIT / FAIL, без LangGraph и без поглощения remainder/classification logic.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+Increment 7 — LangGraph Runtime.
+
+Обернёт уже доказанный Pure Python Lifecycle LangGraph-инфраструктурой (graph execution / routing).
+
+Критические business rules, exception policies и readiness laws остаются owned by Pure Python lifecycle и существующими capabilities.
+
+LangGraph **не** должен стать заменой профессиональной логики Constructor.
+
+Increment 7 **не** реализован в этом checkpoint.

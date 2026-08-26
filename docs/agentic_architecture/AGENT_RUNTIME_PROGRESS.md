@@ -12,10 +12,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
-- **Progress:** **6 / 10**
-- **DONE:** [1] Mission Scope · [2] Candidate Package · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle
-- **NEXT:** [7] LangGraph Runtime
-- **Recovery HEAD:** `c35957fd3caeeb4c5c82909a35972248dc8707ea` (LOCAL == REMOTE)
+- **Progress:** **7 / 10**
+- **DONE:** [1] Mission Scope · [2] Candidate Package · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime
+- **NEXT:** [8] Durable HITL / Resume
+- **Recovery HEAD:** `14945a14e14a700f9bd2080bada2168e4d55f3c3` (LOCAL == REMOTE; product code; docs checkpoint pending commit)
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -1324,3 +1324,328 @@ Increment 7 — LangGraph Runtime.
 LangGraph **не** должен стать заменой профессиональной логики Constructor.
 
 Increment 7 **не** реализован в этом checkpoint.
+
+============================================================
+CHECKPOINT — 2026-08-26 — CONSTRUCTOR AGENT — INCREMENT 7
+============================================================
+
+PROGRAM:
+Monthly Planning Agentic Orchestration
+
+CURRENT AGENT:
+MONTHLY_PLAN_CONSTRUCTOR<br>
+Агент формирования кандидатного состава месячного плана
+
+CURRENT INCREMENT:
+[7] LangGraph Runtime
+
+STATUS:
+DONE
+
+------------------------------------------------------------
+WHAT WE BUILT
+------------------------------------------------------------
+
+- Dependency gate closed first: `langgraph==1.2.11` declared in `requirements.txt` (`f4ae6fa`). No runtime files in that commit.
+- Architecture gate selected **OPTION C**: deterministic one-step lifecycle advancer + thin named LangGraph nodes.
+- Pure Python Lifecycle gained public `advance_constructor_lifecycle(...)`: advances authoritative `ConstructorLifecycleState` by **exactly one** professional stage per call.
+- `run_constructor_lifecycle(...)` remains backward-compatible and now loops the same stepper until a terminal status.
+- New module `langgraph_runtime.py`: thin Constructor LangGraph orchestration over the same stepper.
+- Graph business state is a thin envelope only: `ConstructorGraphState = { lifecycle: ConstructorLifecycleState }`.
+- No parallel LangGraph business truth. Authoritative state remains `ConstructorLifecycleState`.
+
+------------------------------------------------------------
+GRAPH TOPOLOGY
+------------------------------------------------------------
+
+```text
+START
+  ↓
+bind_mission
+  ↓
+load_reality
+  ↓
+build_package
+  ↓
+resolve_labor
+  ↓
+evaluate_exceptions
+  ↓
+READY_FOR_HANDOFF / WAITING_FOR_HUMAN / FAILED
+  ↓
+END
+```
+
+Each named node calls `advance_constructor_lifecycle(...)` **exactly once**.
+
+Routing reads `lifecycle.status` only.
+
+LangGraph does **not** independently inspect exception codes, package contents, candidate counts, labor values, or readiness predicates to make professional decisions.
+
+Business rules convert reality into lifecycle status; the graph only routes on that status.
+
+Wrong-node / unexpected status → fail closed (`LifecycleError`). No skip / repair / rewind.
+
+------------------------------------------------------------
+ARCHITECTURE BOUNDARIES
+------------------------------------------------------------
+
+| Layer | Ownership |
+|-------|-----------|
+| Deterministic Python (Inc 1–6 + advancer) | professional/business rules + deterministic capabilities |
+| LangGraph (Inc 7) | runtime / lifecycle orchestration only |
+| Supabase | shared operational/business state (unchanged; no Inc 7 writes) |
+| Streamlit | Agent Control Room / Human Decision Surface — **not** the agent runtime |
+
+Constructor Agent remains **ONE** professional digital employee.
+
+Mission binding, secure read, candidate assembly, labor norm resolution, and exception evaluation remain internal capabilities/stages/nodes — **not** microagents.
+
+`CandidateAssembler` remains an injected capability boundary.
+
+Preserved quantity law:
+
+```text
+Candidate Physical Quantity
+!=
+Feasible Quantity
+!=
+Approved Commitment Quantity
+```
+
+No remainder / classification math inside `lifecycle.py` or `langgraph_runtime.py`.
+
+Public LangGraph API (Constructor-only; not a generic framework):
+
+- `build_constructor_langgraph(...)`
+- `run_constructor_langgraph(...)` → returns `ConstructorLifecycleState`
+
+Dependencies (context, assembler, scope_reader, evidence) are closed over at build/invoke time — **not** stored in graph business state.
+
+------------------------------------------------------------
+WHAT THIS GIVES THE SYSTEM
+------------------------------------------------------------
+
+Constructor is no longer only a deterministic Python function chain.
+
+It now has an explicit graph-based runtime with named professional lifecycle stages and status-driven routing, while retaining **one** deterministic business truth (`ConstructorLifecycleState`).
+
+This prepares persistent interruption, human decision gates, resume, traceability, and Control Room visualization **without** transferring ownership of construction business logic to LangGraph.
+
+`READY_FOR_HANDOFF` remains eligibility only — not handoff execution.
+
+------------------------------------------------------------
+WHERE WE ARE IN THE AGENT ROADMAP
+------------------------------------------------------------
+
+Constructor Agent Runtime v0.1 (одна роль, десять инкрементов — не десять агентов):
+
+[1] Mission Scope Contract — **DONE**<br>
+[2] Candidate Package Artifact — **DONE**<br>
+[3] Secure Read Tool Adapters — **DONE**<br>
+[4] Labor Norm Resolver — **DONE**<br>
+[5] Exception Engine — **DONE**<br>
+[6] Pure Python Lifecycle — **DONE**<br>
+[7] LangGraph Runtime — **DONE** (this checkpoint)<br>
+[8] Durable HITL / Resume — **NEXT**<br>
+[9] Structured Handoff — **NOT STARTED**<br>
+[10] Agent Control Room Integration — **NOT STARTED**
+
+Progress after this documentation checkpoint is committed and pushed: **7 / 10**
+
+------------------------------------------------------------
+WHERE WE ARE IN THE MONTHLY PLANNING PROGRAM
+------------------------------------------------------------
+
+MONTHLY PLAN ORCHESTRATOR<br>
+→ **1. CONSTRUCTOR AGENT — CURRENT (increments 1–7 of 10)**<br>
+→ 2. ADMISSION AGENT — not started<br>
+→ 3. CONSTRAINT AGENT — not started<br>
+→ 4. RESOURCE CAPACITY AGENT — not started<br>
+→ 5. ECONOMIC EVALUATION AGENT — not started<br>
+→ 6. MANAGEMENT DECISION AGENT — not started<br>
+→ HUMAN DECISION GATE<br>
+→ ПАСПОРТ МЕСЯЧНОГО ПРОИЗВОДСТВЕННОГО ОБЯЗАТЕЛЬСТВА
+
+------------------------------------------------------------
+CURRENT AGENT CAPABILITIES
+------------------------------------------------------------
+
+| Capability | Status |
+|------------|--------|
+| Mission scope contract + binder | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`775993f`) |
+| Candidate Package artifact | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`862279b`) |
+| Secure read adapter | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`af2e9af`) |
+| LaborNormResolver | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`f0062e7`) |
+| Exception Engine | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`38cd42f`) |
+| Pure Python Lifecycle + one-step advancer | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`14945a1`) |
+| LangGraph Runtime (thin wrap) | IMPLEMENTED + TESTED + COMMITTED + PUSHED (`14945a1`) |
+| Durable HITL / checkpointer / resume | NOT IMPLEMENTED |
+| Structured handoff | NOT IMPLEMENTED |
+| Agent Control Room | NOT IMPLEMENTED |
+| MPCA-001 predecessor runtime | EXISTS, not wired as Increment runtime |
+| MPCA-002/003 | NOT REQUIRED on this computer; not Constructor Runtime |
+
+**STATE ARTIFACTS:** `ConstructorLifecycleState` / `LifecycleTransition` / `ConstructorGraphState` (envelope only)
+
+**PUBLIC ENTRIES:** `run_constructor_lifecycle` · `advance_constructor_lifecycle` · `run_constructor_langgraph` · `build_constructor_langgraph`
+
+------------------------------------------------------------
+INCREMENT BOUNDARY — WHAT INCREMENT 7 DELIBERATELY DOES NOT DO
+------------------------------------------------------------
+
+Increment 7 does **NOT** implement durable HITL.
+
+Absent by design:
+
+- checkpointer / MemorySaver / durable pause;
+- `interrupt` / resume;
+- restart recovery;
+- fresh-reality validation after resume;
+- `thread_id` durable runtime requirement.
+
+`WAITING_FOR_HUMAN` remains a **logical terminal** result in Increment 7 (routes to END). Durable pause/resume belongs to:
+
+**Increment 8 — Durable HITL / Resume**
+
+Also deferred:
+
+- structured agent-to-agent handoff / Admission invocation → **Increment 9 — Structured Handoff**
+- Streamlit Agent Control Room integration → **Increment 10 — Agent Control Room Integration**
+
+------------------------------------------------------------
+ARCHITECTURE QUALITY CHECK
+------------------------------------------------------------
+
+AGENT != CHATBOT: **PASS**<br>
+ONE PROFESSIONAL ROLE = ONE AGENT: **PASS**<br>
+LANGGRAPH != BUSINESS LOGIC: **PASS**<br>
+ONE AUTHORITATIVE BUSINESS STATE (`ConstructorLifecycleState`): **PASS**<br>
+NO PARALLEL GRAPH BUSINESS TRUTH: **PASS**<br>
+ADVANCE EXACTLY ONE STAGE PER CALL: **PASS**<br>
+EACH GRAPH NODE CALLS ADVANCE ONCE: **PASS**<br>
+ROUTING BY `lifecycle.status` ONLY: **PASS**<br>
+DETERMINISTIC-FIRST: **PASS**<br>
+LLM NOT REQUIRED / NOT USED: **PASS**<br>
+STREAMLIT NOT USED: **PASS**<br>
+SUPABASE WRITES: **NO**<br>
+NO HANDOFF EXECUTION: **PASS**<br>
+NO CHECKPOINTER: **PASS**<br>
+CANDIDATE ASSEMBLY BOUNDARY PRESERVED: **PASS**<br>
+NO NEW EXCEPTION TAXONOMY: **PASS**<br>
+INCREMENT 8 / 9 / 10 SCOPE NOT LEAKED: **YES**<br>
+EOS-SEC: **PASS**<br>
+IMPLEMENTATION REVIEW GATE: **PASS**<br>
+LESSONS_2 ALIGNMENT: **PASS**
+
+ARCHITECTURE DRIFT: **NO**
+
+------------------------------------------------------------
+SECURITY / EOS-SEC
+------------------------------------------------------------
+
+EOS-SEC: **PASS**
+
+MODEL IS NOT A SECURITY BOUNDARY.<br>
+LangGraph is **NOT** a security boundary.
+
+Increment 7 does **not** introduce: LLM decision authority · Supabase writes · arbitrary SQL · shell/exec · service-role / secrets in graph state · automatic critical writes · hidden agent-to-agent chat · handoff execution · authorization bypass.
+
+Existing Mission Scope + `AgentExecutionContext` + Secure Read + fail-closed mapping remain authoritative.
+
+------------------------------------------------------------
+FILES
+------------------------------------------------------------
+
+DEPENDENCY (separate prior commit):
+
+- `requirements.txt` → `langgraph==1.2.11`
+- commit: `f4ae6fa114ec859c2be3fb6de0297c1d1a6c7c89`
+- message: `build(agents): add langgraph runtime dependency`
+
+PRODUCT (Increment 7 code commit):
+
+MODIFIED:
+
+- `agents/monthly_plan_constructor/lifecycle.py`
+- `tests/test_monthly_plan_constructor_lifecycle.py`
+
+NEW:
+
+- `agents/monthly_plan_constructor/langgraph_runtime.py`
+- `tests/test_monthly_plan_constructor_langgraph_runtime.py`
+
+FILE COUNT IN PRODUCT COMMIT: 4
+
+------------------------------------------------------------
+TESTS
+------------------------------------------------------------
+
+Increment 1: 20 PASS<br>
+Increment 2: 20 PASS<br>
+Increment 3: 22 PASS<br>
+Increment 4: 26 PASS<br>
+Increment 5: 31 PASS<br>
+Increment 6: 49 PASS<br>
+Increment 7: 26 PASS<br>
+TOTAL: **194 PASS**
+
+PARITY TESTS: **PASS**<br>
+Law: for equivalent deterministic inputs, Pure Python lifecycle business result == LangGraph runtime business result (semantic outcomes; not incidental UUID/timestamp identity).
+
+PY_COMPILE: PASS<br>
+IMPLEMENTATION REVIEW GATE: PASS<br>
+EOS-SEC REVIEW: PASS<br>
+LESSONS_2 ALIGNMENT: PASS
+
+------------------------------------------------------------
+GIT CHECKPOINT
+------------------------------------------------------------
+
+DEPENDENCY COMMIT: `f4ae6fa114ec859c2be3fb6de0297c1d1a6c7c89`<br>
+MESSAGE: `build(agents): add langgraph runtime dependency`
+
+PRODUCT COMMIT: `14945a14e14a700f9bd2080bada2168e4d55f3c3`<br>
+MESSAGE: `feat(agents): add constructor langgraph runtime`
+
+PUSH (product): YES / SUCCESS
+
+LOCAL HEAD: `14945a14e14a700f9bd2080bada2168e4d55f3c3`
+
+REMOTE HEAD: `14945a14e14a700f9bd2080bada2168e4d55f3c3`
+
+LOCAL == REMOTE: YES
+
+Recovery point for product code: **`14945a1`**.
+
+LESSONS_2 GATE: PASS (READ-ONLY; unchanged)<br>
+LESSONS_2 PATH: `C:\Users\Андрей\lesson_2`
+
+Worktree after product push: CLEAN (before this documentation edit).
+
+------------------------------------------------------------
+WHAT IS NOT BUILT YET
+------------------------------------------------------------
+
+- Durable HITL / Resume (Increment 8) — **NEXT / NOT YET BUILT**
+- Structured Handoff (Increment 9)
+- Agent Control Room Integration (Increment 10)
+- Production candidate classification capability (outside injected assembly port)
+- Wiring into Page10B / production writes
+- Admission and later professional agents
+
+------------------------------------------------------------
+ONE-LINE SUMMARY
+------------------------------------------------------------
+
+На этом этапе Constructor получил thin LangGraph runtime поверх доказанного Pure Python Lifecycle: named nodes + status routing, один authoritative business state, без checkpointer/HITL/handoff и без передачи профессиональной логики в граф.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+Increment 8 — Durable HITL / Resume.
+
+Добавит durable pause/resume вокруг уже существующих named nodes и `WAITING_FOR_HUMAN`, без переписывания business laws Increments 1–7.
+
+Increment 8 **не** реализован в этом checkpoint.

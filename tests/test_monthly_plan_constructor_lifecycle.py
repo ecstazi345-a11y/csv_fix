@@ -51,6 +51,7 @@ from agents.monthly_plan_constructor.lifecycle import (
     LifecycleError,
     LifecycleTransition,
     _append_transition,
+    advance_constructor_lifecycle,
     create_lifecycle_state,
     is_ready_for_handoff,
     run_constructor_lifecycle,
@@ -550,12 +551,188 @@ class TestArchitectureIsolation(unittest.TestCase):
     def test_import_clean(self) -> None:
         mod = importlib.import_module("agents.monthly_plan_constructor.lifecycle")
         self.assertTrue(hasattr(mod, "run_constructor_lifecycle"))
+        self.assertTrue(hasattr(mod, "advance_constructor_lifecycle"))
         self.assertNotIn("streamlit", mod.__dict__)
 
     def test_authorization_id_recorded(self) -> None:
         ctx = _context()
         state = _run(context=ctx, evidence=[_history()])
         self.assertEqual(state.authorization_id, ctx.authorization_id)
+
+
+def _advance(
+    state: ConstructorLifecycleState,
+    *,
+    assembler: StubAssembler | None = None,
+    reader: RecordingReader | None = None,
+    evidence: Sequence[LaborNormEvidence] = (),
+    project_code: object = PROJECT,
+    month_key: object = MONTH,
+    facility_scope: object = None,
+    context: AgentExecutionContext | None = None,
+) -> ConstructorLifecycleState:
+    return advance_constructor_lifecycle(
+        state,
+        context=context or _context(),
+        project_code=project_code,
+        month_key=month_key,
+        facility_scope=facility_scope,  # type: ignore[arg-type]
+        assemble_candidates=assembler or StubAssembler(),
+        labor_evidence=evidence,
+        scope_reader=reader or RecordingReader(),
+        now=FIXED_AT,
+    )
+
+
+class TestAdvanceOneStage(unittest.TestCase):
+    def test_created_to_mission_bound(self) -> None:
+        state = create_lifecycle_state(mission_id=MISSION_ID, created_at=FIXED_AT)
+        state = _advance(state)
+        self.assertEqual(state.status, STATUS_MISSION_BOUND)
+        self.assertIsNotNone(state.scope)
+        self.assertEqual([t.to_status for t in state.transitions], [STATUS_MISSION_BOUND])
+
+    def test_exactly_one_professional_stage_per_advance(self) -> None:
+        state = create_lifecycle_state(mission_id=MISSION_ID, created_at=FIXED_AT)
+        state = _advance(state)
+        self.assertEqual(state.status, STATUS_MISSION_BOUND)
+        self.assertNotEqual(state.status, STATUS_REALITY_LOADED)
+        self.assertEqual(len(state.transitions), 1)
+        state = _advance(state)
+        self.assertEqual(state.status, STATUS_REALITY_LOADED)
+        self.assertNotEqual(state.status, STATUS_PACKAGE_BUILT)
+        self.assertEqual(len(state.transitions), 2)
+
+    def test_mission_bound_to_reality_loaded(self) -> None:
+        state = create_lifecycle_state(mission_id=MISSION_ID, created_at=FIXED_AT)
+        state = _advance(state)
+        state = _advance(state)
+        self.assertEqual(state.status, STATUS_REALITY_LOADED)
+        self.assertIsNotNone(state.reality_read)
+
+    def test_reality_to_package_built(self) -> None:
+        state = create_lifecycle_state(mission_id=MISSION_ID, created_at=FIXED_AT)
+        state = _advance(state)
+        state = _advance(state)
+        state = _advance(state)
+        self.assertEqual(state.status, STATUS_PACKAGE_BUILT)
+        self.assertIsNotNone(state.package)
+
+    def test_package_to_labor_resolved(self) -> None:
+        state = create_lifecycle_state(mission_id=MISSION_ID, created_at=FIXED_AT)
+        for _ in range(3):
+            state = _advance(state)
+        state = _advance(state, evidence=[_history()])
+        self.assertEqual(state.status, STATUS_LABOR_RESOLVED)
+        self.assertIsNotNone(state.labor_resolutions)
+
+    def test_labor_to_ready(self) -> None:
+        state = create_lifecycle_state(mission_id=MISSION_ID, created_at=FIXED_AT)
+        for _ in range(3):
+            state = _advance(state)
+        state = _advance(state, evidence=[_history()])
+        state = _advance(state, evidence=[_history()])
+        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertTrue(is_ready_for_handoff(state))
+
+    def test_terminal_cannot_advance_ready(self) -> None:
+        state = _run(evidence=[_history()])
+        with self.assertRaises(LifecycleError) as raised:
+            _advance(state, evidence=[_history()])
+        self.assertIn("cannot advance terminal", str(raised.exception))
+
+    def test_terminal_cannot_advance_waiting(self) -> None:
+        state = _run(facility_scope=["ALL", "FACILITY_TARGET"])
+        with self.assertRaises(LifecycleError):
+            _advance(state)
+
+    def test_terminal_cannot_advance_failed(self) -> None:
+        state = _run(project_code="")
+        with self.assertRaises(LifecycleError):
+            _advance(state)
+
+    def test_advance_ambiguous_scope_wait(self) -> None:
+        state = create_lifecycle_state(mission_id=MISSION_ID, created_at=FIXED_AT)
+        state = _advance(state, facility_scope=["ALL", "FACILITY_TARGET"])
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN)
+        self.assertEqual(state.error_code, CODE_AMBIGUOUS_SCOPE)
+
+    def test_advance_secure_read_failed(self) -> None:
+        state = create_lifecycle_state(mission_id=MISSION_ID, created_at=FIXED_AT)
+        state = _advance(state)
+
+        def raising_reader(context, mission):
+            raise SecureReadError(CODE_READ_FAILED, "read failed")
+
+        state = _advance(state, reader=raising_reader)  # type: ignore[arg-type]
+        self.assertEqual(state.status, STATUS_FAILED)
+        self.assertEqual(state.error_code, CODE_READ_FAILED)
+
+    def test_advance_zero_candidate_path(self) -> None:
+        reader = RecordingReader(rows=[])
+        assembler = StubAssembler(candidates=[], scanned_count=0)
+        state = create_lifecycle_state(mission_id=MISSION_ID, created_at=FIXED_AT)
+        for _ in range(5):
+            state = _advance(state, reader=reader, assembler=assembler, evidence=())
+            if state.status in {STATUS_READY_FOR_HANDOFF, STATUS_FAILED, STATUS_WAITING_FOR_HUMAN}:
+                break
+        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.package.candidate_count, 0)  # type: ignore[union-attr]
+
+    def test_advance_all_unresolved_ready(self) -> None:
+        state = create_lifecycle_state(mission_id=MISSION_ID, created_at=FIXED_AT)
+        for _ in range(5):
+            state = _advance(state, evidence=())
+            if state.status in {STATUS_READY_FOR_HANDOFF, STATUS_FAILED, STATUS_WAITING_FOR_HUMAN}:
+                break
+        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(
+            state.exceptions.exceptions[0].exception_code,  # type: ignore[union-attr]
+            CODE_LABOR_NORM_UNRESOLVED,
+        )
+
+    def test_advance_append_only(self) -> None:
+        state = create_lifecycle_state(mission_id=MISSION_ID, created_at=FIXED_AT)
+        prev_len = 0
+        for _ in range(5):
+            state = _advance(state, evidence=[_history()])
+            self.assertGreaterEqual(len(state.transitions), prev_len)
+            prev_len = len(state.transitions)
+            if state.status == STATUS_READY_FOR_HANDOFF:
+                break
+        self.assertEqual(state.transitions[0].from_status, STATUS_CREATED)
+
+    def test_run_matches_manual_advance_loop(self) -> None:
+        via_run = _run(evidence=[_history()])
+        state = create_lifecycle_state(
+            mission_id=MISSION_ID,
+            run_id=via_run.run_id,
+            authorization_id=via_run.authorization_id,
+            created_at=FIXED_AT,
+        )
+        assembler = StubAssembler()
+        reader = RecordingReader()
+        evidence = [_history()]
+        while state.status not in {
+            STATUS_READY_FOR_HANDOFF,
+            STATUS_WAITING_FOR_HUMAN,
+            STATUS_FAILED,
+        }:
+            state = _advance(
+                state,
+                assembler=assembler,
+                reader=reader,
+                evidence=evidence,
+            )
+        self.assertEqual(state.status, via_run.status)
+        self.assertEqual(
+            [t.to_status for t in state.transitions],
+            [t.to_status for t in via_run.transitions],
+        )
+        self.assertEqual(
+            state.package.candidate_count,  # type: ignore[union-attr]
+            via_run.package.candidate_count,  # type: ignore[union-attr]
+        )
 
 
 if __name__ == "__main__":

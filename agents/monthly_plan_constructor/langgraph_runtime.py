@@ -1,9 +1,12 @@
 """
-Constructor Runtime v0.1 Increment 7 — LangGraph orchestration.
+Constructor Runtime v0.1 Increment 7–8 — LangGraph orchestration.
 
 Thin named-node graph over Pure Python one-stage lifecycle advance.
-Not a second business implementation. Not HITL. Not handoff. Not Control Room.
-Durable pause/resume is owned by a later increment — this module compiles without one.
+Increment 8 adds optional durable checkpointer + human_wait interrupt path.
+Not a second business implementation. Not handoff. Not Control Room.
+
+NORMAL ADVANCE != HUMAN RESUME.
+FUNCTION != GRAPH NODE for apply_constructor_resume_command.
 """
 
 from __future__ import annotations
@@ -13,14 +16,24 @@ from datetime import datetime
 from typing import Any, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
 
+from agents.monthly_plan_constructor.hitl_contracts import ConstructorHitlStore
+from agents.monthly_plan_constructor.hitl_resume import (
+    apply_constructor_resume_command,
+    build_decision_request_from_lifecycle,
+    revalidate_constructor_resume_reality,
+)
 from agents.monthly_plan_constructor.lifecycle import (
     CODE_LIFECYCLE_CONTRACT_BLOCKER,
+    INVOCATION_STOP_STATUSES,
     STATUS_CREATED,
     STATUS_LABOR_RESOLVED,
     STATUS_MISSION_BOUND,
     STATUS_PACKAGE_BUILT,
     STATUS_REALITY_LOADED,
+    STATUS_REVALIDATING_REALITY,
+    STATUS_WAITING_FOR_HUMAN,
     TERMINAL_STATUSES,
     CandidateAssembler,
     ConstructorLifecycleState,
@@ -38,6 +51,8 @@ NODE_LOAD_REALITY = "load_reality"
 NODE_BUILD_PACKAGE = "build_package"
 NODE_RESOLVE_LABOR = "resolve_labor"
 NODE_EVALUATE_EXCEPTIONS = "evaluate_exceptions"
+NODE_HUMAN_WAIT = "human_wait"
+NODE_REVALIDATE_REALITY = "revalidate_reality"
 
 
 class ConstructorGraphState(TypedDict):
@@ -75,7 +90,7 @@ def _require_status(
     return lifecycle
 
 
-def _route_by_status(state: ConstructorGraphState) -> str:
+def _route_by_status(state: ConstructorGraphState, *, hitl_enabled: bool) -> str:
     """Route using authoritative lifecycle.status only."""
     lifecycle = state.get("lifecycle")  # type: ignore[assignment]
     if lifecycle is None or not isinstance(lifecycle, ConstructorLifecycleState):
@@ -92,7 +107,16 @@ def _route_by_status(state: ConstructorGraphState) -> str:
         return NODE_RESOLVE_LABOR
     if status == STATUS_LABOR_RESOLVED:
         return NODE_EVALUATE_EXCEPTIONS
-    if status in TERMINAL_STATUSES:
+    if status == STATUS_WAITING_FOR_HUMAN:
+        return NODE_HUMAN_WAIT if hitl_enabled else END
+    if status == STATUS_REVALIDATING_REALITY:
+        if not hitl_enabled:
+            raise LifecycleError(
+                CODE_LIFECYCLE_CONTRACT_BLOCKER,
+                "REVALIDATING_REALITY requires HITL-enabled graph",
+            )
+        return NODE_REVALIDATE_REALITY
+    if status in INVOCATION_STOP_STATUSES:
         return END
     raise LifecycleError(
         CODE_LIFECYCLE_CONTRACT_BLOCKER,
@@ -114,11 +138,15 @@ def build_constructor_langgraph(
     queue_scope: ScopeValue = None,
     scope_reader: Optional[ScopeReader] = None,
     now: Optional[datetime] = None,
+    checkpointer: Any = None,
+    hitl_store: Optional[ConstructorHitlStore] = None,
 ):
     """
     Build compiled Constructor LangGraph with dependencies closed over at build time.
 
-    Dependencies stay outside graph business state. No durable persistence backend.
+    Dependencies stay outside graph business state.
+    checkpointer is optional; when omitted, WAIT ends the invocation (Inc 7 compat).
+    When provided, WAIT routes to human_wait → interrupt().
     """
     if context is None or not isinstance(context, AgentExecutionContext):
         raise LifecycleError(
@@ -130,6 +158,8 @@ def build_constructor_langgraph(
             CODE_LIFECYCLE_CONTRACT_BLOCKER,
             "assemble_candidates port is required",
         )
+
+    hitl_enabled = checkpointer is not None
 
     def _advance(lifecycle: ConstructorLifecycleState) -> ConstructorLifecycleState:
         return advance_constructor_lifecycle(
@@ -176,55 +206,95 @@ def build_constructor_langgraph(
         )
         return {"lifecycle": _advance(lifecycle)}
 
+    def human_wait(state: ConstructorGraphState) -> ConstructorGraphState:
+        """
+        Thin HITL orchestration node.
+
+        First entry: interrupt(request) pauses.
+        Resume replay: rebuild request, idempotent OPEN upsert, interrupt returns
+        resume payload, then dedicated apply helper runs.
+        """
+        lifecycle = _require_status(
+            state, STATUS_WAITING_FOR_HUMAN, node_name=NODE_HUMAN_WAIT
+        )
+        request = build_decision_request_from_lifecycle(lifecycle, created_at=now)
+        if hitl_store is not None:
+            # MUST be idempotent — LangGraph replays code before interrupt().
+            hitl_store.upsert_open_request(request)
+        resume_payload = interrupt(request)
+        updated = apply_constructor_resume_command(
+            lifecycle,
+            resume_payload,
+            context=context,
+            project_code=project_code,
+            month_key=month_key,
+            now=now,
+        )
+        if hitl_store is not None:
+            from agents.monthly_plan_constructor.hitl_contracts import coerce_resume_command
+
+            hitl_store.record_answer(
+                interrupt_id=request.interrupt_id,
+                command=coerce_resume_command(resume_payload),
+            )
+        return {"lifecycle": updated}
+
+    def revalidate_reality(state: ConstructorGraphState) -> ConstructorGraphState:
+        lifecycle = _require_status(
+            state, STATUS_REVALIDATING_REALITY, node_name=NODE_REVALIDATE_REALITY
+        )
+        return {
+            "lifecycle": revalidate_constructor_resume_reality(
+                lifecycle,
+                context=context,
+                scope_reader=scope_reader,
+                now=now,
+            )
+        }
+
+    def route(state: ConstructorGraphState) -> str:
+        return _route_by_status(state, hitl_enabled=hitl_enabled)
+
     graph = StateGraph(ConstructorGraphState)
     graph.add_node(NODE_BIND_MISSION, bind_mission)
     graph.add_node(NODE_LOAD_REALITY, load_reality)
     graph.add_node(NODE_BUILD_PACKAGE, build_package)
     graph.add_node(NODE_RESOLVE_LABOR, resolve_labor)
     graph.add_node(NODE_EVALUATE_EXCEPTIONS, evaluate_exceptions)
+    if hitl_enabled:
+        graph.add_node(NODE_HUMAN_WAIT, human_wait)
+        graph.add_node(NODE_REVALIDATE_REALITY, revalidate_reality)
+
+    hitl_path = {
+        NODE_LOAD_REALITY: NODE_LOAD_REALITY,
+        NODE_BUILD_PACKAGE: NODE_BUILD_PACKAGE,
+        NODE_RESOLVE_LABOR: NODE_RESOLVE_LABOR,
+        NODE_EVALUATE_EXCEPTIONS: NODE_EVALUATE_EXCEPTIONS,
+        NODE_HUMAN_WAIT: NODE_HUMAN_WAIT,
+        NODE_REVALIDATE_REALITY: NODE_REVALIDATE_REALITY,
+        END: END,
+    }
+    compat_path = {
+        NODE_LOAD_REALITY: NODE_LOAD_REALITY,
+        NODE_BUILD_PACKAGE: NODE_BUILD_PACKAGE,
+        NODE_RESOLVE_LABOR: NODE_RESOLVE_LABOR,
+        NODE_EVALUATE_EXCEPTIONS: NODE_EVALUATE_EXCEPTIONS,
+        END: END,
+    }
+    path_map = hitl_path if hitl_enabled else compat_path
 
     graph.add_edge(START, NODE_BIND_MISSION)
-    graph.add_conditional_edges(
-        NODE_BIND_MISSION,
-        _route_by_status,
-        {
-            NODE_LOAD_REALITY: NODE_LOAD_REALITY,
-            END: END,
-        },
-    )
-    graph.add_conditional_edges(
-        NODE_LOAD_REALITY,
-        _route_by_status,
-        {
-            NODE_BUILD_PACKAGE: NODE_BUILD_PACKAGE,
-            END: END,
-        },
-    )
-    graph.add_conditional_edges(
-        NODE_BUILD_PACKAGE,
-        _route_by_status,
-        {
-            NODE_RESOLVE_LABOR: NODE_RESOLVE_LABOR,
-            END: END,
-        },
-    )
-    graph.add_conditional_edges(
-        NODE_RESOLVE_LABOR,
-        _route_by_status,
-        {
-            NODE_EVALUATE_EXCEPTIONS: NODE_EVALUATE_EXCEPTIONS,
-            END: END,
-        },
-    )
-    graph.add_conditional_edges(
-        NODE_EVALUATE_EXCEPTIONS,
-        _route_by_status,
-        {
-            END: END,
-        },
-    )
+    graph.add_conditional_edges(NODE_BIND_MISSION, route, path_map)
+    graph.add_conditional_edges(NODE_LOAD_REALITY, route, path_map)
+    graph.add_conditional_edges(NODE_BUILD_PACKAGE, route, path_map)
+    graph.add_conditional_edges(NODE_RESOLVE_LABOR, route, path_map)
+    graph.add_conditional_edges(NODE_EVALUATE_EXCEPTIONS, route, path_map)
+    if hitl_enabled:
+        graph.add_conditional_edges(NODE_HUMAN_WAIT, route, path_map)
+        graph.add_conditional_edges(NODE_REVALIDATE_REALITY, route, path_map)
 
-    # Increment 7: compile without a persistence backend.
+    if checkpointer is not None:
+        return graph.compile(checkpointer=checkpointer)
     return graph.compile()
 
 
@@ -244,12 +314,15 @@ def run_constructor_langgraph(
     run_id: Optional[str] = None,
     scope_reader: Optional[ScopeReader] = None,
     now: Optional[datetime] = None,
+    checkpointer: Any = None,
+    hitl_store: Optional[ConstructorHitlStore] = None,
 ) -> ConstructorLifecycleState:
     """
-    Invoke Constructor LangGraph to a terminal ConstructorLifecycleState.
+    Invoke Constructor LangGraph to an invocation-stop ConstructorLifecycleState.
 
     READY_FOR_HANDOFF is eligibility only — no handoff execution.
-    WAITING_FOR_HUMAN ends the run (Increment 8 owns durable resume).
+    Without checkpointer, WAITING_FOR_HUMAN ends the run (Inc 7 compatible).
+    With checkpointer, WAIT interrupts inside human_wait (caller resumes via Command).
     """
     if context is None or not isinstance(context, AgentExecutionContext):
         raise LifecycleError(
@@ -261,9 +334,10 @@ def run_constructor_langgraph(
             CODE_LIFECYCLE_CONTRACT_BLOCKER,
             "assemble_candidates port is required",
         )
+    resolved_run_id = run_id or context.run_id
     initial = create_lifecycle_state(
         mission_id=_resolve_mission_id(mission_id),
-        run_id=run_id or context.run_id,
+        run_id=resolved_run_id,
         authorization_id=context.authorization_id,
         created_at=now,
     )
@@ -281,17 +355,32 @@ def run_constructor_langgraph(
         queue_scope=queue_scope,
         scope_reader=scope_reader,
         now=initial.created_at,
+        checkpointer=checkpointer,
+        hitl_store=hitl_store,
     )
-    result = app.invoke({"lifecycle": initial})
+    invoke_kwargs: dict[str, Any] = {}
+    if checkpointer is not None:
+        invoke_kwargs["config"] = {
+            "configurable": {
+                "thread_id": resolved_run_id,
+            }
+        }
+    result = app.invoke({"lifecycle": initial}, **invoke_kwargs)
     lifecycle = result.get("lifecycle")
     if lifecycle is None or not isinstance(lifecycle, ConstructorLifecycleState):
         raise LifecycleError(
             CODE_LIFECYCLE_CONTRACT_BLOCKER,
             "LangGraph invoke did not return ConstructorLifecycleState",
         )
+    # Interrupted WAIT still returns lifecycle in WAIT; treat as stop.
     if lifecycle.status not in TERMINAL_STATUSES:
-        raise LifecycleError(
-            CODE_LIFECYCLE_CONTRACT_BLOCKER,
-            f"LangGraph ended on non-terminal status {lifecycle.status}",
-        )
+        # Pending interrupt may leave status WAIT which is terminal; other mid-states fail.
+        if not (
+            checkpointer is not None
+            and lifecycle.status == STATUS_WAITING_FOR_HUMAN
+        ):
+            raise LifecycleError(
+                CODE_LIFECYCLE_CONTRACT_BLOCKER,
+                f"LangGraph ended on non-terminal status {lifecycle.status}",
+            )
     return lifecycle

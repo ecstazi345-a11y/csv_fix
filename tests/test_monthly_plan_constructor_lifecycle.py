@@ -217,6 +217,7 @@ def _run(
     discipline_scope: object = None,
     queue_scope: object = None,
     context: AgentExecutionContext | None = None,
+    run_id: str | None = None,
 ) -> ConstructorLifecycleState:
     return run_constructor_lifecycle(
         context=context or _context(),
@@ -229,6 +230,7 @@ def _run(
         labor_evidence=evidence,
         scope_reader=reader or RecordingReader(),
         mission_id=MISSION_ID,
+        run_id=run_id,
         now=FIXED_AT,
     )
 
@@ -733,6 +735,99 @@ class TestAdvanceOneStage(unittest.TestCase):
             state.package.candidate_count,  # type: ignore[union-attr]
             via_run.package.candidate_count,  # type: ignore[union-attr]
         )
+
+
+class TestIncrement8StatusSemantics(unittest.TestCase):
+    def test_status_sets(self) -> None:
+        from agents.monthly_plan_constructor.lifecycle import (
+            COMPLETION_STATUSES,
+            INVOCATION_STOP_STATUSES,
+            PAUSE_STATUSES,
+            RESUME_ONLY_STATUSES,
+            STATUS_APPLYING_HUMAN_DECISION,
+            STATUS_REVALIDATING_REALITY,
+            TERMINAL_STATUSES,
+        )
+
+        self.assertEqual(
+            COMPLETION_STATUSES,
+            frozenset({STATUS_READY_FOR_HANDOFF, STATUS_FAILED}),
+        )
+        self.assertEqual(PAUSE_STATUSES, frozenset({STATUS_WAITING_FOR_HUMAN}))
+        self.assertEqual(
+            INVOCATION_STOP_STATUSES,
+            frozenset(
+                {
+                    STATUS_READY_FOR_HANDOFF,
+                    STATUS_WAITING_FOR_HUMAN,
+                    STATUS_FAILED,
+                }
+            ),
+        )
+        self.assertEqual(TERMINAL_STATUSES, INVOCATION_STOP_STATUSES)
+        self.assertEqual(
+            RESUME_ONLY_STATUSES,
+            frozenset(
+                {STATUS_APPLYING_HUMAN_DECISION, STATUS_REVALIDATING_REALITY}
+            ),
+        )
+
+    def test_run_stops_on_wait(self) -> None:
+        state = _run(facility_scope=["ALL", FACILITY_TARGET])
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN)
+
+    def test_advance_rejects_resume_only_statuses(self) -> None:
+        from agents.monthly_plan_constructor.hitl_contracts import (
+            DECISION_CLARIFY_SCOPE,
+            build_resume_command,
+        )
+        from agents.monthly_plan_constructor.hitl_resume import (
+            apply_constructor_resume_command,
+            build_decision_request_from_lifecycle,
+        )
+        from agents.monthly_plan_constructor.lifecycle import (
+            STATUS_REVALIDATING_REALITY,
+        )
+
+        wait = _run(
+            facility_scope=["ALL", FACILITY_TARGET],
+            run_id="run-inc8-lifecycle",
+        )
+        req = build_decision_request_from_lifecycle(wait)
+        ctx = issue_read_only_agent_context(
+            agent_code="MONTHLY_PLAN_CONSTRUCTOR",
+            project_code=PROJECT,
+            run_id="run-inc8-lifecycle",
+        )
+        cmd = build_resume_command(
+            decision_id="dec-1",
+            interrupt_id=req.interrupt_id,
+            run_id="run-inc8-lifecycle",
+            mission_id=MISSION_ID,
+            decision=DECISION_CLARIFY_SCOPE,
+            actor_id="human-1",
+            parameters={"facility_scope": [FACILITY_TARGET]},
+            submitted_at=FIXED_AT,
+        )
+        revalidating = apply_constructor_resume_command(
+            wait,
+            cmd,
+            context=ctx,
+            project_code=PROJECT,
+            month_key=MONTH,
+            now=FIXED_AT,
+        )
+        self.assertEqual(revalidating.status, STATUS_REVALIDATING_REALITY)
+        with self.assertRaises(LifecycleError):
+            advance_constructor_lifecycle(
+                revalidating,
+                context=ctx,
+                project_code=PROJECT,
+                month_key=MONTH,
+                assemble_candidates=StubAssembler(),
+                scope_reader=RecordingReader(),
+                now=FIXED_AT,
+            )
 
 
 if __name__ == "__main__":

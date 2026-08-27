@@ -336,16 +336,15 @@ class TestWaitPath(unittest.TestCase):
         self.assertEqual(state.error_code, CODE_AMBIGUOUS_SCOPE)
 
     def test_wait_ends_without_resume(self) -> None:
+        # Default graph (no checkpointer) still stops on WAIT without auto-resume.
         source = Path(
             "agents/monthly_plan_constructor/langgraph_runtime.py"
         ).read_text(encoding="utf-8")
         for forbidden in (
-            "from langgraph.checkpoint",
-            "import langgraph.checkpoint",
             "MemorySaver(",
-            "interrupt(",
-            "thread_id",
-            "Command(",
+            "InMemorySaver(",
+            "PostgresSaver(",
+            "saver.setup",
         ):
             self.assertNotIn(forbidden, source)
         state = _run_graph(facility_scope=["ALL", "X"])
@@ -414,6 +413,7 @@ class TestArchitecture(unittest.TestCase):
             "import supabase",
             "from langgraph.checkpoint",
             "MemorySaver(",
+            "InMemorySaver(",
             "Admission",
             "handoff_artifact",
             "create_handoff",
@@ -559,6 +559,106 @@ class TestIsolation(unittest.TestCase):
         self.assertNotIn("build_candidate_package", source)
         self.assertNotIn("resolve_labor_norms", source)
         self.assertNotIn("exceptions_from_labor", source)
+
+
+class FakeHitlStore:
+    def __init__(self) -> None:
+        self.open_calls = 0
+        self.answer_calls = 0
+        self.open_ids: list[str] = []
+
+    def upsert_open_request(self, request) -> None:
+        self.open_calls += 1
+        if request.interrupt_id not in self.open_ids:
+            self.open_ids.append(request.interrupt_id)
+
+    def record_answer(self, *, interrupt_id: str, command) -> None:
+        self.answer_calls += 1
+
+
+class TestIncrement8HitlLangGraph(unittest.TestCase):
+    def test_wait_surfaces_interrupt_and_resume(self) -> None:
+        from langgraph.checkpoint.memory import InMemorySaver
+        from langgraph.types import Command
+
+        from agents.monthly_plan_constructor.durable_checkpoint import (
+            build_constructor_jsonplus_serializer,
+        )
+        from agents.monthly_plan_constructor.hitl_contracts import (
+            DECISION_CLARIFY_SCOPE,
+            build_resume_command,
+        )
+        from agents.monthly_plan_constructor.hitl_resume import (
+            build_decision_request_from_lifecycle,
+        )
+        from agents.monthly_plan_constructor.lifecycle import (
+            STATUS_READY_FOR_HANDOFF,
+        )
+
+        run_id = "run-inc8-hitl-graph"
+        ctx = issue_read_only_agent_context(
+            agent_code="MONTHLY_PLAN_CONSTRUCTOR",
+            project_code=PROJECT,
+            run_id=run_id,
+        )
+        store = FakeHitlStore()
+        reader = RecordingReader()
+        app = build_constructor_langgraph(
+            context=ctx,
+            project_code=PROJECT,
+            month_key=MONTH,
+            facility_scope=["ALL", FACILITY_TARGET],
+            assemble_candidates=StubAssembler(),
+            scope_reader=reader,
+            now=FIXED_AT,
+            checkpointer=InMemorySaver(serde=build_constructor_jsonplus_serializer()),
+            hitl_store=store,
+        )
+        initial = create_lifecycle_state(
+            mission_id=MISSION_ID,
+            run_id=run_id,
+            authorization_id=ctx.authorization_id,
+            created_at=FIXED_AT,
+        )
+        config = {"configurable": {"thread_id": run_id}}
+        out1 = app.invoke({"lifecycle": initial}, config)
+        self.assertEqual(out1["lifecycle"].status, STATUS_WAITING_FOR_HUMAN)
+        self.assertIn("__interrupt__", out1)
+        interrupt_value = out1["__interrupt__"][0].value
+        self.assertEqual(interrupt_value.reason_code, CODE_AMBIGUOUS_SCOPE)
+        self.assertEqual(store.open_calls, 1)
+        self.assertEqual(len(store.open_ids), 1)
+
+        req = build_decision_request_from_lifecycle(out1["lifecycle"])
+        self.assertEqual(req.interrupt_id, interrupt_value.interrupt_id)
+        cmd = build_resume_command(
+            decision_id="dec-graph-1",
+            interrupt_id=req.interrupt_id,
+            run_id=run_id,
+            mission_id=MISSION_ID,
+            decision=DECISION_CLARIFY_SCOPE,
+            actor_id="human-1",
+            parameters={"facility_scope": [FACILITY_TARGET]},
+            submitted_at=FIXED_AT,
+        )
+        out2 = app.invoke(Command(resume=cmd), config)
+        lifecycle = out2["lifecycle"]
+        self.assertEqual(lifecycle.status, STATUS_READY_FOR_HANDOFF)
+        self.assertGreaterEqual(reader.calls, 1)
+        # Replay before interrupt causes a second upsert call, same id.
+        self.assertGreaterEqual(store.open_calls, 2)
+        self.assertEqual(len(store.open_ids), 1)
+        self.assertEqual(store.answer_calls, 1)
+        self.assertNotIn("resume_command", ConstructorGraphState.__annotations__)
+
+    def test_no_apply_human_decision_node(self) -> None:
+        source = Path(
+            "agents/monthly_plan_constructor/langgraph_runtime.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("NODE_HUMAN_WAIT", source)
+        self.assertNotIn("apply_human_decision", source)
+        self.assertIn("apply_constructor_resume_command", source)
+        self.assertIn("interrupt(", source)
 
 
 if __name__ == "__main__":

@@ -1,9 +1,10 @@
 """
-Constructor Runtime v0.1 Increment 6–7 — Pure Python Lifecycle.
+Constructor Runtime v0.1 Increment 6–8 — Pure Python Lifecycle.
 
 Deterministic coordination of Increments 1–5 for ONE Constructor mission run.
-Not a separate agent. Not Streamlit. Not HITL. Not handoff.
+Not a separate agent. Not Streamlit. Not handoff.
 Increment 7 adds one-stage advance for LangGraph orchestration (business logic stays here).
+Increment 8 adds resume-only statuses; NORMAL ADVANCE != HUMAN RESUME.
 
 Does not reimplement scope/read/package/labor/exception business logic.
 Does not invent physical remainder / candidate classification (injected port).
@@ -68,6 +69,39 @@ STATUS_LABOR_RESOLVED = "LABOR_RESOLVED"
 STATUS_READY_FOR_HANDOFF = "READY_FOR_HANDOFF"
 STATUS_WAITING_FOR_HUMAN = "WAITING_FOR_HUMAN"
 STATUS_FAILED = "FAILED"
+STATUS_APPLYING_HUMAN_DECISION = "APPLYING_HUMAN_DECISION"
+STATUS_REVALIDATING_REALITY = "REVALIDATING_REALITY"
+
+COMPLETION_STATUSES = frozenset(
+    {
+        STATUS_READY_FOR_HANDOFF,
+        STATUS_FAILED,
+    }
+)
+
+PAUSE_STATUSES = frozenset(
+    {
+        STATUS_WAITING_FOR_HUMAN,
+    }
+)
+
+INVOCATION_STOP_STATUSES = frozenset(
+    {
+        STATUS_READY_FOR_HANDOFF,
+        STATUS_WAITING_FOR_HUMAN,
+        STATUS_FAILED,
+    }
+)
+
+# Backward-compatible alias: sync invocation stop set (Inc 6–7 TERMINAL semantics).
+TERMINAL_STATUSES = INVOCATION_STOP_STATUSES
+
+RESUME_ONLY_STATUSES = frozenset(
+    {
+        STATUS_APPLYING_HUMAN_DECISION,
+        STATUS_REVALIDATING_REALITY,
+    }
+)
 
 ACTIVE_STATUSES = frozenset(
     {
@@ -79,14 +113,8 @@ ACTIVE_STATUSES = frozenset(
         STATUS_READY_FOR_HANDOFF,
         STATUS_WAITING_FOR_HUMAN,
         STATUS_FAILED,
-    }
-)
-
-TERMINAL_STATUSES = frozenset(
-    {
-        STATUS_READY_FOR_HANDOFF,
-        STATUS_WAITING_FOR_HUMAN,
-        STATUS_FAILED,
+        STATUS_APPLYING_HUMAN_DECISION,
+        STATUS_REVALIDATING_REALITY,
     }
 )
 
@@ -111,7 +139,18 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
         }
     ),
     STATUS_READY_FOR_HANDOFF: frozenset(),
-    STATUS_WAITING_FOR_HUMAN: frozenset(),
+    # Resume path only — normal advance must still refuse WAIT.
+    STATUS_WAITING_FOR_HUMAN: frozenset({STATUS_APPLYING_HUMAN_DECISION}),
+    STATUS_APPLYING_HUMAN_DECISION: frozenset(
+        {STATUS_REVALIDATING_REALITY, STATUS_FAILED}
+    ),
+    STATUS_REVALIDATING_REALITY: frozenset(
+        {
+            STATUS_REALITY_LOADED,
+            STATUS_WAITING_FOR_HUMAN,
+            STATUS_FAILED,
+        }
+    ),
     STATUS_FAILED: frozenset(),
 }
 
@@ -252,12 +291,25 @@ def _assert_status_invariants(state: ConstructorLifecycleState) -> None:
         STATUS_PACKAGE_BUILT,
         STATUS_LABOR_RESOLVED,
         STATUS_READY_FOR_HANDOFF,
+        STATUS_REVALIDATING_REALITY,
     }:
         if state.scope is None:
             raise LifecycleError(
                 CODE_LIFECYCLE_CONTRACT_BLOCKER,
                 f"scope required for status {status}",
             )
+    if status == STATUS_REVALIDATING_REALITY:
+        # After resume invalidate: no current reality-derived truth.
+        if (
+            state.reality_read is not None
+            or state.package is not None
+            or state.labor_resolutions is not None
+        ):
+            raise LifecycleError(
+                CODE_LIFECYCLE_CONTRACT_BLOCKER,
+                "REVALIDATING_REALITY must not carry stale reality-derived artifacts",
+            )
+        return
     if status in {
         STATUS_REALITY_LOADED,
         STATUS_PACKAGE_BUILT,
@@ -348,11 +400,12 @@ def _append_transition(
         note=_optional_text(note),
     )
     new_updated = stamp if stamp >= state.updated_at else state.updated_at
+    prior_transitions = tuple(state.transitions)
     new_state = replace(
         state,
         status=to_status,
         updated_at=new_updated,
-        transitions=state.transitions + (transition,),
+        transitions=prior_transitions + (transition,),
         **updates,
     )
     _assert_status_invariants(new_state)
@@ -486,7 +539,8 @@ def advance_constructor_lifecycle(
     """
     Advance authoritative ConstructorLifecycleState by exactly one professional stage.
 
-    Terminal statuses cannot be advanced (Increment 8 owns durable resume).
+    Invocation-stop and resume-only statuses cannot be advanced here.
+    HUMAN RESUME uses dedicated hitl_resume helpers — not this function.
     Domain failures may transition directly to WAITING_FOR_HUMAN / FAILED.
     """
     if state is None or not isinstance(state, ConstructorLifecycleState):
@@ -508,10 +562,15 @@ def advance_constructor_lifecycle(
     stamp = _require_aware_utc(now or _utc_now(), "now")
     status = state.status
 
-    if status in TERMINAL_STATUSES:
+    if status in INVOCATION_STOP_STATUSES:
         raise LifecycleError(
             CODE_LIFECYCLE_CONTRACT_BLOCKER,
             f"cannot advance terminal status {status}",
+        )
+    if status in RESUME_ONLY_STATUSES:
+        raise LifecycleError(
+            CODE_LIFECYCLE_CONTRACT_BLOCKER,
+            f"cannot advance resume-only status {status}; use dedicated resume path",
         )
 
     if status == STATUS_CREATED:

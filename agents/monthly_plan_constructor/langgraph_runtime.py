@@ -15,10 +15,20 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional, TypedDict
 
+from langgraph.config import get_config
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from agents.monthly_plan_constructor.hitl_contracts import ConstructorHitlStore
+from agents.monthly_plan_constructor.durable_checkpoint import (
+    require_durable_resume_checkpoint,
+    resolve_current_checkpoint_id,
+)
+from agents.monthly_plan_constructor.hitl_contracts import (
+    CODE_HITL_CONTRACT_BLOCKER,
+    ConstructorHitlStore,
+    HitlContractError,
+    coerce_resume_command,
+)
 from agents.monthly_plan_constructor.hitl_resume import (
     apply_constructor_resume_command,
     build_decision_request_from_lifecycle,
@@ -222,20 +232,39 @@ def build_constructor_langgraph(
             # MUST be idempotent — LangGraph replays code before interrupt().
             hitl_store.upsert_open_request(request)
         resume_payload = interrupt(request)
+        resume = coerce_resume_command(resume_payload)
+        cfg = get_config()
+        configurable = cfg.get("configurable") or {}
+        thread_id = str(configurable.get("thread_id") or "").strip()
+        if thread_id != lifecycle.run_id:
+            raise HitlContractError(
+                CODE_HITL_CONTRACT_BLOCKER,
+                "thread_id must equal run_id",
+            )
+        runtime_ckpt = configurable.get("checkpoint_id")
+        resolved = resolve_current_checkpoint_id(
+            checkpointer,
+            thread_id=thread_id,
+            checkpoint_id=str(runtime_ckpt) if runtime_ckpt else None,
+        )
+        require_durable_resume_checkpoint(
+            expected_checkpoint_id=resume.expected_checkpoint_id,
+            current_checkpoint_id=resolved,
+            context=context,
+        )
         updated = apply_constructor_resume_command(
             lifecycle,
-            resume_payload,
+            resume,
             context=context,
             project_code=project_code,
             month_key=month_key,
+            checkpoint_id=resolved,
             now=now,
         )
         if hitl_store is not None:
-            from agents.monthly_plan_constructor.hitl_contracts import coerce_resume_command
-
             hitl_store.record_answer(
                 interrupt_id=request.interrupt_id,
-                command=coerce_resume_command(resume_payload),
+                command=resume,
             )
         return {"lifecycle": updated}
 

@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import importlib
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from importlib.metadata import version
 from pathlib import Path
 from typing import Sequence
+from unittest.mock import patch
 
 from agents.monthly_plan_constructor.candidate_package import (
     LABOR_PROVISIONAL,
@@ -631,6 +632,8 @@ class TestIncrement8HitlLangGraph(unittest.TestCase):
 
         req = build_decision_request_from_lifecycle(out1["lifecycle"])
         self.assertEqual(req.interrupt_id, interrupt_value.interrupt_id)
+        snap = app.get_state(config)
+        checkpoint_id = snap.config["configurable"]["checkpoint_id"]
         cmd = build_resume_command(
             decision_id="dec-graph-1",
             interrupt_id=req.interrupt_id,
@@ -639,6 +642,7 @@ class TestIncrement8HitlLangGraph(unittest.TestCase):
             decision=DECISION_CLARIFY_SCOPE,
             actor_id="human-1",
             parameters={"facility_scope": [FACILITY_TARGET]},
+            expected_checkpoint_id=checkpoint_id,
             submitted_at=FIXED_AT,
         )
         out2 = app.invoke(Command(resume=cmd), config)
@@ -650,6 +654,194 @@ class TestIncrement8HitlLangGraph(unittest.TestCase):
         self.assertEqual(len(store.open_ids), 1)
         self.assertEqual(store.answer_calls, 1)
         self.assertNotIn("resume_command", ConstructorGraphState.__annotations__)
+
+    def test_wrong_thread_id_fail_closed(self) -> None:
+        """Resume into human_wait with configurable.thread_id != lifecycle.run_id.
+
+        LangGraph keys checkpoints by thread_id, so both the WAIT invoke and
+        the Command resume must share that mismatched thread_id; otherwise
+        interrupt() never returns and the product gate is not reached.
+        """
+        from langgraph.checkpoint.memory import InMemorySaver
+        from langgraph.types import Command
+
+        from agents.monthly_plan_constructor import langgraph_runtime as lg_runtime
+        from agents.monthly_plan_constructor.durable_checkpoint import (
+            build_constructor_jsonplus_serializer,
+        )
+        from agents.monthly_plan_constructor.hitl_contracts import (
+            CODE_HITL_CONTRACT_BLOCKER,
+            DECISION_CLARIFY_SCOPE,
+            HitlContractError,
+            build_resume_command,
+        )
+        from agents.monthly_plan_constructor.hitl_resume import (
+            build_decision_request_from_lifecycle,
+        )
+
+        run_id = "run-inc8-wrong-thread"
+        wrong_thread = "thread-not-the-run-id"
+        ctx = issue_read_only_agent_context(
+            agent_code="MONTHLY_PLAN_CONSTRUCTOR",
+            project_code=PROJECT,
+            run_id=run_id,
+        )
+        store = FakeHitlStore()
+        reader = RecordingReader()
+        app = build_constructor_langgraph(
+            context=ctx,
+            project_code=PROJECT,
+            month_key=MONTH,
+            facility_scope=["ALL", FACILITY_TARGET],
+            assemble_candidates=StubAssembler(),
+            scope_reader=reader,
+            now=FIXED_AT,
+            checkpointer=InMemorySaver(serde=build_constructor_jsonplus_serializer()),
+            hitl_store=store,
+        )
+        initial = create_lifecycle_state(
+            mission_id=MISSION_ID,
+            run_id=run_id,
+            authorization_id=ctx.authorization_id,
+            created_at=FIXED_AT,
+        )
+        config = {"configurable": {"thread_id": wrong_thread}}
+        out1 = app.invoke({"lifecycle": initial}, config)
+        self.assertEqual(out1["lifecycle"].status, STATUS_WAITING_FOR_HUMAN)
+        reads_after_wait = reader.calls
+        answers_after_wait = store.answer_calls
+
+        req = build_decision_request_from_lifecycle(out1["lifecycle"])
+        snap = app.get_state(config)
+        checkpoint_id = snap.config["configurable"]["checkpoint_id"]
+        cmd = build_resume_command(
+            decision_id="dec-wrong-thread",
+            interrupt_id=req.interrupt_id,
+            run_id=run_id,
+            mission_id=MISSION_ID,
+            decision=DECISION_CLARIFY_SCOPE,
+            actor_id="human-1",
+            parameters={"facility_scope": [FACILITY_TARGET]},
+            expected_checkpoint_id=checkpoint_id,
+            submitted_at=FIXED_AT,
+        )
+        with patch.object(
+            lg_runtime,
+            "apply_constructor_resume_command",
+            wraps=lg_runtime.apply_constructor_resume_command,
+        ) as apply_spy:
+            with self.assertRaises(HitlContractError) as raised:
+                app.invoke(Command(resume=cmd), config)
+        self.assertEqual(raised.exception.code, CODE_HITL_CONTRACT_BLOCKER)
+        self.assertIn("thread_id must equal run_id", str(raised.exception))
+        self.assertEqual(apply_spy.call_count, 0)
+        self.assertEqual(store.answer_calls, answers_after_wait)
+        self.assertEqual(reader.calls, reads_after_wait)
+        held = app.get_state(config)
+        self.assertEqual(held.values["lifecycle"].status, STATUS_WAITING_FOR_HUMAN)
+
+    def test_expired_context_fail_closed_on_resume(self) -> None:
+        """Expired context can reach WAIT (bind_mission AMBIGUOUS_SCOPE).
+
+        AgentExecutionContext is frozen. Secure-read expiry is not consulted
+        until load_reality, so an already-expired context still interrupts.
+        Resume must fail closed at require_durable_resume_checkpoint.
+        """
+        from langgraph.checkpoint.memory import InMemorySaver
+        from langgraph.types import Command
+
+        from agents.monthly_plan_constructor import langgraph_runtime as lg_runtime
+        from agents.monthly_plan_constructor.durable_checkpoint import (
+            build_constructor_jsonplus_serializer,
+        )
+        from agents.monthly_plan_constructor.hitl_contracts import (
+            DECISION_CLARIFY_SCOPE,
+            build_resume_command,
+        )
+        from agents.monthly_plan_constructor.hitl_resume import (
+            build_decision_request_from_lifecycle,
+        )
+        from agents.monthly_plan_constructor.lifecycle import (
+            CODE_LIFECYCLE_CONTRACT_BLOCKER,
+        )
+
+        run_id = "run-inc8-expired-ctx"
+        live = issue_read_only_agent_context(
+            agent_code="MONTHLY_PLAN_CONSTRUCTOR",
+            project_code=PROJECT,
+            run_id=run_id,
+        )
+        expired = AgentExecutionContext(
+            actor_id=live.actor_id,
+            actor_type=live.actor_type,
+            agent_code=live.agent_code,
+            agent_version=live.agent_version,
+            run_id=live.run_id,
+            project_code=live.project_code,
+            allowed_tools=live.allowed_tools,
+            permission_tier=live.permission_tier,
+            authorization_id=live.authorization_id,
+            issued_at=live.issued_at,
+            expires_at=(
+                datetime.now(timezone.utc) - timedelta(seconds=5)
+            ).isoformat(),
+            security_policy_version=live.security_policy_version,
+            write_allowed=False,
+        )
+        self.assertTrue(expired.is_expired())
+        store = FakeHitlStore()
+        reader = RecordingReader()
+        app = build_constructor_langgraph(
+            context=expired,
+            project_code=PROJECT,
+            month_key=MONTH,
+            facility_scope=["ALL", FACILITY_TARGET],
+            assemble_candidates=StubAssembler(),
+            scope_reader=reader,
+            now=FIXED_AT,
+            checkpointer=InMemorySaver(serde=build_constructor_jsonplus_serializer()),
+            hitl_store=store,
+        )
+        initial = create_lifecycle_state(
+            mission_id=MISSION_ID,
+            run_id=run_id,
+            authorization_id=expired.authorization_id,
+            created_at=FIXED_AT,
+        )
+        config = {"configurable": {"thread_id": run_id}}
+        out1 = app.invoke({"lifecycle": initial}, config)
+        self.assertEqual(out1["lifecycle"].status, STATUS_WAITING_FOR_HUMAN)
+        reads_after_wait = reader.calls
+        answers_after_wait = store.answer_calls
+
+        req = build_decision_request_from_lifecycle(out1["lifecycle"])
+        snap = app.get_state(config)
+        checkpoint_id = snap.config["configurable"]["checkpoint_id"]
+        cmd = build_resume_command(
+            decision_id="dec-expired-ctx",
+            interrupt_id=req.interrupt_id,
+            run_id=run_id,
+            mission_id=MISSION_ID,
+            decision=DECISION_CLARIFY_SCOPE,
+            actor_id="human-1",
+            parameters={"facility_scope": [FACILITY_TARGET]},
+            expected_checkpoint_id=checkpoint_id,
+            submitted_at=FIXED_AT,
+        )
+        with patch.object(
+            lg_runtime,
+            "apply_constructor_resume_command",
+            wraps=lg_runtime.apply_constructor_resume_command,
+        ) as apply_spy:
+            with self.assertRaises(LifecycleError) as raised:
+                app.invoke(Command(resume=cmd), config)
+        self.assertEqual(raised.exception.code, CODE_LIFECYCLE_CONTRACT_BLOCKER)
+        self.assertIn("expired", str(raised.exception).lower())
+        self.assertEqual(apply_spy.call_count, 0)
+        self.assertEqual(store.answer_calls, answers_after_wait)
+        self.assertEqual(reader.calls, reads_after_wait)
+        held = app.get_state(config)
+        self.assertEqual(held.values["lifecycle"].status, STATUS_WAITING_FOR_HUMAN)
 
     def test_no_apply_human_decision_node(self) -> None:
         source = Path(

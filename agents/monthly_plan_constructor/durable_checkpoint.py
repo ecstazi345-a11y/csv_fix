@@ -13,6 +13,16 @@ from typing import Any, Optional, Sequence, Tuple
 
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
+from agents.monthly_plan_constructor.hitl_contracts import (
+    CODE_HITL_CONTRACT_BLOCKER,
+    HitlContractError,
+)
+from agents.monthly_plan_constructor.lifecycle import (
+    CODE_LIFECYCLE_CONTRACT_BLOCKER,
+    LifecycleError,
+)
+from security.agent_execution_context import AgentExecutionContext
+
 # Explicit Constructor artifact allowlist for msgpack deserialization.
 # Do not use wildcard / True in production Constructor checkpointers.
 ConstructorMsgpackAllowEntry = Tuple[str, str]
@@ -100,3 +110,98 @@ def build_postgres_checkpointer(
         pipe=pipe,
         serde=serde or build_constructor_jsonplus_serializer(),
     )
+
+
+def resolve_current_checkpoint_id(
+    checkpointer: Any,
+    *,
+    thread_id: str,
+    checkpoint_id: Optional[str] = None,
+    checkpoint_ns: str = "",
+) -> str:
+    """
+    Resolve the opaque current checkpoint_id from an already-open checkpointer.
+
+    thread_id must equal run_id. Does not open connections or call setup().
+    """
+    if checkpointer is None:
+        raise HitlContractError(
+            CODE_HITL_CONTRACT_BLOCKER,
+            "checkpointer is required to resolve checkpoint_id",
+        )
+    tid = str(thread_id or "").strip()
+    if not tid:
+        raise HitlContractError(
+            CODE_HITL_CONTRACT_BLOCKER,
+            "thread_id is required to resolve checkpoint_id",
+        )
+    configurable: dict[str, Any] = {
+        "thread_id": tid,
+        "checkpoint_ns": checkpoint_ns,
+    }
+    if checkpoint_id is not None and str(checkpoint_id).strip():
+        configurable["checkpoint_id"] = str(checkpoint_id).strip()
+    tup = checkpointer.get_tuple({"configurable": configurable})
+    if tup is None:
+        raise HitlContractError(
+            CODE_HITL_CONTRACT_BLOCKER,
+            "durable checkpoint not found",
+        )
+    found = None
+    cfg = getattr(tup, "config", None)
+    if isinstance(cfg, dict):
+        found = (cfg.get("configurable") or {}).get("checkpoint_id")
+    if found is None or not str(found).strip():
+        raise HitlContractError(
+            CODE_HITL_CONTRACT_BLOCKER,
+            "checkpoint_id missing from runtime tuple",
+        )
+    return str(found).strip()
+
+
+def require_durable_resume_checkpoint(
+    *,
+    expected_checkpoint_id: Optional[str],
+    current_checkpoint_id: Optional[str],
+    context: Any,
+) -> str:
+    """
+    Fail-closed durable resume gate.
+
+    expected_checkpoint_id is mandatory at the durability boundary.
+    current_checkpoint_id must already be resolved from PostgreSQL/runtime.
+    context must be a live AgentExecutionContext — never deserialized from
+    a checkpoint.
+    """
+    if context is None or not isinstance(context, AgentExecutionContext):
+        raise LifecycleError(
+            CODE_LIFECYCLE_CONTRACT_BLOCKER,
+            "AgentExecutionContext is required for durable resume",
+        )
+    if context.is_expired():
+        raise LifecycleError(
+            CODE_LIFECYCLE_CONTRACT_BLOCKER,
+            "AgentExecutionContext expired; revalidation required",
+        )
+    expected = (
+        str(expected_checkpoint_id).strip() if expected_checkpoint_id is not None else ""
+    )
+    if not expected:
+        raise HitlContractError(
+            CODE_HITL_CONTRACT_BLOCKER,
+            "expected_checkpoint_id is required for durable resume",
+        )
+    current = (
+        str(current_checkpoint_id).strip() if current_checkpoint_id is not None else ""
+    )
+    if not current:
+        raise HitlContractError(
+            CODE_HITL_CONTRACT_BLOCKER,
+            "current checkpoint_id could not be resolved",
+        )
+    if expected != current:
+        raise HitlContractError(
+            CODE_HITL_CONTRACT_BLOCKER,
+            "expected_checkpoint_id mismatch",
+        )
+    return current

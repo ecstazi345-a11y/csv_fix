@@ -12,10 +12,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
-- **Progress:** **7 / 10**
-- **DONE:** [1] Mission Scope · [2] Candidate Package · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime
-- **NEXT:** [8] Durable HITL / Resume
-- **Recovery HEAD:** `14945a14e14a700f9bd2080bada2168e4d55f3c3` (LOCAL == REMOTE; product code; docs checkpoint pending commit)
+- **Progress:** **8 / 10**
+- **DONE:** [1] Mission Scope · [2] Candidate Package · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume
+- **NEXT:** [9] Structured Handoff
+- **Recovery code HEAD:** `78ff86d546e53c12a60c8f5955fb5291c964aa27` (Increment 8 product code on origin/main)
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -1649,3 +1649,157 @@ Increment 8 — Durable HITL / Resume.
 Добавит durable pause/resume вокруг уже существующих named nodes и `WAITING_FOR_HUMAN`, без переписывания business laws Increments 1–7.
 
 Increment 8 **не** реализован в этом checkpoint.
+
+============================================================
+CHECKPOINT — 2026-08-30 — CONSTRUCTOR AGENT — INCREMENT 8
+============================================================
+
+PROGRAM:
+Monthly Planning Agentic Orchestration
+
+CURRENT AGENT:
+MONTHLY_PLAN_CONSTRUCTOR<br>
+Агент формирования кандидатного состава месячного плана
+
+CURRENT INCREMENT:
+[8] Durable HITL / Resume
+
+STATUS:
+DONE
+
+------------------------------------------------------------
+WHAT WE BUILT
+------------------------------------------------------------
+
+- Durable Human-in-the-Loop / Resume for Constructor Agent.
+- LangGraph `PostgresSaver` is the runtime checkpoint plane (not InMemorySaver as the durability proof).
+- Law: `thread_id == run_id`.
+- Mandatory `expected_checkpoint_id` gate at the durable resume boundary.
+- Missing or stale `expected_checkpoint_id` → fail closed.
+- Live `AgentExecutionContext` is required on resume; expired context → fail closed.
+- Stale `reality_read` / package / labor are invalidated on clarify resume.
+- After resume, Constructor performs a **fresh** secure reality read. Checkpoint is not treated as current project reality.
+- Process A / Process B restart-survival is proven with a real PostgreSQL subprocess boundary.
+- Human answer is recorded only after the durable security gate.
+- Duplicate resume / OPEN request / answer idempotency verified.
+- Re-WAIT receives a new deterministic EOS interrupt identity.
+- Serializer: `pickle_fallback=False`.
+- Checkpoint payload does not contain secrets, `AgentExecutionContext`, DB clients, callables, or DataFrame.
+
+------------------------------------------------------------
+WHAT THIS GIVES THE SYSTEM
+------------------------------------------------------------
+
+Constructor Agent can now safely stop at `WAITING_FOR_HUMAN`, survive termination of the Python process, and continue in a new process from a durable PostgreSQL checkpoint — without trusting stale pre-WAIT project reality.
+
+Authorization is reconstructed with a fresh trusted `AgentExecutionContext`. Resume may clarify or narrow authorized scope; it must not expand it.
+
+------------------------------------------------------------
+WHERE WE ARE IN THE AGENT ROADMAP
+------------------------------------------------------------
+
+Constructor Agent Runtime v0.1 (одна роль, десять инкрементов — не десять агентов):
+
+[1] Mission Scope Contract — **DONE**<br>
+[2] Candidate Package Artifact — **DONE**<br>
+[3] Secure Read Tool Adapters — **DONE**<br>
+[4] Labor Norm Resolver — **DONE**<br>
+[5] Exception Engine — **DONE**<br>
+[6] Pure Python Lifecycle — **DONE**<br>
+[7] LangGraph Runtime — **DONE**<br>
+[8] Durable HITL / Resume — **DONE** (this checkpoint)<br>
+[9] Structured Handoff — **NEXT**<br>
+[10] Agent Control Room / Observability — **NOT STARTED**
+
+Progress after this documentation checkpoint is committed: **8 / 10**
+
+------------------------------------------------------------
+WHERE WE ARE IN THE MONTHLY PLANNING PROGRAM
+------------------------------------------------------------
+
+MONTHLY PLAN ORCHESTRATOR<br>
+→ **1. CONSTRUCTOR AGENT — CURRENT (increments 1–8 of 10)**<br>
+→ 2. ADMISSION AGENT — not started<br>
+→ 3. CONSTRAINT AGENT — not started<br>
+→ 4. RESOURCE CAPACITY AGENT — not started<br>
+→ 5. ECONOMIC EVALUATION AGENT — not started<br>
+→ 6. MANAGEMENT DECISION AGENT — not started<br>
+→ HUMAN DECISION GATE<br>
+→ ПАСПОРТ МЕСЯЧНОГО ПРОИЗВОДСТВЕННОГО ОБЯЗАТЕЛЬСТВА
+
+------------------------------------------------------------
+TEST EVIDENCE
+------------------------------------------------------------
+
+FULL CONSTRUCTOR SUITE: **287 PASS**<br>
+FAILED: 0<br>
+ERRORS: 0<br>
+SKIPPED: 0
+
+Durable restart (genuine subprocess + PostgreSQL): **14 PASS**
+
+PY_COMPILE: PASS<br>
+PIP CHECK: PASS<br>
+SUPABASE USED: NO<br>
+PRODUCT DATA CHANGED: NO<br>
+REAL SECRETS READ: NO
+
+------------------------------------------------------------
+TEST INFRASTRUCTURE
+------------------------------------------------------------
+
+A disposable local PostgreSQL Docker container (`execution-os-hitl-test-pg`, localhost bind, tmpfs, synthetic `eos_test` credentials) was used only for the durability gate and was removed after tests.
+
+No production database. No project `.env`. No Supabase.
+
+------------------------------------------------------------
+RELEASE
+------------------------------------------------------------
+
+CODE COMMIT: `78ff86d546e53c12a60c8f5955fb5291c964aa27`<br>
+MESSAGE: `feat(agents): complete constructor durable hitl resume`
+
+origin/main: `78ff86d546e53c12a60c8f5955fb5291c964aa27`
+
+------------------------------------------------------------
+FILES (CODE RELEASE — already on origin/main)
+------------------------------------------------------------
+
+MODIFIED:
+
+- `agents/monthly_plan_constructor/durable_checkpoint.py`
+- `agents/monthly_plan_constructor/langgraph_runtime.py`
+- `tests/test_monthly_plan_constructor_langgraph_runtime.py`
+
+NEW:
+
+- `tests/test_monthly_plan_constructor_durable_checkpoint.py`
+- `tests/test_monthly_plan_constructor_durable_restart.py`
+
+FILE COUNT IN PRODUCT COMMIT: 5
+
+This documentation file is **not** part of `78ff86d`.
+
+------------------------------------------------------------
+WHAT IS NOT BUILT YET
+------------------------------------------------------------
+
+- Structured Handoff (Increment 9) — **NEXT / NOT YET BUILT**
+- Agent Control Room / Observability (Increment 10)
+- Production HITL/audit tables / RLS / product Postgres migrations
+- Wiring into Page10B / production writes
+- Admission and later professional agents
+
+------------------------------------------------------------
+ONE-LINE SUMMARY
+------------------------------------------------------------
+
+На этом этапе Constructor получил durable HITL/resume: WAIT переживает гибель Python-процесса, checkpoint живёт в PostgreSQL, resume требует живой authorization и свежей reality, а не восстановленной памяти процесса.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+Increment 9 — Structured Handoff.
+
+Increment 9 **не** реализован в этом checkpoint.

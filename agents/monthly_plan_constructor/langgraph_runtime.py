@@ -1,12 +1,14 @@
 """
-Constructor Runtime v0.1 Increment 7–8 — LangGraph orchestration.
+Constructor Runtime v0.1 Increment 7–9.3 — LangGraph orchestration.
 
 Thin named-node graph over Pure Python one-stage lifecycle advance.
 Increment 8 adds optional durable checkpointer + human_wait interrupt path.
-Not a second business implementation. Not handoff. Not Control Room.
+Increment 9.3 adds optional persist_handoff after READY_FOR_HANDOFF.
+Not a second business implementation. Not Control Room.
 
 NORMAL ADVANCE != HUMAN RESUME.
 FUNCTION != GRAPH NODE for apply_constructor_resume_command.
+READY_FOR_HANDOFF remains professional eligibility; persist does not change it.
 """
 
 from __future__ import annotations
@@ -22,6 +24,14 @@ from langgraph.types import interrupt
 from agents.monthly_plan_constructor.durable_checkpoint import (
     require_durable_resume_checkpoint,
     resolve_current_checkpoint_id,
+)
+from agents.monthly_plan_constructor.handoff_contracts import (
+    DEFAULT_SECURITY_POLICY_VERSION,
+    build_constructor_handoff,
+)
+from agents.monthly_plan_constructor.handoff_store import (
+    ConstructorHandoffStore,
+    persist_constructor_handoff,
 )
 from agents.monthly_plan_constructor.hitl_contracts import (
     CODE_HITL_CONTRACT_BLOCKER,
@@ -41,6 +51,7 @@ from agents.monthly_plan_constructor.lifecycle import (
     STATUS_LABOR_RESOLVED,
     STATUS_MISSION_BOUND,
     STATUS_PACKAGE_BUILT,
+    STATUS_READY_FOR_HANDOFF,
     STATUS_REALITY_LOADED,
     STATUS_REVALIDATING_REALITY,
     STATUS_WAITING_FOR_HUMAN,
@@ -63,6 +74,7 @@ NODE_RESOLVE_LABOR = "resolve_labor"
 NODE_EVALUATE_EXCEPTIONS = "evaluate_exceptions"
 NODE_HUMAN_WAIT = "human_wait"
 NODE_REVALIDATE_REALITY = "revalidate_reality"
+NODE_PERSIST_HANDOFF = "persist_handoff"
 
 
 class ConstructorGraphState(TypedDict):
@@ -100,7 +112,12 @@ def _require_status(
     return lifecycle
 
 
-def _route_by_status(state: ConstructorGraphState, *, hitl_enabled: bool) -> str:
+def _route_by_status(
+    state: ConstructorGraphState,
+    *,
+    hitl_enabled: bool,
+    handoff_enabled: bool,
+) -> str:
     """Route using authoritative lifecycle.status only."""
     lifecycle = state.get("lifecycle")  # type: ignore[assignment]
     if lifecycle is None or not isinstance(lifecycle, ConstructorLifecycleState):
@@ -126,6 +143,11 @@ def _route_by_status(state: ConstructorGraphState, *, hitl_enabled: bool) -> str
                 "REVALIDATING_REALITY requires HITL-enabled graph",
             )
         return NODE_REVALIDATE_REALITY
+    # READY is an invocation-stop status; persist must win before the general END map.
+    if status == STATUS_READY_FOR_HANDOFF:
+        if handoff_enabled:
+            return NODE_PERSIST_HANDOFF
+        return END
     if status in INVOCATION_STOP_STATUSES:
         return END
     raise LifecycleError(
@@ -150,6 +172,9 @@ def build_constructor_langgraph(
     now: Optional[datetime] = None,
     checkpointer: Any = None,
     hitl_store: Optional[ConstructorHitlStore] = None,
+    handoff_store: Optional[ConstructorHandoffStore] = None,
+    security_policy_version: Optional[str] = None,
+    orchestration_run_id: Optional[str] = None,
 ):
     """
     Build compiled Constructor LangGraph with dependencies closed over at build time.
@@ -157,6 +182,8 @@ def build_constructor_langgraph(
     Dependencies stay outside graph business state.
     checkpointer is optional; when omitted, WAIT ends the invocation (Inc 7 compat).
     When provided, WAIT routes to human_wait → interrupt().
+    handoff_store is optional; when omitted, READY ends the invocation (Inc 7–8 compat).
+    When provided, READY routes to persist_handoff → END without changing lifecycle.status.
     """
     if context is None or not isinstance(context, AgentExecutionContext):
         raise LifecycleError(
@@ -170,6 +197,12 @@ def build_constructor_langgraph(
         )
 
     hitl_enabled = checkpointer is not None
+    handoff_enabled = handoff_store is not None
+    resolved_security_policy_version = (
+        DEFAULT_SECURITY_POLICY_VERSION
+        if security_policy_version is None
+        else security_policy_version
+    )
 
     def _advance(lifecycle: ConstructorLifecycleState) -> ConstructorLifecycleState:
         return advance_constructor_lifecycle(
@@ -281,8 +314,30 @@ def build_constructor_langgraph(
             )
         }
 
+    def persist_handoff(state: ConstructorGraphState) -> ConstructorGraphState:
+        lifecycle = _require_status(
+            state, STATUS_READY_FOR_HANDOFF, node_name=NODE_PERSIST_HANDOFF
+        )
+        if handoff_store is None:
+            raise LifecycleError(
+                CODE_LIFECYCLE_CONTRACT_BLOCKER,
+                "persist_handoff requires ConstructorHandoffStore",
+            )
+        artifact = build_constructor_handoff(
+            lifecycle,
+            security_policy_version=resolved_security_policy_version,
+            orchestration_run_id=orchestration_run_id,
+            created_at=lifecycle.updated_at,
+        )
+        persist_constructor_handoff(store=handoff_store, handoff=artifact)
+        return {"lifecycle": lifecycle}
+
     def route(state: ConstructorGraphState) -> str:
-        return _route_by_status(state, hitl_enabled=hitl_enabled)
+        return _route_by_status(
+            state,
+            hitl_enabled=hitl_enabled,
+            handoff_enabled=handoff_enabled,
+        )
 
     graph = StateGraph(ConstructorGraphState)
     graph.add_node(NODE_BIND_MISSION, bind_mission)
@@ -293,6 +348,8 @@ def build_constructor_langgraph(
     if hitl_enabled:
         graph.add_node(NODE_HUMAN_WAIT, human_wait)
         graph.add_node(NODE_REVALIDATE_REALITY, revalidate_reality)
+    if handoff_enabled:
+        graph.add_node(NODE_PERSIST_HANDOFF, persist_handoff)
 
     hitl_path = {
         NODE_LOAD_REALITY: NODE_LOAD_REALITY,
@@ -311,6 +368,8 @@ def build_constructor_langgraph(
         END: END,
     }
     path_map = hitl_path if hitl_enabled else compat_path
+    if handoff_enabled:
+        path_map = {**path_map, NODE_PERSIST_HANDOFF: NODE_PERSIST_HANDOFF}
 
     graph.add_edge(START, NODE_BIND_MISSION)
     graph.add_conditional_edges(NODE_BIND_MISSION, route, path_map)
@@ -321,6 +380,9 @@ def build_constructor_langgraph(
     if hitl_enabled:
         graph.add_conditional_edges(NODE_HUMAN_WAIT, route, path_map)
         graph.add_conditional_edges(NODE_REVALIDATE_REALITY, route, path_map)
+    if handoff_enabled:
+        # persist_handoff leaves READY unchanged — a conditional edge would loop.
+        graph.add_edge(NODE_PERSIST_HANDOFF, END)
 
     if checkpointer is not None:
         return graph.compile(checkpointer=checkpointer)
@@ -345,11 +407,15 @@ def run_constructor_langgraph(
     now: Optional[datetime] = None,
     checkpointer: Any = None,
     hitl_store: Optional[ConstructorHitlStore] = None,
+    handoff_store: Optional[ConstructorHandoffStore] = None,
+    security_policy_version: Optional[str] = None,
+    orchestration_run_id: Optional[str] = None,
 ) -> ConstructorLifecycleState:
     """
     Invoke Constructor LangGraph to an invocation-stop ConstructorLifecycleState.
 
-    READY_FOR_HANDOFF is eligibility only — no handoff execution.
+    READY_FOR_HANDOFF is eligibility only. Optional handoff_store persists the
+    structured artifact via Increment 9.2; lifecycle.status is not changed.
     Without checkpointer, WAITING_FOR_HUMAN ends the run (Inc 7 compatible).
     With checkpointer, WAIT interrupts inside human_wait (caller resumes via Command).
     """
@@ -386,6 +452,9 @@ def run_constructor_langgraph(
         now=initial.created_at,
         checkpointer=checkpointer,
         hitl_store=hitl_store,
+        handoff_store=handoff_store,
+        security_policy_version=security_policy_version,
+        orchestration_run_id=orchestration_run_id,
     )
     invoke_kwargs: dict[str, Any] = {}
     if checkpointer is not None:

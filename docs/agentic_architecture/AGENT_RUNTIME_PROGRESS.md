@@ -12,10 +12,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
-- **Progress:** **8 / 10**
-- **DONE:** [1] Mission Scope · [2] Candidate Package · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume
-- **NEXT:** [9] Structured Handoff
-- **Recovery code HEAD:** `78ff86d546e53c12a60c8f5955fb5291c964aa27` (Increment 8 product code on origin/main)
+- **Progress:** **9 / 10**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff
+- **NEXT:** [10] Agent Control Room / Observability
+- **Recovery code HEAD:** `2cfde3a0c4bc8afdf3e0781833e8f5e254a07448` (Increment 9 code on `wip/increment-9-structured-handoff`)
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -1803,3 +1803,248 @@ NEXT
 Increment 9 — Structured Handoff.
 
 Increment 9 **не** реализован в этом checkpoint.
+
+============================================================
+CHECKPOINT — 2026-08-31 — CONSTRUCTOR AGENT — INCREMENT 9
+============================================================
+
+PROGRAM:
+Monthly Planning Agentic Orchestration
+
+CURRENT AGENT:
+MONTHLY_PLAN_CONSTRUCTOR<br>
+Агент формирования кандидатного состава месячного плана
+
+CURRENT INCREMENT:
+[9] Structured Handoff
+
+STATUS:
+DONE
+
+------------------------------------------------------------
+WHAT WE BUILT
+------------------------------------------------------------
+
+Increment 9.1 — Structured Handoff Contract<br>
+Commit: `4007fee6730cd07c2c1fc80b2965dff84e96636d`
+
+- frozen `ConstructorHandoff`
+- deterministic `handoff_id` (`sha256` of schema|type|run|package_id|snapshot_id; `created_at` is not in the id)
+- explicit source/target role (`MONTHLY_PLAN_CONSTRUCTOR` → `MONTHLY_PLAN_ADMISSION_AGENT`)
+- `CandidatePackageReference`
+- `snapshot_id`
+- bounded `candidate_ids` (`MAX_CANDIDATE_IDS=1024`, `MAX_CANDIDATE_ID_LENGTH=128`, fail closed, no truncate)
+- exceptions / labor summaries
+- provenance (`agent_version`, `security_policy_version`)
+- fail-closed consistency gates (READY status, package/reality/scope equality, blocking forbid)
+
+Increment 9.2 — Store Protocol + Idempotency<br>
+Commit: `91fe1bdc9200bce5ccdeabdf0ae4c93bf57f23cd`
+
+- `ConstructorHandoffStore`
+- `get` + atomic `put_if_absent`
+- `CREATED`
+- `IDEMPOTENT_REPLAY`
+- immutable payload
+- same id + different payload → `HANDOFF_IMMUTABILITY_CONFLICT`
+- deterministic SHA-256 payload digest (canonical JSON; not Python `hash()`, not pickle)
+
+Increment 9.3 — LangGraph Integration<br>
+Commit: `b86254d3452d16cdc9ae58ae4893d991c48bd636`
+
+- `READY_FOR_HANDOFF` → `persist_handoff` → `END`
+- persistence only after professional READY (no new lifecycle status)
+- graph state remains `{lifecycle}` only
+- store / context / policy dependencies closed over at build time
+- backward compatible when `handoff_store=None` (READY → END)
+- no Admission execution
+- no hidden agent-to-agent chat
+
+Increment 9.4 — Durable PostgreSQL Proof<br>
+Commit: `2cfde3a0c4bc8afdf3e0781833e8f5e254a07448`
+
+- test-only PostgreSQL adapter (`PostgresConstructorHandoffStore` inside the proof test)
+- real disposable PostgreSQL 16 (`execution-os-handoff-test-pg`, localhost `127.0.0.1:55432`, tmpfs, synthetic `eos_test`)
+- Process A → persist → exit
+- Process B fresh interpreter → read / replay
+- persistence survives Python process death
+- atomic `INSERT … ON CONFLICT DO NOTHING`
+- immutability conflict proof
+- malformed payload / digest / id fail closed
+- two-connection idempotency proof
+- production PostgreSQL handoff adapter **NOT** created
+
+------------------------------------------------------------
+WHAT THIS GIVES THE SYSTEM
+------------------------------------------------------------
+
+Constructor Agent теперь не просто достигает `READY_FOR_HANDOFF`, а формирует и сохраняет структурированный, детерминированный, идемпотентный и неизменяемый handoff-артефакт для следующей профессиональной роли.
+
+Передача между агентами происходит **не** через скрытый prompt/chat, а через formal artifact + identifiers/references.
+
+Admission Agent в Increment 9 **не** реализован и **не** вызывается. Следующий агент должен читать свежую операционную реальность самостоятельно.
+
+`READY_FOR_HANDOFF` остаётся профессиональной готовностью Constructor.<br>
+`HANDOFF_READY` — статус отдельного handoff artifact, не новый lifecycle status.
+
+------------------------------------------------------------
+ARCHITECTURE LAWS CONFIRMED
+------------------------------------------------------------
+
+AGENT ≠ CHATBOT: **PASS**<br>
+LLM ≠ AGENT: **PASS**<br>
+ONE MAJOR PROFESSIONAL ROLE = ONE SPECIALIZED AGENT: **PASS**<br>
+NO HIDDEN AGENT-TO-AGENT CHAT: **PASS**<br>
+STRUCTURED HANDOFF: **PASS**<br>
+MISSION SCOPE FAIL CLOSED: **PASS**<br>
+FRESH REALITY AFTER HITL: **PASS**<br>
+BOUNDED PAYLOAD: **PASS**<br>
+IDEMPOTENCY: **PASS**<br>
+IMMUTABILITY: **PASS**<br>
+LEAST PRIVILEGE: **PASS**<br>
+MODEL IS NOT SECURITY BOUNDARY: **PASS**<br>
+DATA ≠ INSTRUCTION: **PASS**<br>
+NO PRODUCT DB WRITE: **PASS**<br>
+NO ARBITRARY SQL/SHELL: **PASS**<br>
+NO ADMISSION EXECUTION: **PASS**
+
+------------------------------------------------------------
+RELEASE TESTS
+------------------------------------------------------------
+
+GATE A:<br>
+36 Python files `py_compile` **PASS** (19 product + 17 tests)
+
+GATE B:<br>
+15 non-PostgreSQL modules<br>
+**329 passed / 0 failed / 0 errors / 0 skipped**
+
+GATE D:<br>
+27 PostgreSQL durability tests<br>
+**27 passed / 0 failed / 0 errors**
+
+GATE E:<br>
+FULL Constructor regression<br>
+**356 passed / 0 failed / 0 errors / 0 skipped**
+
+GATE F:<br>
+`pip check` **PASS**<br>
+No broken requirements found
+
+GATE G:<br>
+`tests/test_agent_security_governance.py`<br>
+**19 passed / 0 failed / 0 errors / 0 skipped**<br>
+EOS-SEC Gate **PASS**
+
+GATE H:<br>
+disposable PostgreSQL removed<br>
+cleanup **PASS**
+
+------------------------------------------------------------
+LESSONS_2 GATE
+------------------------------------------------------------
+
+LESSON_2 local: `2c4445840cf68ff64cffecbe5a9a9dd21808be04`<br>
+remote: `2c4445840cf68ff64cffecbe5a9a9dd21808be04`<br>
+local == remote: **YES**<br>
+Methodology gate: **PASS**
+
+------------------------------------------------------------
+FILES
+------------------------------------------------------------
+
+Increment 9 product:
+
+- `agents/monthly_plan_constructor/handoff_contracts.py`
+- `agents/monthly_plan_constructor/handoff_store.py`
+- `agents/monthly_plan_constructor/langgraph_runtime.py`
+
+Increment 9 test files:
+
+- `tests/test_monthly_plan_constructor_handoff_contracts.py`
+- `tests/test_monthly_plan_constructor_handoff_store.py`
+- `tests/test_monthly_plan_constructor_langgraph_handoff.py`
+- `tests/test_monthly_plan_constructor_handoff_postgres.py`
+
+Production PostgreSQL handoff adapter: **NOT BUILT**
+
+Product Supabase `agent_handoffs` DDL/RLS: **NOT BUILT** / separate future persistence security gate
+
+This documentation file is **not** part of `2cfde3a`.
+
+------------------------------------------------------------
+WHAT IS CONSCIOUSLY NOT DONE
+------------------------------------------------------------
+
+- Admission Agent
+- product Supabase handoff persistence
+- production `agent_handoffs` DDL/RLS
+- Agent Control Room / Observability (Increment 10)
+- visual tracing UI
+- system-wide E2E across multiple agents
+
+------------------------------------------------------------
+WHERE WE ARE IN THE AGENT ROADMAP
+------------------------------------------------------------
+
+Constructor Agent Runtime v0.1 (одна роль, десять инкрементов — не десять агентов):
+
+[1] Mission Scope Contract — **DONE**<br>
+[2] Candidate Package Artifact — **DONE**<br>
+[3] Secure Read Tool Adapters — **DONE**<br>
+[4] Labor Norm Resolver — **DONE**<br>
+[5] Exception Engine — **DONE**<br>
+[6] Pure Python Lifecycle — **DONE**<br>
+[7] LangGraph Runtime — **DONE**<br>
+[8] Durable HITL / Resume — **DONE**<br>
+[9] Structured Handoff — **DONE** (this checkpoint)<br>
+[10] Agent Control Room / Observability — **NEXT**
+
+Progress after this documentation checkpoint is committed: **9 / 10**
+
+------------------------------------------------------------
+CONTOUR (unchanged)
+------------------------------------------------------------
+
+MONTHLY PLAN ORCHESTRATOR<br>
+→ **1. CONSTRUCTOR AGENT — CURRENT (increments 1–9 of 10)**<br>
+→ 2. ADMISSION AGENT — not started<br>
+→ 3. CONSTRAINT AGENT — not started<br>
+→ 4. RESOURCE CAPACITY AGENT — not started<br>
+→ 5. ECONOMIC EVALUATION AGENT — not started<br>
+→ 6. MANAGEMENT DECISION AGENT — not started<br>
+→ HUMAN DECISION GATE<br>
+→ ПАСПОРТ МЕСЯЧНОГО ПРОИЗВОДСТВЕННОГО ОБЯЗАТЕЛЬСТВА
+
+------------------------------------------------------------
+GIT CHECKPOINT
+------------------------------------------------------------
+
+CODE RECOVERY HEAD: `2cfde3a0c4bc8afdf3e0781833e8f5e254a07448`<br>
+BRANCH AT CODE RELEASE: `wip/increment-9-structured-handoff`
+
+DOCS COMMIT: **PENDING** — будет заполнен после отдельного commit.
+
+------------------------------------------------------------
+WHAT IS NOT BUILT YET
+------------------------------------------------------------
+
+- Agent Control Room / Observability (Increment 10) — **NEXT / NOT YET BUILT**
+- Production HITL/audit tables / RLS / product Postgres migrations
+- Product `agent_handoffs` persistence / Supabase DDL
+- Wiring into Page10B / production writes
+- Admission and later professional agents
+
+------------------------------------------------------------
+ONE-LINE SUMMARY
+------------------------------------------------------------
+
+На этом этапе Constructor формирует structured handoff: формальный неизменяемый артефакт с identifiers/references, идемпотентным persist и fail-closed immutability — без скрытого agent chat и без вызова Admission.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+Increment 10 — Agent Control Room / Observability.
+
+После Increment 10: System Test & Hardening Week.

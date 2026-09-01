@@ -13,10 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control
-- **NEXT:** [10.3] Runtime Instrumentation (within Increment 10 — Agent Control Room / Observability)
-- **Recovery code HEAD:** `300696bebc3604d3da189b5aef9af9cb1af1710b` (Increment 10.2 on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3 NOT STARTED · Increment 10 overall **NOT COMPLETE**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation
+- **NEXT:** [10.3B] Core LangGraph Stage Wiring (within Increment 10 — Agent Control Room / Observability)
+- **Recovery code HEAD:** `c4baaecf4ad17af7c31c0533da76056e8a26e74a` (Increment 10.3A on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B NOT STARTED · 10.3 **NOT COMPLETE** · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -2488,3 +2488,250 @@ Expected scope:
 - synchronization between control-plane events and Constructor professional runtime
 
 Increment 10.3 **не** реализован в этом checkpoint.
+
+============================================================
+CHECKPOINT — 2026-09-01 — INCREMENT 10.3A — RUNTIME INSTRUMENTATION FOUNDATION
+============================================================
+
+PROGRAM:
+Monthly Planning Agentic Orchestration
+
+CURRENT AGENT:
+MONTHLY_PLAN_CONSTRUCTOR (first consumer of Constructor runtime instrumentation helpers)
+
+CURRENT INCREMENT:
+[10.3A] Runtime Instrumentation Foundation
+
+STATUS:
+DONE / ACCEPTED / COMMITTED / PUSHED / RELEASE-GATED
+
+------------------------------------------------------------
+WHAT WE BUILT
+------------------------------------------------------------
+
+Product:
+
+- `agents/monthly_plan_constructor/runtime_instrumentation.py`
+
+Tests:
+
+- `tests/test_constructor_runtime_instrumentation.py`
+
+Main contracts:
+
+- `ConstructorRuntimeEventKey`
+- `compute_constructor_runtime_event_id(...)`
+- `ConstructorRuntimeInstrumentation`
+- `validate_constructor_stage_id(...)`
+- `is_constructor_stage_id(...)`
+
+Core architecture:
+
+- deterministic event identity for Constructor runtime facts
+- namespace `constructor_runtime_event.v0.1`
+- canonical JSON + SHA-256 → `crt-evt-{digest}`
+- no timestamp / uuid / randomness in event identity
+- existing frozen `CONSTRUCTOR_STAGE_CATALOG` reused (no second catalog)
+- existing `build_observability_event(...)` reused (no second event model)
+- injected `ObservabilityRecorder` write Protocol only
+- `RecordResult` preserved (`CREATED` / `IDEMPOTENT_REPLAY`)
+- no Recorder read dependency (`snapshot_events`, fingerprint maps, internal dicts forbidden in production path)
+- no `InMemoryObservabilityRecorder` production dependency
+- no second state machine (no stage store, span store, dedup cache, runtime status registry)
+
+------------------------------------------------------------
+EVENT OWNERSHIP
+------------------------------------------------------------
+
+Constructor runtime instrumentation **MUST NOT** emit Run Control-owned events:
+
+- `RUN_REQUESTED`
+- `RUN_AUTHORIZATION_STARTED`
+- `RUN_AUTHORIZED`
+- `RUN_DENIED`
+- `MISSION_BOUND`
+- `RUN_STARTED`
+
+Blocked fail-closed in `ConstructorRuntimeEventKey`.
+
+The runtime helper only validates, builds, and emits **caller-specified** runtime-owned facts.
+
+`RUNTIME_OWNED_EVENT_TYPES` is documentary only — not a second authority system.
+
+**Advisory (non-blocker):** `RETRY_REQUESTED` / `RETRY_STARTED` ownership must be resolved before or during **10.3B** runtime wiring. Not resolved in 10.3A. No `EventType` enum changes.
+
+------------------------------------------------------------
+REPLAY / IDEMPOTENCY SEMANTICS
+------------------------------------------------------------
+
+- same deterministic `event_id` + identical payload → `IDEMPOTENT_REPLAY`
+- same `event_id` + changed payload or `occurred_at` → recorder conflict, fail closed
+- no automatic `REPLAY_DETECTED` (recorder replay ≠ LangGraph semantic replay)
+- replay detection requires actual runtime knowledge in later slices
+- `semantic_occurrence_key` + `resume_n` + `attempt_n` support multiple stage occurrences within one run
+
+Caller owns `occurred_at` semantics.
+
+------------------------------------------------------------
+SECURITY
+------------------------------------------------------------
+
+- no `AgentExecutionContext` stored or accepted in payloads
+- no authority cache
+- no SQL / shell / Supabase / Streamlit
+- no LangGraph dependency inside 10.3A helper module
+- no secrets / raw rows / DataFrames / documents in events
+- observability payload bounds from Increment 10.1 reused (not Handoff contract limits)
+- instrumentation cannot authorize, change mission, expand scope, or start agents
+
+------------------------------------------------------------
+WHAT THIS GIVES THE SYSTEM
+------------------------------------------------------------
+
+10.3A defines **HOW** Constructor runtime operational facts are represented and safely recorded.
+
+It does **NOT** yet define **WHERE** LangGraph nodes emit them.
+
+Conceptual chain:
+
+Run Control<br>
+→ authorized runtime start boundary<br>
+→ **Runtime Instrumentation Foundation (10.3A)**<br>
+→ real LangGraph stage wiring (**10.3B**)
+
+Observability RECORDS execution truth. It does NOT become execution truth.
+
+------------------------------------------------------------
+PLACE IN OVERALL ARCHITECTURE
+------------------------------------------------------------
+
+Increment 10.3A sits between:
+
+- **10.2** Run Control
+- **10.3B** Core LangGraph Stage Wiring
+
+10.3A is foundation only. No actual node instrumentation yet.
+
+------------------------------------------------------------
+WHAT IS NOT DONE
+------------------------------------------------------------
+
+- NO actual LangGraph node instrumentation
+- NO `ConstructorManagedRuntimeLauncher`
+- NO stage wiring
+- NO HITL wiring
+- NO handoff / completion wiring
+- NO durable observability store (Increment 10.4)
+- NO Query Port
+- NO Control Room UI
+- NO Supabase observability persistence
+- Increment 10.3 overall is **NOT COMPLETE**
+- Increment 10 overall is **NOT COMPLETE**
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+10.3A focused: **37 / 37 PASS**<br>
+Observability contracts: **53 / 53 PASS**<br>
+Observability recorder: **32 / 32 PASS**<br>
+Run Control: **51 / 51 PASS**<br>
+Constructor standard gate: **329 / 329 PASS**<br>
+EOS-SEC: **36 / 36 PASS**<br>
+py_compile: **PASS**<br>
+pip check: **PASS**
+
+**FULL POSTGRES INTEGRATION SUITE:** **ENVIRONMENT_BLOCKED**<br>
+Reason: disposable PostgreSQL unavailable at `127.0.0.1:55432`<br>
+This is **NOT** classified as code regression. Do **not** claim full `unittest discover` PASS.
+
+Release gates: Git/Scope · Lessons_2 · Environment · Functional · Observability · Constructor standard · EOS-SEC architecture — **ALL PASS**
+
+Lessons_2: local == remote == `2c4445840cf68ff64cffecbe5a9a9dd21808be04`
+
+------------------------------------------------------------
+ENVIRONMENT RULE
+------------------------------------------------------------
+
+All Execution OS release tests on this computer use:
+
+`C:\csv_fix\.venv\Scripts\python.exe`
+
+Do **not** use system Python for release gates.
+
+LangGraph installed in project venv: **1.2.11**
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+CODE COMMIT:
+
+- `c4baaecf4ad17af7c31c0533da76056e8a26e74a`
+- message: `feat(agents): add constructor runtime instrumentation foundation`
+
+BRANCH: `wip/increment-10-agent-control-room`
+
+LOCAL WIP HEAD: `c4baaecf4ad17af7c31c0533da76056e8a26e74a`<br>
+REMOTE WIP HEAD: `c4baaecf4ad17af7c31c0533da76056e8a26e74a`<br>
+LOCAL == REMOTE: **YES**
+
+origin/main unchanged: `c24708b3a40eb930f7879d3fd764784be057cc1e`
+
+------------------------------------------------------------
+FILES
+------------------------------------------------------------
+
+Product:
+
+- `agents/monthly_plan_constructor/runtime_instrumentation.py`
+
+Tests:
+
+- `tests/test_constructor_runtime_instrumentation.py`
+
+FILE COUNT IN CODE COMMIT: 2
+
+NEW DEPENDENCIES: **NONE**
+
+------------------------------------------------------------
+WHERE WE ARE IN THE AGENT ROADMAP
+------------------------------------------------------------
+
+Constructor Agent Runtime v0.1:
+
+[1]–[9] — **DONE**<br>
+[10] Agent Control Room / Observability — **IN PROGRESS**
+
+Increment 10 decomposition:
+
+- 10.0 — Architecture Discovery — **DONE**
+- 10.A0 — WIP branch prep — **DONE**
+- 10.A1 — Formal Architecture Spec — **DONE**
+- 10.1 — Agent-Neutral Observability Foundation — **DONE**
+- 10.2 — Run Control — **DONE**
+- 10.3A — Runtime Instrumentation Foundation — **DONE** (this checkpoint)
+- 10.3B — Core LangGraph Stage Wiring — **NEXT / NOT STARTED**
+- 10.4 — Durable Observability Store — **NOT STARTED**
+
+Progress: **9 / 10** (Increment 10 overall not complete; do not claim 10 / 10)
+
+------------------------------------------------------------
+ONE-LINE SUMMARY
+------------------------------------------------------------
+
+На этом этапе Execution OS получил Constructor runtime instrumentation foundation: deterministic event identity, stage validation, safe Recorder emission и Run Control event ownership — без LangGraph wiring, без launcher и без durable store.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+Increment 10.3B — Core LangGraph Stage Wiring.
+
+Expected scope:
+
+- inject `ObservabilityRecorder` into Constructor LangGraph runtime
+- thin stage/node event wiring around existing lifecycle advance
+- preserve professional lifecycle vs operational event separation
+
+Increment 10.3B **не** реализован в этом checkpoint.

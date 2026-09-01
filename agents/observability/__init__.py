@@ -36,6 +36,13 @@ from agents.observability.contracts import (
     build_run_request,
     compute_run_request_digest,
 )
+from agents.observability.recorder import (
+    InMemoryObservabilityRecorder,
+    ObservabilityEventConflictError,
+    ObservabilityRecorder,
+    RecordOutcome,
+    RecordResult,
+)
 
 __all__ = [
     "AGENT_RUN_SCHEMA_VERSION",
@@ -56,9 +63,14 @@ __all__ = [
     "EventStatus",
     "EventType",
     "InitiatorType",
+    "InMemoryObservabilityRecorder",
     "ObservabilityContractError",
     "ObservabilityEvent",
+    "ObservabilityEventConflictError",
+    "ObservabilityRecorder",
     "OperationalStatus",
+    "RecordOutcome",
+    "RecordResult",
     "RunRequest",
     "StageDefinition",
     "StageDisplayState",

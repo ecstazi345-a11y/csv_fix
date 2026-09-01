@@ -13,9 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff
-- **NEXT:** [10] Agent Control Room / Observability
-- **Recovery code HEAD:** `2cfde3a0c4bc8afdf3e0781833e8f5e254a07448` (Increment 9 code on `wip/increment-9-structured-handoff`)
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation
+- **NEXT:** [10.2] Run Control (within Increment 10 — Agent Control Room / Observability)
+- **Recovery code HEAD:** `ffacba71ee47032a8f285e3cd01243a3bd665754` (Increment 10.1B on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 NOT STARTED · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -2048,3 +2049,212 @@ NEXT
 Increment 10 — Agent Control Room / Observability.
 
 После Increment 10: System Test & Hardening Week.
+
+============================================================
+CHECKPOINT — 2026-09-01 — INCREMENT 10.1 — AGENT-NEUTRAL OBSERVABILITY FOUNDATION
+============================================================
+
+PROGRAM:
+Monthly Planning Agentic Orchestration
+
+CURRENT AGENT:
+MONTHLY_PLAN_CONSTRUCTOR (first tenant of shared observability foundation)
+
+CURRENT INCREMENT:
+[10.1] Agent-Neutral Observability Foundation
+
+STATUS:
+DONE / ACCEPTED / RELEASE-GATE PASS
+
+------------------------------------------------------------
+WHAT WE BUILT
+------------------------------------------------------------
+
+10.1A — Core Contracts (`15b0480`):
+
+- `RunRequest`
+- `AgentRun`
+- `ObservabilityEvent`
+- `StageDefinition`
+- closed enums / event taxonomy
+- Constructor stage catalog as first tenant
+- deterministic `RunRequest` idempotency digest
+- bounded JSON payload validation
+- canonical UTC
+- nested copy-safe immutable payloads
+- safe serialization
+- EOS-SEC secret-safety integration
+
+10.1B — Observability Recorder (`ffacba7`):
+
+- `ObservabilityRecorder` Protocol
+- `RecordOutcome`
+- `RecordResult`
+- `InMemoryObservabilityRecorder`
+- `event_id` idempotency:
+  - `CREATED`
+  - `IDEMPOTENT_REPLAY`
+  - conflict fail-closed
+- canonical event fingerprint
+- append-only semantics
+- `RLock` same-process race protection
+- test-only snapshot inspection
+
+Architecture specification (10.A1): `bbfa2c6` — `docs/agentic_architecture/AGENT_RUN_CONTROL_AND_OBSERVABILITY_V0_1.md`
+
+------------------------------------------------------------
+WHAT THIS GIVES THE SYSTEM
+------------------------------------------------------------
+
+Execution OS now has the first shared agent-neutral operational observability foundation.
+
+Future agents can use the same:
+
+- `RunRequest`
+- `AgentRun`
+- `ObservabilityEvent`
+- `StageDefinition`
+- `ObservabilityRecorder`
+
+without cloning Constructor-specific control-plane code.
+
+This foundation is required before Run Control, runtime instrumentation, durable store, Query Port, and Agent Control Room.
+
+------------------------------------------------------------
+ARCHITECTURE LAWS PRESERVED
+------------------------------------------------------------
+
+- `RunRequest` != Authorization
+- `AgentRun` != professional lifecycle
+- `ObservabilityRecorder` != `ObservabilityStore`
+- `InMemoryObservabilityRecorder` != durable truth
+- Recorder does not create events
+- Recorder does not authorize execution
+- Recorder does not update `AgentRun`
+- Agent does not start agent
+- Control Room != runtime
+- Streamlit != source of truth
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+10.1 contract tests: **53 / 53 PASS**<br>
+10.1 recorder tests: **32 / 32 PASS**<br>
+Combined observability: **85 / 85 PASS**<br>
+Constructor pure/local regression: **329 / 329 PASS**<br>
+EOS-SEC: **19 / 19 PASS**<br>
+py_compile: **PASS**<br>
+pip check: **PASS**
+
+Lessons_2: local == remote == `2c4445840cf68ff64cffecbe5a9a9dd21808be04`
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+Architecture specification:
+
+- `bbfa2c61cf80440428bd1b470eddbf378a61e102`
+- message: `docs(agents): define run control observability architecture`
+
+10.1A:
+
+- `15b048055a80e40abebd65e07820ae75a718cb81`
+- message: `feat(agents): add observability core contracts`
+
+10.1B:
+
+- `ffacba71ee47032a8f285e3cd01243a3bd665754`
+- message: `feat(agents): add observability recorder protocol`
+
+BRANCH: `wip/increment-10-agent-control-room`
+
+------------------------------------------------------------
+FILES
+------------------------------------------------------------
+
+Product:
+
+- `agents/observability/__init__.py`
+- `agents/observability/contracts.py`
+- `agents/observability/recorder.py`
+
+Tests:
+
+- `tests/test_agent_observability_contracts.py`
+- `tests/test_agent_observability_recorder.py`
+
+Architecture (10.A1, prior commit):
+
+- `docs/agentic_architecture/AGENT_RUN_CONTROL_AND_OBSERVABILITY_V0_1.md`
+
+------------------------------------------------------------
+WHAT IS NOT DONE
+------------------------------------------------------------
+
+- NO Run Control yet
+- NO runtime instrumentation yet
+- NO durable `ObservabilityStore` yet
+- NO `AgentRun` durable projection yet
+- NO Query Port yet
+- NO Agent Control Room yet
+- NO production Supabase DDL/RLS
+- NO Admission Agent implementation
+- Increment 10 overall is **NOT COMPLETE**
+
+No separate product-code 10.1C is required — 10.1A + 10.1B fully satisfy accepted Increment 10.1 scope.
+
+------------------------------------------------------------
+WHERE WE ARE IN THE AGENT ROADMAP
+------------------------------------------------------------
+
+Constructor Agent Runtime v0.1 (одна роль, десять инкрементов — не десять агентов):
+
+[1] Mission Scope Contract — **DONE**<br>
+[2] Candidate Package Artifact — **DONE**<br>
+[3] Secure Read Tool Adapters — **DONE**<br>
+[4] Labor Norm Resolver — **DONE**<br>
+[5] Exception Engine — **DONE**<br>
+[6] Pure Python Lifecycle — **DONE**<br>
+[7] LangGraph Runtime — **DONE**<br>
+[8] Durable HITL / Resume — **DONE**<br>
+[9] Structured Handoff — **DONE**<br>
+[10] Agent Control Room / Observability — **IN PROGRESS**
+
+Increment 10 decomposition:
+
+- 10.0 — Architecture Discovery — **DONE**
+- 10.A0 — WIP branch prep — **DONE**
+- 10.A1 — Formal Architecture Spec — **DONE**
+- 10.1 — Agent-Neutral Observability Foundation — **DONE** (this checkpoint)
+- 10.2 — Run Control — **NEXT / NOT STARTED**
+- 10.4 — Durable Observability Store — **NOT STARTED**
+
+Progress: **9 / 10** (Increment 10 overall not complete; do not claim 10 / 10)
+
+------------------------------------------------------------
+ONE-LINE SUMMARY
+------------------------------------------------------------
+
+На этом этапе Execution OS получил первый shared agent-neutral observability foundation: contracts + recorder protocol, без Run Control, без durable store и без Control Room.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+Increment 10.2 — Run Control.
+
+Expected scope:
+
+- `RunRequest` → idempotent run creation
+- `run_id` / `request_id` ownership
+- authorization boundary
+- mission binding
+- `AgentRun` operational envelope
+- Class A observability events through injected `ObservabilityRecorder`
+- managed runtime start boundary
+
+Durable store remains later Increment 10.4.
+
+Increment 10.2 **не** реализован в этом checkpoint.

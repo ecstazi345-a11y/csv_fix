@@ -13,10 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation
-- **NEXT:** [10.2] Run Control (within Increment 10 — Agent Control Room / Observability)
-- **Recovery code HEAD:** `ffacba71ee47032a8f285e3cd01243a3bd665754` (Increment 10.1B on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 NOT STARTED · Increment 10 overall **NOT COMPLETE**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control
+- **NEXT:** [10.3] Runtime Instrumentation (within Increment 10 — Agent Control Room / Observability)
+- **Recovery code HEAD:** `300696bebc3604d3da189b5aef9af9cb1af1710b` (Increment 10.2 on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3 NOT STARTED · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -2258,3 +2258,233 @@ Expected scope:
 Durable store remains later Increment 10.4.
 
 Increment 10.2 **не** реализован в этом checkpoint.
+
+============================================================
+CHECKPOINT — 2026-09-01 — INCREMENT 10.2 — RUN CONTROL
+============================================================
+
+PROGRAM:
+Monthly Planning Agentic Orchestration
+
+CURRENT AGENT:
+MONTHLY_PLAN_CONSTRUCTOR (first consumer of shared Run Control; Run Control itself is agent-neutral)
+
+CURRENT INCREMENT:
+[10.2] Run Control
+
+STATUS:
+DONE / ACCEPTED / COMMITTED / PUSHED / RELEASE-GATE PASS
+
+------------------------------------------------------------
+WHAT WE BUILT
+------------------------------------------------------------
+
+- agent-neutral `ManagedRunStartInput`
+- `RunControlService`
+- `RunControlRegistry` Protocol
+- `InMemoryRunControlRegistry`
+- Run Control-owned `request_id`
+- Run Control-owned `run_id`
+- `thread_id == run_id`
+- requested `mission_id` binding (never minted by Run Control)
+- existing EOS-SEC authorization reuse through `issue_read_only_agent_context`
+- `ManagedRuntimeLauncher` Protocol (interface boundary only)
+- Class A observability events through injected `ObservabilityRecorder`
+- idempotency handling via frozen 10.1 `compute_run_request_digest`
+- concurrent duplicate-start protection (same key + same digest)
+- explicit process-local reservation state:
+  - `IN_PROGRESS`
+  - `RESULT_AVAILABLE`
+  - `TERMINAL_FAILURE`
+- terminal control-plane failure semantics (`CONTROL_PLANE_FAILURE`)
+- launch ambiguity semantics (`LAUNCH_OUTCOME_UNKNOWN`)
+- generic `SYSTEM_EVENT` direct-start rejection (all agents)
+- transient `AgentExecutionContext` (launcher receives context on first authorized start only)
+- no cached authorization authority (`authorization_id` safe evidence only)
+
+------------------------------------------------------------
+WHAT THIS GIVES THE SYSTEM
+------------------------------------------------------------
+
+Run Control now establishes a controlled managed-start boundary.
+
+A start request can no longer directly imply execution.
+
+The system separates:
+
+TRIGGER<br>
+→ RUN REQUEST<br>
+→ IDEMPOTENCY<br>
+→ AUTHORIZATION<br>
+→ MISSION BINDING<br>
+→ CONTROL-PLANE EVENTS<br>
+→ MANAGED RUNTIME LAUNCH BOUNDARY
+
+It prevents accidental duplicate starts inside the same process and prevents idempotent replay from becoming hidden retry.
+
+`RunRequest` != Authorization.<br>
+Trigger != Authorization != Execution.<br>
+`AgentRun` operational status != Constructor professional lifecycle state.<br>
+Run Control != Orchestrator.<br>
+Run Control != agent business logic.<br>
+`SYSTEM_EVENT` = orchestration ingress, not direct specialized-agent execution.
+
+------------------------------------------------------------
+PLACE IN OVERALL ARCHITECTURE
+------------------------------------------------------------
+
+Increment 10.2 sits between:
+
+- **10.1** Agent-Neutral Observability Foundation
+- **10.3** Runtime Instrumentation
+
+It prepares the generic managed control plane but does **NOT** yet execute Constructor LangGraph directly.
+
+`ManagedRuntimeLauncher` in 10.2 is an interface boundary only. Real Constructor runtime integration belongs to **10.3**.
+
+------------------------------------------------------------
+ARCHITECTURE LAWS CONFIRMED
+------------------------------------------------------------
+
+- MODEL IS NOT SECURITY BOUNDARY
+- DATA != INSTRUCTION
+- no second authorization system
+- authorization before launcher
+- `SYSTEM_EVENT` cannot directly invoke managed agent
+- `AgentExecutionContext` is transient
+- replay cannot reauthorize
+- replay cannot relaunch
+- launch ambiguity becomes `LAUNCH_OUTCOME_UNKNOWN`
+- control-plane evidence failure stops managed start
+- no secrets / SQL / shell / Streamlit authority in Run Control
+
+Authorized Class A event order:
+
+`RUN_REQUESTED` → `RUN_AUTHORIZATION_STARTED` → `RUN_AUTHORIZED` → `MISSION_BOUND` → `RUN_STARTED`
+
+Denied path:
+
+`RUN_REQUESTED` → `RUN_AUTHORIZATION_STARTED` → `RUN_DENIED`
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+Focused Run Control: **51 / 51 PASS**<br>
+Observability contracts: **53 / 53 PASS**<br>
+Observability recorder: **32 / 32 PASS**<br>
+Constructor pure/local regression: **329 / 329 PASS**<br>
+EOS-SEC: **36 / 36 PASS**<br>
+py_compile: **PASS**<br>
+pip check: **PASS**
+
+Release gates: Git/Scope · Lessons_2 · Functional · Observability · Constructor · EOS-SEC architecture — **ALL PASS**
+
+Lessons_2: local == remote == `2c4445840cf68ff64cffecbe5a9a9dd21808be04`
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+CODE COMMIT:
+
+- `300696bebc3604d3da189b5aef9af9cb1af1710b`
+- message: `feat(agents): add managed run control`
+
+BRANCH: `wip/increment-10-agent-control-room`
+
+LOCAL WIP HEAD: `300696bebc3604d3da189b5aef9af9cb1af1710b`<br>
+REMOTE WIP HEAD: `300696bebc3604d3da189b5aef9af9cb1af1710b`<br>
+LOCAL == REMOTE: **YES**
+
+origin/main unchanged: `c24708b3a40eb930f7879d3fd764784be057cc1e`
+
+------------------------------------------------------------
+FILES
+------------------------------------------------------------
+
+Product:
+
+- `agents/run_control/__init__.py`
+- `agents/run_control/contracts.py`
+- `agents/run_control/registry.py`
+- `agents/run_control/service.py`
+
+Tests:
+
+- `tests/test_run_control_contracts.py`
+- `tests/test_run_control_registry.py`
+- `tests/test_run_control_service.py`
+- `tests/test_run_control_failure_state.py`
+
+FILE COUNT IN CODE COMMIT: 8
+
+NEW DEPENDENCIES: **NONE**
+
+------------------------------------------------------------
+WHAT IS NOT DONE
+------------------------------------------------------------
+
+- NO durable Run Control store (Increment 10.4)
+- NO distributed idempotency
+- NO exactly-once across processes
+- NO Supabase observability persistence
+- NO real Constructor launcher adapter
+- NO LangGraph runtime instrumentation
+- NO HITL visual control
+- NO Query Port
+- NO Control Room UI
+- NO Orchestrator runtime
+- NO Admission Agent
+- Increment 10 overall is **NOT COMPLETE**
+
+NON-DURABLE · PROCESS-LOCAL: restart loses idempotency registry state and process-local cached result/failure state. Durable truth remains Increment 10.4.
+
+------------------------------------------------------------
+WHERE WE ARE IN THE AGENT ROADMAP
+------------------------------------------------------------
+
+Constructor Agent Runtime v0.1 (одна роль, десять инкрементов — не десять агентов):
+
+[1] Mission Scope Contract — **DONE**<br>
+[2] Candidate Package Artifact — **DONE**<br>
+[3] Secure Read Tool Adapters — **DONE**<br>
+[4] Labor Norm Resolver — **DONE**<br>
+[5] Exception Engine — **DONE**<br>
+[6] Pure Python Lifecycle — **DONE**<br>
+[7] LangGraph Runtime — **DONE**<br>
+[8] Durable HITL / Resume — **DONE**<br>
+[9] Structured Handoff — **DONE**<br>
+[10] Agent Control Room / Observability — **IN PROGRESS**
+
+Increment 10 decomposition:
+
+- 10.0 — Architecture Discovery — **DONE**
+- 10.A0 — WIP branch prep — **DONE**
+- 10.A1 — Formal Architecture Spec — **DONE**
+- 10.1 — Agent-Neutral Observability Foundation — **DONE**
+- 10.2 — Run Control — **DONE** (this checkpoint)
+- 10.3 — Runtime Instrumentation — **NEXT / NOT STARTED**
+- 10.4 — Durable Observability Store — **NOT STARTED**
+
+Progress: **9 / 10** (Increment 10 overall not complete; do not claim 10 / 10)
+
+------------------------------------------------------------
+ONE-LINE SUMMARY
+------------------------------------------------------------
+
+На этом этапе Execution OS получил agent-neutral Run Control: managed start с idempotency, EOS-SEC authorization, mission binding, Class A events и launcher boundary — без durable store и без прямого запуска Constructor LangGraph.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+Increment 10.3 — Runtime Instrumentation.
+
+Expected scope:
+
+- real `ManagedRuntimeLauncher` adapter for Constructor LangGraph
+- runtime node instrumentation
+- synchronization between control-plane events and Constructor professional runtime
+
+Increment 10.3 **не** реализован в этом checkpoint.

@@ -13,10 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** (Local Managed Runtime Backend v0.1) · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core**
-- **NEXT:** Increment **10.8** State-of-the-Art HITL Architecture Gate → HITL visualization preflight — do **not** start before this checkpoint is committed
-- **Recovery code HEAD:** `9a7eeed931a40dc6dd8fa615979c40675a057b6c` (10.7 Control Room Core on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · **10.5 Separate-Process Durability Proof DONE** · **ConstructorManagedRuntimeLauncher DONE** · **10.6 AgentControlRoomQueryPort DONE** · **10.7 Control Room Core DONE** · Increment 10 overall **NOT COMPLETE**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** (Local Managed Runtime Backend v0.1) · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 State-of-the-Art HITL Architecture Gate** · **10.8A Structured HITL Read Contract**
+- **NEXT:** Increment **10.8B** Professional HITL / Live Agent Execution Visualization preflight — do **not** start before this checkpoint is committed
+- **Recovery code HEAD:** `8d1e8d5f13a95e31be2ca84aa2c0de90c98d077b` (10.8A Structured HITL Read Contract on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · **10.5 Separate-Process Durability Proof DONE** · **ConstructorManagedRuntimeLauncher DONE** · **10.6 AgentControlRoomQueryPort DONE** · **10.7 Control Room Core DONE** · **10.8 State-of-the-Art HITL Architecture Gate DONE** · **10.8A Structured HITL Read Contract DONE** · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -4787,5 +4787,288 @@ Human Wait → wait identity → required professional decision → evidence/con
 ```
 
 Remaining: 10.8 HITL Architecture Gate + HITL visualization → 10.9 Handoff / Completion / Digital Organization visualization → 10.10 full live-run proof + regression + EOS-SEC + final documentation
+
+Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**
+
+---
+
+============================================================
+CHECKPOINT — 2026-09-02
+INCREMENT 10.8A
+STRUCTURED HITL READ CONTRACT
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** agent-neutral structured observability contract for Human Decision semantics — read/observability increment only. **10.8B is NOT implemented in this checkpoint.**
+
+------------------------------------------------------------
+BEFORE / AFTER
+------------------------------------------------------------
+
+**Before 10.8A:** Control Room could prove a Human Wait existed · wait identity · decision identity · resume/abort chronology — but professional decision semantics lived inside `ConstructorHumanDecisionRequest` · `ConstructorResumeCommand` · `event.detail` and were **not** safely available through Query Port.
+
+**After 10.8A:** professional Human Decision truth is available as typed structured observability through durable event subcontracts and Query Port read models.
+
+**Product meaning (RU):** Before — «Цифровой сотрудник ожидает решения человека.» After — architecture can safely support: why autonomy stopped · what decision codes are allowed · which evidence references exist · what decision was made · who submitted it · which wait it belonged to · what happened after the decision — **without** reading raw `event.detail`. Foundation for **Professional Human Decision Surface**.
+
+------------------------------------------------------------
+ARCHITECTURE CHAIN
+------------------------------------------------------------
+
+```
+ConstructorHumanDecisionRequest
+  → runtime instrumentation mapping
+  → HumanDecisionRequestObservabilityContext
+  → Durable Observability
+  → AgentControlRoomQueryPort
+  → HumanDecisionRequestView
+```
+
+```
+ConstructorResumeCommand
+  → runtime instrumentation mapping
+  → HumanDecisionRecordObservabilityContext
+  → Durable Observability
+  → AgentControlRoomQueryPort
+  → HumanDecisionRecordView
+```
+
+```
+request + decision + consequence
+  → AgentHumanDecisionSurfaceView
+  (via AgentRunSnapshot.human_decision_surface)
+```
+
+------------------------------------------------------------
+CORE ARCHITECTURE LAW
+------------------------------------------------------------
+
+Human Decision semantics are now:
+
+| Property | Status |
+|----------|--------|
+| STRUCTURED | **YES** |
+| TYPED | **YES** |
+| AGENT-NEUTRAL | **YES** |
+| DURABLE | **YES** |
+| OBSERVABLE | **YES** |
+
+They are **NOT:** free-form detail · LLM interpretation · UI inference · Constructor-specific Query Port logic.
+
+------------------------------------------------------------
+TYPED HITL SUBCONTRACT LAW
+------------------------------------------------------------
+
+**Schema approach:** `TYPED_HITL_SUBCONTRACT`
+
+`ObservabilityEvent` keeps root correlation fields: `run_id` · `agent_code` · `interrupt_id` · `decision_id` · `resume_n` · `stage_id` · `mission_id`
+
+Professional semantics grouped into:
+
+- `HumanDecisionRequestObservabilityContext`
+- `HumanDecisionRecordObservabilityContext`
+
+Avoids root event field explosion.
+
+------------------------------------------------------------
+HUMAN DECISION REQUEST CONTRACT
+------------------------------------------------------------
+
+**Schema version:** `human_decision_request.v0.1`
+
+| Field | Rule |
+|-------|------|
+| `reason_code` | opaque professional code |
+| `human_readable_reason` | bounded safe plain text |
+| `allowed_decisions` | bounded generic decision codes |
+| `evidence_refs` | stable references only |
+
+**Forbidden in contract:** artifact bodies · raw scope · arbitrary dict · Constructor enums · `required_decision_type` · route · severity · authority · scope body.
+
+------------------------------------------------------------
+HUMAN DECISION RECORD CONTRACT
+------------------------------------------------------------
+
+**Schema version:** `human_decision_record.v0.1`
+
+| Field | Rule |
+|-------|------|
+| `decision_code` | opaque generic code |
+| `actor_id` | bounded identifier |
+| `actor_type` | bounded category |
+
+**Law:** actor observed **≠** actor authorized. System records who submitted a decision; 10.8A does **NOT** prove authority.
+
+------------------------------------------------------------
+REQUIRED AUTHORITY LAW
+------------------------------------------------------------
+
+| Topic | Status |
+|-------|--------|
+| Required Authority | **NOT MODELED** |
+| Authority enforcement | **NOT IMPLEMENTED** |
+
+10.8A does **NOT** add: `required_role` · `required_authority` · `authorized=True` · permission claims. Future UI must remain honest (`authority_modeled=False`).
+
+------------------------------------------------------------
+REQUIRED DECISION TYPE · ROUTE · SEVERITY LAW
+------------------------------------------------------------
+
+**`required_decision_type`:** **NOT** promoted into generic contract. First allowed decision is **not** semantically equivalent to «the required decision». Generic professional surface uses `reason_code` + `allowed_decisions` as authoritative truth.
+
+**`route` · `severity`:** remain Constructor Exception Engine concepts. **NOT** promoted into generic Human Decision observability.
+
+------------------------------------------------------------
+DETAIL BAN · LEGACY COMPATIBILITY
+------------------------------------------------------------
+
+**Strong law:** `ObservabilityEvent.detail` remains **NON-AUTHORITATIVE**.
+
+Query Port must **NEVER** derive from detail: `reason_code` · `decision_code` · `allowed_decisions` · `evidence_refs` · actor identity · professional HITL meaning.
+
+Legacy events missing typed subcontracts → **`INCOMPLETE`** — never reconstructed from detail.
+
+**`allow_legacy_missing_hitl_subcontracts`:** **NARROW** compatibility mechanism.
+
+| Usage | Rule |
+|-------|------|
+| Production | trusted persistence deserialization only (`_observability_event_from_dict`) |
+| New runtime events | **FAIL CLOSED** |
+| Runtime bypass | **FORBIDDEN** |
+| Query Port invention | **FORBIDDEN** |
+
+------------------------------------------------------------
+EVENT OWNERSHIP · FINGERPRINT LAW
+------------------------------------------------------------
+
+| EventType | HITL subcontract |
+|-----------|------------------|
+| `HUMAN_WAIT_STARTED` | structured **request** context required (new events) |
+| `HUMAN_DECISION_RECEIVED` | structured **decision record** required |
+| `RUN_ABORTED` (HITL decision abort) | structured **decision record** when `decision_id` present |
+| `RUN_RESUMED` | correlation only — no duplicate record |
+| `REALITY_REFRESH_*` | consequence chronology only |
+
+New HITL structured semantics participate in full event fingerprint:
+
+- same `event_id` + identical structured semantics → **IDEMPOTENT_REPLAY**
+- same `event_id` + changed reason/options/evidence/decision/actor → **EVENT CONFLICT**
+
+No event identity redesign.
+
+------------------------------------------------------------
+QUERY PORT HUMAN DECISION SURFACE
+------------------------------------------------------------
+
+Added agent-neutral views:
+
+- `HumanDecisionRequestView`
+- `HumanDecisionRecordView`
+- `HumanDecisionConsequenceView`
+- `AgentHumanDecisionSurfaceView`
+
+`AgentRunSnapshot` exposes: `human_decision_surface`
+
+**No** raw subcontract objects returned · **no** Constructor types · **no** write API.
+
+Public Query Port methods **unchanged:** `list_runs` · `get_run` · `get_run_snapshot`
+
+------------------------------------------------------------
+CONSEQUENCE · MULTI-WAIT · EVIDENCE LAW
+------------------------------------------------------------
+
+**Consequence:** composed only from structured correlation — run identity · interrupt identity · decision identity · `resume_n` · durable event order. **No** timestamp-proximity causality · **no** free-form interpretation.
+
+May prove when structurally supported: Human Wait → Human Decision → Resume/Abort → Reality Refresh → downstream stages/completion.
+
+**Multi-wait:** WAIT-1 and WAIT-2 remain distinct via `interrupt_id` · `resume_n` · `decision_id` · event correlation. No cross-association. Same-wait replay: idempotent.
+
+**Evidence:** `evidence_refs` = references/IDs only. 10.8A does **NOT** dereference evidence · load artifact bodies · load business rows · load checkpoint content · expose CandidatePackage. Future UI may show reference existence/count without exposing underlying bodies.
+
+------------------------------------------------------------
+RUNTIME INSTRUMENTATION · WRITE PATH FREEZE
+------------------------------------------------------------
+
+Runtime instrumentation reads already-typed professional contracts at emission time:
+
+| Emit site | Source |
+|-----------|--------|
+| `HUMAN_WAIT_STARTED` | `ConstructorHumanDecisionRequest` → typed request context |
+| `HUMAN_DECISION_RECEIVED` / HITL abort | `ConstructorResumeCommand` → typed decision record |
+
+**No** post-fact parsing · **no** detail parsing.
+
+**10.8A did NOT change:** `ConstructorResumeCommand` · decision validation · stale-wait protection · `expected_checkpoint_id` · run/mission/interrupt validation · `apply_constructor_resume_command` · LangGraph `Command(resume=...)` · HITL store semantics · reality refresh semantics.
+
+**Reality refresh (unchanged):** Human Decision → `RUN_RESUMED` → `REALITY_REFRESH_STARTED` → fresh secure read → `REALITY_REFRESH_COMPLETED` → professional execution continues.
+
+------------------------------------------------------------
+SQL / DURABILITY · SECURITY / EOS-SEC
+------------------------------------------------------------
+
+**SQL migration:** **NO** — observability events persist as JSON `event_payload`. Old payloads without typed HITL subcontracts remain readable. SQLite durability contract unchanged.
+
+**Structured fields limited to:** professional codes · bounded plain-text reason · decision codes · evidence IDs · actor identity/type.
+
+**Still forbidden:** raw detail · checkpoint body · `AgentExecutionContext` · authorization secrets · tokens · credentials · tool args · scope body · CandidatePackage · business data rows · prompt · model output · chain-of-thought. **No LLM** in decision truth path.
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+| Gate | Result |
+|------|--------|
+| Targeted 10.8A (initial) | **23 / 23 PASS** |
+| Targeted 10.8A (final recheck) | **76 / 76 PASS** + 17 subtests |
+| Observability | **PASS** |
+| Query Port | **PASS** |
+| HITL observability | **PASS** |
+| HITL resume | **PASS** |
+| 10.4 | **PASS** |
+| 10.5 | **PASS** |
+| 10.7 | **PASS** |
+| EOS-SEC | **PASS** |
+| Architecture drift | **NO** |
+
+**DURABLE_RESTART_REGRESSION:** **ENVIRONMENT_BLOCKED_NOT_REGRESSION**
+
+| Factor | Detail |
+|--------|--------|
+| Docker CLI | unavailable on current machine |
+| Disposable PostgreSQL | expected at `127.0.0.1:55432` — unavailable |
+| Repository | metadata for disposable test environment exists; **no** authoritative executable start command |
+| psycopg | declared in `requirements.txt` · already installed in project `.venv` |
+| Code failure observed | **NO** |
+
+**Do NOT interpret as PASS or FAIL** — exact accepted status: **ENVIRONMENT_BLOCKED_NOT_REGRESSION**.
+
+------------------------------------------------------------
+DIGITAL WORKFORCE OBSERVABILITY
+------------------------------------------------------------
+
+10.8A is a foundational part of **Digital Workforce Execution Observability**. Enables future operator UI to represent Human Decision inside the actual execution trajectory of a digital employee. **Not** merely an approval-widget contract.
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+CODE: `8d1e8d5f13a95e31be2ca84aa2c0de90c98d077b` · message: `feat(agents): add structured hitl read contract` · BRANCH: `wip/increment-10-agent-control-room` · PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES** · worktree after code commit: **CLEAN**
+
+FILES (14): `agents/observability/contracts.py` · `agents/observability/store.py` · `agents/monthly_plan_constructor/runtime_instrumentation.py` · `agents/monthly_plan_constructor/langgraph_runtime.py` · `agents/control_room/dtos.py` · `agents/control_room/derivations.py` · `agents/control_room/query_port.py` · `tests/test_human_decision_observability_read_contract.py` · `tests/test_agent_observability_contracts.py` · `tests/test_agent_control_room_query_port.py` · `tests/test_constructor_langgraph_hitl_observability.py` · `tests/test_control_room_page_guards.py` · `tests/test_observability_durable_store.py` · `tests/test_observability_process_durability.py`
+
+UI / Run Control / HITL write path / `hitl_contracts` / `hitl_resume` / projection / sqlite DDL: **unchanged**
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**Increment 10.8B** Professional HITL / Live Agent Execution Visualization preflight — do **not** start before this checkpoint is committed.
+
+10.8B must **NOT** be reduced to one «Approval» card. Target visualization must integrate: agent run header · professional execution stages · stage status · stage duration · what agent did · tools used · outputs/artifacts · Human Decision within execution path · decision consequence · reality refresh · downstream continuation · forensic timeline.
+
+World-class agent observability patterns = minimum design baseline. Execution OS adds: professional digital work · physical execution semantics · Human Decision Surface · evidence · reality refresh · post-decision consequence · handoff · governance.
+
+Remaining: **10.8B** Professional HITL / Live Agent Execution Visualization → **10.9** Handoff / Completion / Digital Organization Visualization → **10.10** full live-run proof + regressions + EOS-SEC + final docs
 
 Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**

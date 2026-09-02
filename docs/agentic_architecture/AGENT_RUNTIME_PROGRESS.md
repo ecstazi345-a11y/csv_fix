@@ -13,10 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix**
-- **NEXT:** Increment 10.4 Durable Observability Store — revalidate 10.4 preflight assumptions against Operational Truth Fix before implementation; do **not** repeat full historical investigation
-- **Recovery code HEAD:** `edab8d9d80531b1ab58d13864042fe1506538163` (Operational Truth Fix on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · 10.4 NOT STARTED (architecturally **UNBLOCKED**) · Increment 10 overall **NOT COMPLETE**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store**
+- **NEXT:** Increment 10.5 — separate-process / restart durability proof (Process A writes → exits → Process B reads identical event log + projection)
+- **Recovery code HEAD:** `163d7bc9096dd9fe47d7275064ff60d4721b57ca` (Increment 10.4 on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · 10.5 NOT STARTED · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -4137,5 +4137,136 @@ NEXT
 ------------------------------------------------------------
 
 Return to **Increment 10.4 Durable Observability Store**. Before implementation: revalidate 10.4 preflight assumptions against this Operational Truth Fix. Update 10.4 design only where event/projection assumptions changed. Do **not** repeat the entire historical investigation.
+
+Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**
+
+---
+
+============================================================
+CHECKPOINT — 2026-09-02
+INCREMENT 10.4
+DURABLE OBSERVABILITY STORE
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** agent-neutral durable observability infrastructure behind the accepted `ObservabilityRecorder` interface. **10.5 is NOT implemented in this checkpoint.**
+
+------------------------------------------------------------
+DELIVERABLES
+------------------------------------------------------------
+
+Agent-neutral infrastructure (reusable by future digital employees):
+
+| Component | Role |
+|-----------|------|
+| `ObservabilityStore` | Agent-neutral durable port |
+| `InMemoryObservabilityStore` | Contract test double with full store semantics |
+| `SqliteObservabilityStore` | File-backed SQLite durable backend |
+| `StoreObservabilityRecorder` | Durable adapter implementing existing `ObservabilityRecorder` |
+| `AgentRunProjectionChange` | Constrained typed projection delta |
+| `project_agent_run_event(...)` | Pure EventType-driven projection engine |
+
+No Constructor-specific store.
+
+------------------------------------------------------------
+ATOMICITY LAW
+------------------------------------------------------------
+
+```
+EVENT_ACCEPTED  ⇔  AGENT_RUN_PROJECTION_UPDATED_TO_MATCH
+```
+
+For **NEW** events: event append + projection update + `projection_version` increment = **one atomic durable operation**. Any failure: **neither** event nor projection commits. No standalone authoritative event append without matching projection update for projected Class A truth.
+
+------------------------------------------------------------
+REPLAY-BEFORE-CAS LAW
+------------------------------------------------------------
+
+Frozen durable ordering inside store transaction:
+
+1. Validate event · 2. Compute fingerprint · 3. Look up `event_id` **first**
+
+| Case | Result |
+|------|--------|
+| Same `event_id` + same fingerprint | `IDEMPOTENT_REPLAY` — no CAS · no projection mutation · no version increment (even if later events advanced version) |
+| Same `event_id` + different fingerprint | Fail-closed conflict |
+| **New** `event_id` only | CAS on `expected_projection_version` · append · project · `projection_version += 1` |
+
+------------------------------------------------------------
+PROJECTION VERSION LAW
+------------------------------------------------------------
+
+| Case | `projection_version` |
+|------|---------------------|
+| `create_run` | Initial accepted value (normally `0`) |
+| NEW accepted event | `+1` exactly once |
+| `IDEMPOTENT_REPLAY` | Unchanged |
+| Fingerprint conflict | Unchanged |
+| CAS conflict | No write |
+
+No last-write-wins.
+
+------------------------------------------------------------
+OPERATIONAL TRUTH (IMPLEMENTED PROJECTION)
+------------------------------------------------------------
+
+| Event | `operational_status` | Notes |
+|-------|---------------------|-------|
+| `RUN_REQUESTED` | `REQUESTED` | |
+| `RUN_AUTHORIZATION_STARTED` / `RUN_AUTHORIZED` | `AUTHORIZING` | Structured auth refs only |
+| `RUN_DENIED` | `AUTHORIZATION_DENIED` | `completed_at` |
+| `MISSION_BOUND` / `RUN_STARTED` | `STARTING` | Launcher return ≠ RUNNING |
+| `RUN_ADVANCING` | `RUNNING` | Runtime-owned; sets `started_at` if unset |
+| `HUMAN_WAIT_STARTED` | `WAITING_FOR_HUMAN` | |
+| `RUN_RESUMED` | `RUNNING` | `started_at` preserved; no second `RUN_ADVANCING` |
+| `RUN_FAILED` | `FAILED` | `completed_at`; no free-form `detail.error_code` promotion |
+| `RUN_ABORTED` | `ABORTED` | `completed_at`; ≠ `RUN_FAILED` |
+| `RUN_COMPLETED` | `COMPLETED` | `completed_at` |
+
+Conservative: no inference from `STAGE_*`, `TOOL_*`, `ARTIFACT_*`, `HANDOFF_*`, `REALITY_REFRESH_*`, titles, node names, or free-form detail.
+
+------------------------------------------------------------
+UNKNOWN RUN · CREATE_RUN · ORDERING · READS · SECURITY
+------------------------------------------------------------
+
+- **Unknown run:** `StoreObservabilityRecorder` fail-closed for unknown `run_id` — no auto-create; bootstrap belongs to Run Control
+- **create_run:** Immutable identity comparison only; same identity = idempotent ack; different identity = fail-closed
+- **Ordering:** Internal `append_sequence` (not `occurred_at` alone); replay creates no new sequence
+- **Bounded reads:** `list_events` / `list_runs` are storage-oriented bounded reads — **not** Control Room read models (10.6 Query Port)
+- **EOS-SEC:** Typed contracts only; pre-write serialization + bounds + secret scan; no arbitrary SQL API
+- **Business truth first:** Store failure does not create `RUN_FAILED`; store must not emit events about its own failure
+
+------------------------------------------------------------
+SQLITE DURABILITY SCOPE
+------------------------------------------------------------
+
+**Proved:** object-reopen durability (store A writes → closes → store B opens same file → identical projection + events/order).
+
+**NOT proved:** separate-process durability — that is **Increment 10.5**.
+
+Product Supabase: **NOT** part of 10.4. Future Supabase must be an adapter behind the same `ObservabilityStore` port.
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+Targeted 10.4: **31 / 31 PASS** (+ 22 store subtests memory/sqlite) · Combined gate: **298 / 298 PASS** (+ 46 subtests) · Observability + Run Control + Operational Truth + 10.3A–E: **PASS** · Architecture drift: **NO**
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+CODE: `163d7bc9096dd9fe47d7275064ff60d4721b57ca` · message: `feat(agents): add durable observability store` · BRANCH: `wip/increment-10-agent-control-room` · PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES**
+
+FILES (6): `store.py` · `projection.py` · `sqlite_store.py` · `durable_recorder.py` · `__init__.py` · `test_observability_durable_store.py`
+
+Frozen unchanged: `recorder.py` · `contracts.py` · `run_control/**` · `monthly_plan_constructor/**`
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**Increment 10.5** — separate-process / restart durability proof. Do **not** start during this checkpoint.
 
 Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**

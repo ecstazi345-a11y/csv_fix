@@ -408,7 +408,7 @@ Closed `operational_status` enum:
 | `AUTHORIZING` | Issuer / policy check in progress |
 | `AUTHORIZATION_DENIED` | Terminal for this request. No runtime start |
 | `STARTING` | Authorized; runtime invoke not yet `RUNNING` |
-| `RUNNING` | Professional runtime is advancing |
+| `RUNNING` | Professional runtime is advancing — **only** after durable `RUN_ADVANCING` (§19) |
 | `WAITING_FOR_HUMAN` | Durable HITL pause. Same `run_id` |
 | `RETRYING` | Declared technical retry of the same `run_id` |
 | `COMPLETED` | Managed operational completion — §8 |
@@ -426,6 +426,28 @@ Closed `operational_status` enum:
 Control Room **primary** badge is durable `operational_status` when the observability store is reachable. Professional `lifecycle_status` is secondary / engineering.
 
 Durable `FAILED` is allowed only when a Class A `RUN_FAILED` event was actually persisted (§17). Store unavailability is **not** durable `FAILED`. It is a local control-plane fail-safe (`OBSERVABILITY_UNAVAILABLE` / `CONTROL_PLANE_FAILURE`) that Control Room must present as **not durably confirmed** — never as invented `RUN_FAILED`.
+
+### RUNNING truth law
+
+`RUN_STARTED` → `operational_status = STARTING`. ManagedRuntimeLauncher successful return **does not** prove `RUNNING`.
+
+Runtime-owned `RUN_ADVANCING` is the authoritative `STARTING → RUNNING` transition. It sets `started_at` from `event.occurred_at` when unset.
+
+Do **not** map launcher return, `STAGE_STARTED`, node name, or stage label to operational `RUNNING`.
+
+### WAIT / resume law
+
+`HUMAN_WAIT_STARTED` → `WAITING_FOR_HUMAN`. `RUN_RESUMED` → `RUNNING` with `started_at` preserved. No second `RUN_ADVANCING` on HITL resume.
+
+### Terminal operational truth
+
+| Event | Status | `completed_at` |
+|-------|--------|----------------|
+| `RUN_FAILED` | `FAILED` | set |
+| `RUN_ABORTED` | `ABORTED` | set |
+| `RUN_COMPLETED` | `COMPLETED` | set |
+
+`RUN_ABORTED` does **not** imply `RUN_FAILED`. Generic runtime exception does **not** automatically become `RUN_FAILED`. Only known terminal runtime/professional paths emit `RUN_FAILED`.
 
 ---
 
@@ -459,6 +481,7 @@ RUN_REQUESTED
   → RUN_AUTHORIZED | RUN_DENIED
   → MISSION_BOUND
   → RUN_STARTED
+  → RUN_ADVANCING          (runtime-owned; STARTING → RUNNING)
 ```
 
 `RunRequest` ≠ authorization.
@@ -562,7 +585,9 @@ Closed families and types. Unknown family/type fails closed.
 
 ### `RUN_CONTROL`
 
-`RUN_REQUESTED` · `RUN_AUTHORIZATION_STARTED` · `RUN_AUTHORIZED` · `RUN_DENIED` · `RUN_STARTED` · `RUN_COMPLETED` · `RUN_FAILED` · `RUN_ABORTED`
+`RUN_REQUESTED` · `RUN_AUTHORIZATION_STARTED` · `RUN_AUTHORIZED` · `RUN_DENIED` · `RUN_STARTED` · **`RUN_ADVANCING`** · `RUN_COMPLETED` · `RUN_FAILED` · `RUN_ABORTED`
+
+**`RUN_ADVANCING`** — Owner: Runtime / runtime instrumentation. Meaning: *The authorized professional runtime has actually begun execution.* (RU: *Авторизованный профессиональный runtime фактически начал исполнение.*) Authoritative projection: `operational_status = RUNNING`; sets `started_at` from `event.occurred_at` when unset.
 
 ### `MISSION`
 
@@ -681,7 +706,9 @@ Presentation colors (green / blue / yellow / orange / red / gray) belong to the 
 
 Shared agent-neutral port: **`ObservabilityRecorder`**.
 
-This protocol is part of **Increment 10.1**, together with a safe **in-memory test implementation**. That double is contract proof only. It is not production durability.
+Increment **10.1** introduced this protocol with a safe **in-memory test implementation** (`InMemoryObservabilityRecorder`). That double is contract proof only.
+
+Increment **10.4** introduced **`StoreObservabilityRecorder`**: durable adapter behind the same port, delegating to `ObservabilityStore` (`InMemoryObservabilityStore` test double · `SqliteObservabilityStore` file-backed backend). In-memory 10.1 recorder alone is not production durability.
 
 Responsibility: record immutable safe events. For authoritative transitions the recorder must use the store’s atomic append+project operation (§18), including in the in-memory double.
 
@@ -715,6 +742,7 @@ Emit from:
 
 - Run Control (request, identity, start)
 - Authorization boundary
+- **Runtime instrumentation** (`RUN_ADVANCING` — runtime-owned STARTING → RUNNING)
 - LangGraph **node wrapper** (not inside remainder math)
 - Trusted tool boundary (allow / deny / complete)
 - HITL wait / resume
@@ -739,7 +767,7 @@ Do **not**:
 
 Required Class A set:
 
-`RUN_REQUESTED` · `RUN_AUTHORIZATION_STARTED` · `RUN_AUTHORIZED` / `RUN_DENIED` · `MISSION_BOUND` · `RUN_STARTED` · `HUMAN_WAIT_STARTED` · `HUMAN_DECISION_RECEIVED` · `RUN_RESUMED` · `HANDOFF_CREATED` · `HANDOFF_PERSISTED` · `HANDOFF_PERSIST_FAILED` · `RUN_COMPLETED` · `RUN_FAILED` · `RUN_ABORTED` · `SECURITY_EVENT` for denied / critical security actions
+`RUN_REQUESTED` · `RUN_AUTHORIZATION_STARTED` · `RUN_AUTHORIZED` / `RUN_DENIED` · `MISSION_BOUND` · `RUN_STARTED` · **`RUN_ADVANCING`** · `HUMAN_WAIT_STARTED` · `HUMAN_DECISION_RECEIVED` · `RUN_RESUMED` · `HANDOFF_CREATED` · `HANDOFF_PERSISTED` · `HANDOFF_PERSIST_FAILED` · `RUN_COMPLETED` · `RUN_FAILED` · `RUN_ABORTED` · `SECURITY_EVENT` for denied / critical security actions
 
 `RUN_FAILED` is Class A **only** when professional/runtime failure occurred **while the observability store was available** and the event can actually be appended.
 
@@ -788,11 +816,11 @@ Minimum operations:
 
 | Operation | Law |
 |-----------|-----|
-| `create_run(run)` | Insert run identity. Fail if `run_id` exists with different identity |
+| `create_run(run)` | Insert run identity. Same `run_id` + same immutable identity → idempotent acknowledgement. Same `run_id` + different immutable identity → fail closed. Mutable projection fields **must not** participate in identity equivalence |
 | `get_run(run_id)` | Read current projection |
 | `append_event_and_project_run(event, expected_projection_version, projection_change)` | **MUST**: atomically append the event and apply the constrained projection change, or commit neither |
-| `list_events(run_id, filters)` | Bounded |
-| `list_runs(filters)` | Bounded |
+| `list_events(run_id, filters)` | Bounded storage-oriented read — **not** a Control Room read model |
+| `list_runs(filters)` | Bounded storage-oriented read — **not** a Control Room read model |
 
 A standalone `append_event` without projection update is **not** sufficient for authoritative operational transitions.
 
@@ -815,12 +843,72 @@ Any authoritative operational transition that changes:
 Invariant:
 
 ```
-EVENT_ACCEPTED  ⇔  RUN_PROJECTION_UPDATED_TO_MATCH
+EVENT_ACCEPTED  ⇔  AGENT_RUN_PROJECTION_UPDATED_TO_MATCH
 ```
 
 No window where Control Room permanently sees a projection without its event, or an event without the corresponding projection.
 
 If the atomic transaction fails: **neither** authoritative change is committed. Apply §17 if the failed write was Class A.
+
+### Replay-before-CAS law (frozen)
+
+Inside the store transaction, event identity / fingerprint check **MUST** happen **before** projection-version CAS.
+
+| Case | Result |
+|------|--------|
+| Existing `event_id` + same fingerprint | `IDEMPOTENT_REPLAY` — no CAS requirement, no projection mutation, no `projection_version` increment (even if later events advanced version) |
+| Existing `event_id` + different fingerprint | Fail-closed conflict |
+| **New** `event_id` only | CAS on `expected_projection_version`; append; project; `projection_version += 1` exactly once |
+
+### Projection version law
+
+| Case | `projection_version` |
+|------|---------------------|
+| `create_run` | Initial accepted value (normally `0`) |
+| NEW accepted event | `+1` exactly once |
+| `IDEMPOTENT_REPLAY` | Unchanged |
+| Fingerprint conflict | Unchanged |
+| CAS conflict | No write |
+
+No last-write-wins.
+
+### Unknown run law
+
+`StoreObservabilityRecorder` **must** fail closed for unknown `run_id`. It **must not** auto-create `AgentRun`. Run creation belongs to managed-run bootstrap / Run Control lifecycle.
+
+### Event ordering
+
+Durable event ordering uses internal `append_sequence` (or equivalent monotonic store ordering). `occurred_at` is **not** sufficient as sole ordering authority. Replay does not create a new append sequence. `append_sequence` is storage ordering only — **not** business identity.
+
+### Bounded reads
+
+Future Control Room architecture remains:
+
+```
+Control Room  →  AgentControlRoomQueryPort  →  ObservabilityStore
+```
+
+**Not:** Control Room → raw SQLite / Supabase tables.
+
+### Security (EOS-SEC)
+
+Store accepts typed accepted contracts only. Persist only `ObservabilityEvent` and `AgentRun` projection. **Never** persist: `AgentExecutionContext`, credentials, tokens, service-role secrets, DSN, raw DataFrames, business rows, full `CandidatePackage`, prompt history, chain-of-thought, arbitrary Python repr. Pre-write validation: serialization, bounds, secret scan. No arbitrary SQL API.
+
+### Business truth first
+
+Observability store failure does **not** automatically create `RUN_FAILED`. Store must not emit events about its own failure. Observability failure propagates fail-closed to control/runtime boundary; professional/runtime truth remains separate.
+
+### Accepted implementations (Increment 10.4)
+
+| Backend | Role |
+|---------|------|
+| `InMemoryObservabilityStore` | Contract test double with full store semantics |
+| `SqliteObservabilityStore` | File-backed SQLite durable backend |
+| `StoreObservabilityRecorder` | Durable adapter implementing existing `ObservabilityRecorder` |
+
+**SQLite durability scope (10.4):** object-reopen durability — store object A writes → closes → store object B opens same file → reads identical projection + immutable events/order. **Not** separate-process durability (Increment 10.5).
+
+Product Supabase is **not** an Increment 10.4 implementation target. Future Supabase **must** be an adapter behind the same `ObservabilityStore` port — not a parallel architecture.
 
 Concurrency control is required. Conceptually one of:
 
@@ -838,7 +926,7 @@ Implementations (in-memory, local file/SQLite, disposable test Postgres) hide be
 
 ## 19. Run projection
 
-`AgentRun` current fields may be materialized for Control Room queries. `projection_version` starts at create and increments on every accepted atomic projection change.
+`AgentRun` current fields may be materialized for Control Room queries. `projection_version` starts at create and increments on every accepted atomic projection change (§18).
 
 Every authoritative change to:
 
@@ -861,11 +949,38 @@ If the observability store is unavailable, Control Room shows `OBSERVABILITY UNA
 
 If projection and event log disagree after the store is available, **event log wins** after reconstruction. A projection that cannot be rebuilt is a defect. Reconstruction must not invent events.
 
+### Operational status projection from EventType
+
+`AgentRun` operational projection is driven **only** by accepted structured `EventType` semantics via `project_agent_run_event(...)` / `AgentRunProjectionChange`. Full authoritative map (see also §7):
+
+| EventType | `operational_status` | Other fields |
+|-----------|---------------------|--------------|
+| `RUN_REQUESTED` | `REQUESTED` | |
+| `RUN_AUTHORIZATION_STARTED` / `RUN_AUTHORIZED` | `AUTHORIZING` | Structured auth refs only |
+| `RUN_DENIED` | `AUTHORIZATION_DENIED` | `completed_at` |
+| `MISSION_BOUND` / `RUN_STARTED` | `STARTING` | |
+| `RUN_ADVANCING` | `RUNNING` | `started_at` from `event.occurred_at` if unset |
+| `HUMAN_WAIT_STARTED` | `WAITING_FOR_HUMAN` | |
+| `RUN_RESUMED` | `RUNNING` | `started_at` preserved |
+| `RUN_FAILED` | `FAILED` | `completed_at` |
+| `RUN_ABORTED` | `ABORTED` | `completed_at` |
+| `RUN_COMPLETED` | `COMPLETED` | `completed_at` |
+
+### Conservative projection law
+
+Do **not** infer operational status from: `STAGE_*`, `TOOL_*`, `ARTIFACT_*`, `HANDOFF_*`, `REALITY_REFRESH_*`, title, `node_name`, stage label, `safe_summary`, or free-form `detail` — unless a structured contract explicitly defines a correlation field. Unsupported fields: **UNCHANGED**.
+
+### Error field law
+
+`RUN_FAILED` does **not** automatically promote free-form `detail.error_code` into `AgentRun.error_code` unless an explicitly structured authoritative field is defined by contract. Do not create durable business truth from arbitrary detail payload.
+
 ---
 
 ## 20. Local durability vs production storage
 
 Increment 10 **may** prove durability locally (same discipline as Increment 8 / 9.4 test Postgres: isolated, no product DDL).
+
+**Increment 10.4** proves **object-reopen durability** (SQLite file: store A writes → closes → store B reads identical state). **Increment 10.5** proves **separate-process / restart durability** (Process A writes → exits → Process B starts independently → reads identical event log + projection). Neither requires product Supabase.
 
 **No** production Supabase DDL/RLS in Increment 10 implementation slices 10.1–10.10 unless a later **separate** security review explicitly authorizes it.
 

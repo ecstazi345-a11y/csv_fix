@@ -36,6 +36,12 @@ from agents.observability.contracts import (
     build_run_request,
     compute_run_request_digest,
 )
+from agents.observability.durable_recorder import StoreObservabilityRecorder
+from agents.observability.projection import (
+    AgentRunProjectionChange,
+    apply_agent_run_projection_change,
+    project_agent_run_event,
+)
 from agents.observability.recorder import (
     InMemoryObservabilityRecorder,
     ObservabilityEventConflictError,
@@ -43,6 +49,19 @@ from agents.observability.recorder import (
     RecordOutcome,
     RecordResult,
 )
+from agents.observability.store import (
+    AppendEventResult,
+    CreateRunOutcome,
+    CreateRunResult,
+    InMemoryObservabilityStore,
+    ObservabilityProjectionVersionConflictError,
+    ObservabilityRunIdentityConflictError,
+    ObservabilityRunNotFoundError,
+    ObservabilityStorageFailureError,
+    ObservabilityStore,
+    ObservabilityStoreError,
+)
+from agents.observability.sqlite_store import SqliteObservabilityStore
 
 __all__ = [
     "AGENT_RUN_SCHEMA_VERSION",
@@ -63,7 +82,22 @@ __all__ = [
     "EventStatus",
     "EventType",
     "InitiatorType",
+    "AgentRunProjectionChange",
+    "AppendEventResult",
+    "CreateRunOutcome",
+    "CreateRunResult",
     "InMemoryObservabilityRecorder",
+    "InMemoryObservabilityStore",
+    "ObservabilityProjectionVersionConflictError",
+    "ObservabilityRunIdentityConflictError",
+    "ObservabilityRunNotFoundError",
+    "ObservabilityStorageFailureError",
+    "ObservabilityStore",
+    "ObservabilityStoreError",
+    "SqliteObservabilityStore",
+    "StoreObservabilityRecorder",
+    "apply_agent_run_projection_change",
+    "project_agent_run_event",
     "ObservabilityContractError",
     "ObservabilityEvent",
     "ObservabilityEventConflictError",

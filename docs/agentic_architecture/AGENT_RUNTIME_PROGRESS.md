@@ -13,10 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation
-- **NEXT:** [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation (within Increment 10 — Agent Control Room / Observability)
-- **Recovery code HEAD:** `719178c63434a8a822ecd65dd16e7f4824058be4` (Increment 10.3C on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D NEXT · 10.3E NOT STARTED · 10.3 **NOT COMPLETE** · Increment 10 overall **NOT COMPLETE**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation
+- **NEXT:** [10.3E] Handoff / Completion Runtime Instrumentation (within Increment 10 — Agent Control Room / Observability)
+- **Recovery code HEAD:** `0060e6509a036c77c8ff03d569a1727f82e4ded6` (Increment 10.3D on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E NEXT · 10.3 **NOT COMPLETE** · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -3389,3 +3389,406 @@ agent waits for human
 Expected events (deferred): `HUMAN_WAIT_STARTED`, `HUMAN_DECISION_RECEIVED`, `RUN_RESUMED`, `REALITY_REFRESH_*`.
 
 Increment 10.3D **не** реализован в этом checkpoint.
+
+---
+
+============================================================
+CHECKPOINT — 2026-09-02 — CONSTRUCTOR AGENT — INCREMENT 10.3D
+HITL / RESUME / REALITY REFRESH RUNTIME INSTRUMENTATION
+============================================================
+
+PROGRAM:
+Monthly Planning Agentic Orchestration
+
+CURRENT AGENT:
+MONTHLY_PLAN_CONSTRUCTOR
+
+CURRENT INCREMENT:
+[10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation
+
+STATUS:
+DONE
+
+------------------------------------------------------------
+WHAT WE BUILT
+------------------------------------------------------------
+
+Increment 10.3D made the existing durable HITL lifecycle observable without redesigning professional HITL logic.
+
+Architecture law preserved: **Python function call ≠ tool call** · **Skill ≠ tool** · **Observability RECORDS execution truth; it does NOT become execution truth.**
+
+**Observed lifecycle chain (10.3D):**
+
+```
+professional stage
+→ WAITING_FOR_HUMAN
+→ HUMAN_WAIT_STARTED
+→ interrupt
+→ HUMAN_DECISION_RECEIVED
+→ apply human decision
+→ RUN_RESUMED
+→ REVALIDATING_REALITY
+→ REALITY_REFRESH_STARTED
+→ secure fresh read
+→ REALITY_REFRESH_COMPLETED
+→ fresh snapshot artifact
+→ professional execution continues
+```
+
+10.3D did **NOT** change `hitl_resume.py`, `hitl_contracts.py`, `lifecycle.py`, observability contracts, or Run Control. Instrumentation lives in `langgraph_runtime.py` at the HITL boundary only.
+
+When `recorder=None`, original professional paths are preserved unchanged.
+
+------------------------------------------------------------
+HUMAN WAIT
+------------------------------------------------------------
+
+**`WAITING_FOR_HUMAN` is NOT failure.**
+
+The professional stage still completes correctly and routes to a human decision gate.
+
+**`HUMAN_WAIT_STARTED` means:** the digital employee reached a real Human Decision Gate and intentionally paused execution.
+
+Цифровой сотрудник достиг реальной точки решения человека и намеренно приостановил исполнение.
+
+If `HUMAN_WAIT_STARTED` emission fails → `interrupt()` is not called (fail-closed).
+
+------------------------------------------------------------
+HUMAN DECISION VS RESUME
+------------------------------------------------------------
+
+**`HUMAN_DECISION_RECEIVED` ≠ `RUN_RESUMED`**
+
+| Event | Meaning |
+|-------|---------|
+| `HUMAN_DECISION_RECEIVED` | A valid human resume/decision command was actually received and passed required validation |
+| `RUN_RESUMED` | The decision was successfully applied and professional execution actually resumed |
+
+For **ABORT_RUN:**
+
+| Event | Emitted |
+|-------|---------|
+| `HUMAN_DECISION_RECEIVED` | **YES** |
+| `RUN_RESUMED` | **NO** |
+| `REALITY_REFRESH_*` | **NO** |
+
+Professional `FAILED` remains authoritative. Observability does not rewrite lifecycle outcome.
+
+If `HUMAN_DECISION_RECEIVED` emission fails → resume command is not applied (fail-closed).
+
+------------------------------------------------------------
+FRESH REALITY LAW
+------------------------------------------------------------
+
+**Runtime law:** After human resume, the digital employee must **NOT** continue from stale reality.
+
+После решения человека цифровой сотрудник **НЕ** должен продолжать работу на устаревшей реальности.
+
+Required chain:
+
+```
+resume
+→ REVALIDATING_REALITY
+→ fresh secure read
+→ new reality snapshot
+→ continued professional execution
+```
+
+This is a core distinction between a **durable digital employee** and a simple **automation script**.
+
+`RUN_RESUMED` is emitted only when the applied decision yields `REVALIDATING_REALITY`.
+
+------------------------------------------------------------
+POST-HITL TOOL OBSERVABILITY
+------------------------------------------------------------
+
+10.3D owns post-HITL secure-read tool observability under **`REALITY_REVALIDATION`**.
+
+Same professional EOS-SEC tool as initial read:
+
+| Constant | Tool name | Node | Stage |
+|----------|-----------|------|-------|
+| `TOOL_LOAD_SCOPE` | `load_constructor_scope` | `revalidate_reality` | `REALITY_REVALIDATION` |
+
+Events:
+
+- `TOOL_CALL_STARTED`
+- `TOOL_CALL_COMPLETED`
+- `TOOL_CALL_DENIED`
+
+Failure distinction within `TOOL_CALL_DENIED`:
+
+| Failure class | Event | EventStatus |
+|---------------|-------|-------------|
+| Security denial | `TOOL_CALL_DENIED` | `DENIED` |
+| Controlled read / tool failure | `TOOL_CALL_DENIED` | `FAILED` |
+
+This is **distinct** from initial `REALITY_READ` in 10.3C.
+
+If `REALITY_REFRESH_STARTED` or `TOOL_CALL_STARTED` emission fails → fresh read is not executed (fail-closed).
+
+------------------------------------------------------------
+REFRESH SNAPSHOT ARTIFACT
+------------------------------------------------------------
+
+A successful fresh reality read creates a new `ConstructorRealityRead`.
+
+- `ARTIFACT_CREATED` is emitted only for a genuinely new stable `read_id`
+- No synthetic artifact IDs
+- Safe metadata only
+- No raw rows · No DataFrames · No full business payload · No secrets
+
+If `ARTIFACT_CREATED` emission fails after professional artifact creation → business artifact is not rewritten/removed (unchanged 10.3B/10.3C policy).
+
+------------------------------------------------------------
+MULTI-WAIT IDENTITY
+------------------------------------------------------------
+
+**Same-wait replay:**
+
+| Property | Value |
+|----------|-------|
+| Semantic key | `wait-1` |
+| Replay behavior | **IDEMPOTENT_REPLAY** |
+
+**Multiple real waits in one run:**
+
+| Wait episode | `wait_ordinal` | Semantic key |
+|--------------|----------------|--------------|
+| First real wait | 1 | `wait-1` |
+| Second real wait | 2 | `wait-2` |
+
+Distinct across episodes: `interrupt_id`, `event_id`, `resume_n`.
+
+This proves checkpoint replay of the same wait is **NOT** confused with a genuinely new Human Gate episode.
+
+**Proof tests:**
+
+- `test_wait_replay_is_idempotent`
+- `test_multiple_real_waits_get_distinct_wait_identity` — proved two real waits inside the same run
+
+Production code change required for multi-wait proof: **NO**<br>
+Runtime bug found: **NO**
+
+------------------------------------------------------------
+10.3B TEST COMPATIBILITY FIX
+------------------------------------------------------------
+
+`tests/test_constructor_langgraph_stage_instrumentation.py` received a justified compatibility correction.
+
+Pre-resume assertion now filters `event.stage_id in CORE_STAGES`.
+
+Reason: HITL uses `HUMAN_GATE`, which is not in core stages. HITL wait events belong to 10.3D, not 10.3B.
+
+| Check | Result |
+|-------|--------|
+| Assertions removed | **NO** |
+| Tests disabled | **NO** |
+| Expected stage semantics weakened | **NO** |
+
+------------------------------------------------------------
+RECORDER FAILURE POLICY
+------------------------------------------------------------
+
+Existing fail-closed policy (unchanged from 10.3B/10.3C):
+
+- Recorder failure **propagates**
+- Does **NOT** silently swallow
+- Does **NOT** rewrite professional lifecycle to `FAILED`
+- Does **NOT** invent `RUN_FAILED`
+- Does **NOT** remove already-created business artifacts
+
+Specific 10.3D gates:
+
+| Failure point | Consequence |
+|---------------|-------------|
+| `HUMAN_WAIT_STARTED` emission fails | `interrupt()` not called |
+| `HUMAN_DECISION_RECEIVED` emission fails | Resume command not applied |
+| `REALITY_REFRESH_STARTED` / `TOOL_CALL_STARTED` emission fails | Fresh read not executed |
+
+------------------------------------------------------------
+DATA MINIMIZATION
+------------------------------------------------------------
+
+Human decisions are sensitive. Allowed safe metadata includes:
+
+- `decision_id`
+- `decision_type`
+- `actor_type`
+- `actor_id`
+- `interrupt_id`
+- `checkpoint_id`
+- `reason_code`
+- `wait_ordinal`
+- `route`
+- `severity`
+- `status` / error codes
+
+Do **NOT** log:
+
+- human free-text comment
+- parameters mapping
+- scope body
+- full interrupt payload
+- raw reality rows
+- evidence bodies
+- credentials
+- tokens
+- `AgentExecutionContext`
+
+No secret leakage / Никаких утечек секретов.
+
+------------------------------------------------------------
+WHAT THIS GIVES THE SYSTEM
+------------------------------------------------------------
+
+После 10.3D цифровой сотрудник стал наблюдаемым не только во время обычного исполнения, но и в критическом цикле взаимодействия с человеком.
+
+Теперь можно доказуемо увидеть:
+
+```
+агент столкнулся с исключением
+→ остановился
+→ запросил решение человека
+→ получил решение
+→ действительно возобновил работу
+→ перечитал актуальную реальность
+→ продолжил профессиональное исполнение
+```
+
+Это отличает **durable digital employee** / **долговечного цифрового сотрудника** от **one-time automation script** / **скрипта автоматизации**.
+
+Conceptual chain now:
+
+Run Control<br>
+→ authorized runtime start boundary<br>
+→ Runtime Instrumentation Foundation (10.3A)<br>
+→ Core LangGraph Stage Wiring (10.3B)<br>
+→ Tool / Artifact Runtime Instrumentation (10.3C)<br>
+→ **HITL / Resume / Reality Refresh Runtime Instrumentation (10.3D)** ← this checkpoint<br>
+→ Handoff / Completion Runtime Instrumentation (10.3E)
+
+------------------------------------------------------------
+PLACE IN OVERALL ARCHITECTURE
+------------------------------------------------------------
+
+Increment 10.3D sits between:
+
+- **10.3C** Tool / Artifact Runtime Instrumentation (initial `REALITY_READ`, `CANDIDATE_ASSEMBLY`)
+- **10.3E** Handoff / Completion Runtime Instrumentation
+
+10.3D is thin runtime-boundary instrumentation only. No observability contract changes. No HITL professional logic changes.
+
+------------------------------------------------------------
+WHAT IS NOT DONE
+------------------------------------------------------------
+
+- NO `HANDOFF_CREATED` / `HANDOFF_PERSISTED` / `HANDOFF_PERSIST_FAILED` / `RUN_COMPLETED` (10.3E)
+- NO labor/exception/handoff artifact observability
+- NO `ConstructorManagedRuntimeLauncher`
+- NO durable observability store (Increment 10.4)
+- NO Query Port
+- NO Control Room UI
+- NO Supabase observability persistence
+- Increment 10.3 overall is **NOT COMPLETE**
+- Increment 10 overall is **NOT COMPLETE**
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+Targeted 10.3D: **16 / 16 PASS**<br>
+10.3B stage regression: **16 / 16 PASS**<br>
+Constructor standard gate: **412 / 412 PASS**<br>
+Observability + Run Control + EOS-SEC combined: **155 / 155 PASS**
+
+**FULL POSTGRES DURABLE RESTART SUITE:** **ENVIRONMENT_BLOCKED**<br>
+This is **NOT** classified as a 10.3D regression. Do **not** claim full postgres integration PASS.
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+CODE COMMIT:
+
+- `0060e6509a036c77c8ff03d569a1727f82e4ded6`
+- message: `feat(agents): instrument constructor hitl resume observability`
+
+BRANCH: `wip/increment-10-agent-control-room`
+
+PUSH: **SUCCESS**<br>
+LOCAL == UPSTREAM: **YES**<br>
+WORKTREE: **CLEAN**
+
+------------------------------------------------------------
+FILES
+------------------------------------------------------------
+
+Product:
+
+- `agents/monthly_plan_constructor/langgraph_runtime.py`
+
+Tests:
+
+- `tests/test_constructor_langgraph_hitl_observability.py` (new)
+- `tests/test_constructor_langgraph_stage_instrumentation.py` (compatibility fix)
+
+FILE COUNT IN CODE COMMIT: **3**
+
+NON-10.3D FILES IN COMMIT: **NO**
+
+NEW DEPENDENCIES: **NONE**
+
+**Not modified:** `hitl_resume.py`, `hitl_contracts.py`, `lifecycle.py`, observability contracts/recorder, Run Control, domain modules, handoff modules.
+
+------------------------------------------------------------
+WHERE WE ARE IN THE AGENT ROADMAP
+------------------------------------------------------------
+
+Constructor Agent Runtime v0.1:
+
+[1]–[9] — **DONE**<br>
+[10] Agent Control Room / Observability — **IN PROGRESS**
+
+Increment 10 decomposition:
+
+- 10.0 — Architecture Discovery — **DONE**
+- 10.A0 — WIP branch prep — **DONE**
+- 10.A1 — Formal Architecture Spec — **DONE**
+- 10.1 — Agent-Neutral Observability Foundation — **DONE**
+- 10.2 — Run Control — **DONE**
+- 10.3A — Runtime Instrumentation Foundation — **DONE**
+- 10.3B — Core LangGraph Stage Wiring — **DONE**
+- 10.3C — Tool / Artifact Runtime Instrumentation — **DONE**
+- 10.3D — HITL / Resume / Reality Refresh Runtime Instrumentation — **DONE** (this checkpoint)
+- 10.3E — Handoff / Completion Runtime Instrumentation — **NEXT / NOT STARTED**
+- 10.4 — Durable Observability Store — **NOT STARTED**
+
+Progress: **9 / 10** (Increment 10 overall not complete; do not claim 10 / 10)
+
+------------------------------------------------------------
+ONE-LINE SUMMARY
+------------------------------------------------------------
+
+На этом этапе Execution OS добавил к Constructor LangGraph runtime структурированную observability вокруг durable HITL lifecycle — human wait, human decision, run resume, post-HITL reality refresh и fresh snapshot artifact — с доказанной multi-wait identity и без изменения профессиональной HITL-логики.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+Increment 10.3E — Handoff / Completion Runtime Instrumentation.
+
+Expected scope (brief only — not designed here):
+
+10.3E will instrument:
+
+```
+handoff artifact creation
+→ handoff persistence
+→ persistence failure if any
+→ successful completion of Constructor run
+```
+
+Expected events (deferred): `HANDOFF_CREATED`, `HANDOFF_PERSISTED`, `HANDOFF_PERSIST_FAILED`, `RUN_COMPLETED`.
+
+Increment 10.3E **не** реализован в этом checkpoint.

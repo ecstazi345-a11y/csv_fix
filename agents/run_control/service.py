@@ -22,6 +22,7 @@ from agents.observability.contracts import (
     compute_run_request_digest,
 )
 from agents.observability.recorder import ObservabilityRecorder
+from agents.observability.store import ObservabilityStore, ObservabilityStoreError
 from agents.run_control.contracts import (
     CODE_CONTROL_PLANE_FAILURE,
     CODE_LAUNCH_OUTCOME_UNKNOWN,
@@ -57,6 +58,7 @@ class RunControlService:
         *,
         registry: RunControlRegistry,
         recorder: ObservabilityRecorder,
+        durable_store: Optional[ObservabilityStore] = None,
     ) -> None:
         if registry is None:
             raise RunControlError(CODE_RUN_CONTROL_BLOCKER, "RunControlRegistry is required")
@@ -64,6 +66,7 @@ class RunControlService:
             raise RunControlError(CODE_RUN_CONTROL_BLOCKER, "ObservabilityRecorder is required")
         self._registry = registry
         self._recorder = recorder
+        self._durable_store = durable_store
 
     def start(
         self,
@@ -197,6 +200,8 @@ class RunControlService:
             orchestration_run_id=run_request.orchestration_run_id,
             scope_summary=dict(start_input.scope_request or {}),
         )
+
+        self._bootstrap_durable_run(agent_run)
 
         self._record_class_a(
             event_type=EventType.RUN_REQUESTED,
@@ -349,6 +354,22 @@ class RunControlService:
                 CODE_SYSTEM_EVENT_DIRECT_START_FORBIDDEN,
                 "SYSTEM_EVENT is orchestration ingress; direct managed start is forbidden",
             )
+
+    def _bootstrap_durable_run(self, agent_run: Any) -> None:
+        if self._durable_store is None:
+            return
+        try:
+            self._durable_store.create_run(agent_run)
+        except ObservabilityStoreError as exc:
+            raise RunControlError(
+                CODE_CONTROL_PLANE_FAILURE,
+                f"durable AgentRun bootstrap failed: {exc}",
+            ) from exc
+        except Exception as exc:
+            raise RunControlError(
+                CODE_CONTROL_PLANE_FAILURE,
+                f"durable AgentRun bootstrap failed: {exc}",
+            ) from exc
 
     def _terminalize_control_plane_failure(
         self,

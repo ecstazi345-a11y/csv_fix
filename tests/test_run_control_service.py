@@ -19,6 +19,9 @@ from agents.observability.contracts import (
     build_observability_event,
 )
 from agents.observability.recorder import InMemoryObservabilityRecorder
+from agents.observability.durable_recorder import StoreObservabilityRecorder
+from agents.observability.sqlite_store import SqliteObservabilityStore
+from agents.observability.store import ObservabilityStorageFailureError
 from agents.run_control.contracts import (
     CODE_CONTROL_PLANE_FAILURE,
     CODE_IDEMPOTENCY_CONFLICT,
@@ -30,7 +33,7 @@ from agents.run_control.contracts import (
 )
 from agents.run_control.registry import InMemoryRunControlRegistry
 from agents.run_control.service import RunControlService
-from security.agent_execution_context import ContextIssueError
+from security.agent_execution_context import ContextIssueError, issue_read_only_agent_context
 
 FIXED_AT = datetime(2026, 8, 31, 12, 0, 0, tzinfo=timezone.utc)
 REPO = __import__("pathlib").Path(__file__).resolve().parents[1]
@@ -320,6 +323,85 @@ class RunControlSecurityTests(unittest.TestCase):
                     detail={"password": "secret"},
                 )
             )
+
+
+class RunControlDurableBootstrapTests(unittest.TestCase):
+    def test_legacy_inmemory_recorder_without_store_still_works(self) -> None:
+        registry = InMemoryRunControlRegistry()
+        recorder = InMemoryObservabilityRecorder()
+        launcher = FakeLauncher()
+        service = RunControlService(registry=registry, recorder=recorder)
+        with patch(
+            "agents.run_control.service.issue_read_only_agent_context",
+            side_effect=issue_read_only_agent_context,
+        ):
+            result = service.start(_start_input(idempotency_key="idem-legacy"), launcher=launcher, requested_at=FIXED_AT)
+        self.assertEqual(len(launcher.calls), 1)
+        self.assertEqual(result.agent_run.operational_status, OperationalStatus.STARTING)
+
+    def test_durable_create_run_before_first_event(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "obs.sqlite"
+            store = SqliteObservabilityStore(db_path)
+            recorder = StoreObservabilityRecorder(store)
+            launcher = FakeLauncher()
+            service = RunControlService(
+                registry=InMemoryRunControlRegistry(),
+                recorder=recorder,
+                durable_store=store,
+            )
+            try:
+                with patch(
+                    "agents.run_control.service.issue_read_only_agent_context",
+                    side_effect=issue_read_only_agent_context,
+                ):
+                    result = service.start(
+                        _start_input(idempotency_key="idem-durable-bootstrap"),
+                        launcher=launcher,
+                        requested_at=FIXED_AT,
+                    )
+                persisted = store.get_run(result.agent_run.run_id)
+                self.assertEqual(persisted.projection_version, 5)
+                self.assertEqual(len(launcher.calls), 1)
+            finally:
+                store.close()
+
+    def test_durable_bootstrap_failure_blocks_launch(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        class FailingStore(SqliteObservabilityStore):
+            def create_run(self, run):  # type: ignore[no-untyped-def]
+                raise ObservabilityStorageFailureError("bootstrap failed")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "obs.sqlite"
+            store = FailingStore(db_path)
+            recorder = StoreObservabilityRecorder(store)
+            launcher = FakeLauncher()
+            service = RunControlService(
+                registry=InMemoryRunControlRegistry(),
+                recorder=recorder,
+                durable_store=store,
+            )
+            try:
+                with patch(
+                    "agents.run_control.service.issue_read_only_agent_context",
+                    side_effect=issue_read_only_agent_context,
+                ):
+                    with self.assertRaises(RunControlError) as ctx:
+                        service.start(
+                            _start_input(idempotency_key="idem-bootstrap-block"),
+                            launcher=launcher,
+                            requested_at=FIXED_AT,
+                        )
+                self.assertEqual(ctx.exception.code, CODE_CONTROL_PLANE_FAILURE)
+                self.assertEqual(len(launcher.calls), 0)
+            finally:
+                store.close()
 
 
 if __name__ == "__main__":

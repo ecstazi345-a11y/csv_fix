@@ -167,9 +167,9 @@ class RunControlServiceTests(unittest.TestCase):
         self.assertEqual(len(self.launcher.calls), 1)
         self.assertEqual(self.launcher.calls[0].run_id, result.agent_run.run_id)
 
-    def test_08_running_operational_status(self) -> None:
+    def test_08_starting_operational_status_after_launch_acceptance(self) -> None:
         result, _ = self._start()
-        self.assertEqual(result.agent_run.operational_status, OperationalStatus.RUNNING)
+        self.assertEqual(result.agent_run.operational_status, OperationalStatus.STARTING)
 
     def test_09_mission_id_preserved(self) -> None:
         result, _ = self._start(requested_mission_id="mission-xyz")

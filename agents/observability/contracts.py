@@ -133,6 +133,7 @@ class EventType(str, Enum):
     RUN_AUTHORIZED = "RUN_AUTHORIZED"
     RUN_DENIED = "RUN_DENIED"
     RUN_STARTED = "RUN_STARTED"
+    RUN_ADVANCING = "RUN_ADVANCING"
     RUN_COMPLETED = "RUN_COMPLETED"
     RUN_FAILED = "RUN_FAILED"
     RUN_ABORTED = "RUN_ABORTED"
@@ -174,6 +175,7 @@ EVENT_FAMILY_BY_TYPE: Mapping[EventType, EventFamily] = {
     EventType.RUN_AUTHORIZED: EventFamily.RUN_CONTROL,
     EventType.RUN_DENIED: EventFamily.RUN_CONTROL,
     EventType.RUN_STARTED: EventFamily.RUN_CONTROL,
+    EventType.RUN_ADVANCING: EventFamily.RUN_CONTROL,
     EventType.RUN_COMPLETED: EventFamily.RUN_CONTROL,
     EventType.RUN_FAILED: EventFamily.RUN_CONTROL,
     EventType.RUN_ABORTED: EventFamily.RUN_CONTROL,

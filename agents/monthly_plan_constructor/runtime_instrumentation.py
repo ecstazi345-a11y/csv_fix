@@ -66,6 +66,7 @@ RUNTIME_OWNED_EVENT_TYPES = frozenset(
         EventType.HANDOFF_CREATED,
         EventType.HANDOFF_PERSISTED,
         EventType.HANDOFF_PERSIST_FAILED,
+        EventType.RUN_ADVANCING,
         EventType.RUN_COMPLETED,
         EventType.RUN_FAILED,
         EventType.RUN_ABORTED,

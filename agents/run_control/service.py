@@ -330,16 +330,10 @@ class RunControlService:
                 failure.safe_message or CODE_LAUNCH_OUTCOME_UNKNOWN,
             ) from exc
 
-        running_run = _with_operational_status(
-            starting_run,
-            OperationalStatus.RUNNING,
-            stamp,
-            authorization_id=context.authorization_id,
-        )
         result = ManagedRunStartResult(
             outcome=StartOutcome.AUTHORIZED,
             run_request=run_request,
-            agent_run=running_run,
+            agent_run=starting_run,
             authorization_id=context.authorization_id,
         )
         self._registry.store_result(

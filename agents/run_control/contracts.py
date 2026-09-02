@@ -233,7 +233,12 @@ class RunControlRegistry(Protocol):
 
 @runtime_checkable
 class ManagedRuntimeLauncher(Protocol):
-    """Authorized managed runtime handoff boundary. Real agent adapter is 10.3."""
+    """
+    Accept/schedule authorized runtime execution in a decoupled execution context.
+
+    Successful return means launch acceptance only — not graph completion,
+    professional result completion, or RUNNING confirmation.
+    """
 
     def launch(
         self,

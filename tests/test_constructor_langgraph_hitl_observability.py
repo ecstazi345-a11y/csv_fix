@@ -597,7 +597,9 @@ class TestHumanWaitEvents(unittest.TestCase):
         self.assertEqual(out2["lifecycle"].status, STATUS_FAILED)
         types = _event_types(recorder, run_id)
         self.assertIn(EventType.HUMAN_DECISION_RECEIVED, types)
+        self.assertIn(EventType.RUN_ABORTED, types)
         self.assertNotIn(EventType.RUN_RESUMED, types)
+        self.assertNotIn(EventType.RUN_FAILED, types)
         self.assertTrue(types.isdisjoint(REFRESH_EVENT_TYPES))
         refresh_tools = [
             e

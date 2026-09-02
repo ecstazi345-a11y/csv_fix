@@ -35,7 +35,9 @@ from agents.monthly_plan_constructor.handoff_store import (
 )
 from agents.monthly_plan_constructor.hitl_contracts import (
     CODE_HITL_CONTRACT_BLOCKER,
+    CODE_RUN_ABORTED_BY_HUMAN,
     ConstructorHitlStore,
+    DECISION_ABORT_RUN,
     HitlContractError,
     coerce_resume_command,
     count_wait_ordinal,
@@ -255,7 +257,17 @@ def build_constructor_langgraph(
 
     def bind_mission(state: ConstructorGraphState) -> ConstructorGraphState:
         lifecycle = _require_status(state, STATUS_CREATED, node_name=NODE_BIND_MISSION)
-        return {"lifecycle": _advance(lifecycle)}
+        if instrumentation is None:
+            return {"lifecycle": _advance(lifecycle)}
+        stamp = event_stamp or lifecycle.updated_at
+        return {
+            "lifecycle": _instrumented_bind_mission(
+                lifecycle,
+                advance_fn=_advance,
+                instrumentation=instrumentation,
+                occurred_at=stamp,
+            )
+        }
 
     def load_reality(state: ConstructorGraphState) -> ConstructorGraphState:
         lifecycle = _require_status(
@@ -709,6 +721,138 @@ def _is_new_package(
     return before.package.package_id != after.package.package_id
 
 
+def _emit_run_advancing(
+    *,
+    lifecycle: ConstructorLifecycleState,
+    instrumentation: ConstructorRuntimeInstrumentation,
+    occurred_at: datetime,
+) -> None:
+    advancing_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.RUN_ADVANCING,
+        semantic_occurrence_key="start",
+        attempt_n=1,
+        resume_n=0,
+    )
+    instrumentation.emit(
+        key=advancing_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Run advancing",
+        status=EventStatus.OK,
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+    )
+
+
+def _emit_run_failed(
+    *,
+    lifecycle: ConstructorLifecycleState,
+    instrumentation: ConstructorRuntimeInstrumentation,
+    occurred_at: datetime,
+    semantic_occurrence_key: str,
+    stage_id: Optional[str] = None,
+    node_name: Optional[str] = None,
+    resume_n: int = 0,
+    handoff_id: Optional[str] = None,
+    orchestration_run_id: Optional[str] = None,
+) -> None:
+    failed_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.RUN_FAILED,
+        stage_id=stage_id,
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=resume_n,
+        semantic_occurrence_key=semantic_occurrence_key,
+        artifact_correlation_id=handoff_id,
+    )
+    instrumentation.emit(
+        key=failed_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Run failed",
+        status=EventStatus.FAILED,
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        orchestration_run_id=orchestration_run_id,
+        handoff_id=handoff_id,
+        detail={
+            "professional_status": lifecycle.status,
+            "error_code": str(lifecycle.error_code or ""),
+        },
+    )
+
+
+def _emit_run_aborted(
+    *,
+    lifecycle: ConstructorLifecycleState,
+    instrumentation: ConstructorRuntimeInstrumentation,
+    occurred_at: datetime,
+    decision_id: str,
+    node_name: str,
+    wait_ordinal: int,
+    resume: Any,
+    checkpoint_id: Optional[str],
+    interrupt_id: Optional[str],
+) -> None:
+    aborted_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.RUN_ABORTED,
+        stage_id="HUMAN_GATE",
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=wait_ordinal,
+        semantic_occurrence_key=f"abort-{decision_id}",
+        artifact_correlation_id=decision_id,
+    )
+    instrumentation.emit(
+        key=aborted_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Run aborted",
+        status=EventStatus.FAILED,
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        checkpoint_id=checkpoint_id,
+        interrupt_id=interrupt_id,
+        decision_id=decision_id,
+        detail={
+            "decision_type": resume.decision,
+            "actor_type": resume.actor_type,
+            "actor_id": resume.actor_id,
+            "wait_ordinal": str(wait_ordinal),
+            "professional_status": lifecycle.status,
+            "error_code": str(lifecycle.error_code or CODE_RUN_ABORTED_BY_HUMAN),
+        },
+    )
+
+
+def _instrumented_bind_mission(
+    lifecycle: ConstructorLifecycleState,
+    *,
+    advance_fn: Any,
+    instrumentation: ConstructorRuntimeInstrumentation,
+    occurred_at: datetime,
+) -> ConstructorLifecycleState:
+    _emit_run_advancing(
+        lifecycle=lifecycle,
+        instrumentation=instrumentation,
+        occurred_at=occurred_at,
+    )
+    updated = advance_fn(lifecycle)
+    if updated.status == STATUS_FAILED:
+        _emit_run_failed(
+            lifecycle=updated,
+            instrumentation=instrumentation,
+            occurred_at=occurred_at,
+            semantic_occurrence_key="run-failed/MISSION_BINDING/bind-mission",
+            stage_id="MISSION_BINDING",
+            node_name=NODE_BIND_MISSION,
+        )
+    return updated
+
+
 def _emit_reality_snapshot_artifact(
     *,
     lifecycle: ConstructorLifecycleState,
@@ -930,6 +1074,16 @@ def _instrumented_reality_read_advance(
             "professional_status_after": updated.status,
         },
     )
+    if updated.status == STATUS_FAILED:
+        _emit_run_failed(
+            lifecycle=updated,
+            instrumentation=instrumentation,
+            occurred_at=occurred_at,
+            semantic_occurrence_key=f"run-failed/{stage_id}/{semantic_key}",
+            stage_id=stage_id,
+            node_name=node_name,
+            resume_n=resume_n,
+        )
     return updated
 
 
@@ -1035,6 +1189,16 @@ def _instrumented_advance(
             "professional_status_after": updated.status,
         },
     )
+    if updated.status == STATUS_FAILED:
+        _emit_run_failed(
+            lifecycle=updated,
+            instrumentation=instrumentation,
+            occurred_at=occurred_at,
+            semantic_occurrence_key=f"run-failed/{stage_id}/{semantic_key}",
+            stage_id=stage_id,
+            node_name=node_name,
+            resume_n=resume_n,
+        )
     return updated
 
 
@@ -1152,7 +1316,19 @@ def _instrumented_human_wait(
         now=now,
     )
 
-    if updated.status == STATUS_REVALIDATING_REALITY:
+    if resume.decision == DECISION_ABORT_RUN:
+        _emit_run_aborted(
+            lifecycle=updated,
+            instrumentation=instrumentation,
+            occurred_at=occurred_at,
+            decision_id=resume.decision_id,
+            node_name=node_name,
+            wait_ordinal=wait_ordinal,
+            resume=resume,
+            checkpoint_id=resolved,
+            interrupt_id=request.interrupt_id,
+        )
+    elif updated.status == STATUS_REVALIDATING_REALITY:
         resumed_key = ConstructorRuntimeEventKey(
             run_id=lifecycle.run_id,
             event_type=EventType.RUN_RESUMED,
@@ -1329,6 +1505,17 @@ def _instrumented_revalidate_reality_refresh(
             occurred_at=occurred_at,
         )
 
+    if updated.status == STATUS_FAILED:
+        _emit_run_failed(
+            lifecycle=updated,
+            instrumentation=instrumentation,
+            occurred_at=occurred_at,
+            semantic_occurrence_key=f"run-failed/REALITY_REVALIDATION/{refresh_semantic_key}",
+            stage_id=stage_id,
+            node_name=node_name,
+            resume_n=wait_ordinal,
+        )
+
     return updated
 
 
@@ -1438,6 +1625,20 @@ def _instrumented_persist_handoff(
             )
         except Exception as recorder_exc:
             raise persist_exc from recorder_exc
+        try:
+            _emit_run_failed(
+                lifecycle=lifecycle,
+                instrumentation=instrumentation,
+                occurred_at=occurred_at,
+                semantic_occurrence_key=f"handoff-failure/{handoff_id}",
+                stage_id="HANDOFF_PERSISTENCE",
+                node_name=node_name,
+                resume_n=resume_n,
+                handoff_id=handoff_id,
+                orchestration_run_id=orchestration_run_id,
+            )
+        except Exception as run_failed_recorder_exc:
+            raise persist_exc from run_failed_recorder_exc
         raise persist_exc
 
     persisted_key = ConstructorRuntimeEventKey(

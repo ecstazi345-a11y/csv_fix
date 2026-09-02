@@ -383,6 +383,7 @@ class TestPersistenceFailure(unittest.TestCase):
         types = _event_types(recorder, run_id)
         self.assertIn(EventType.HANDOFF_CREATED, types)
         self.assertIn(EventType.HANDOFF_PERSIST_FAILED, types)
+        self.assertIn(EventType.RUN_FAILED, types)
         self.assertNotIn(EventType.HANDOFF_PERSISTED, types)
         self.assertNotIn(EventType.RUN_COMPLETED, types)
         failed = _events_of_type(recorder, run_id, EventType.HANDOFF_PERSIST_FAILED)[0]
@@ -401,6 +402,7 @@ class TestPersistenceFailure(unittest.TestCase):
         types = _event_types(recorder, run_id)
         self.assertIn(EventType.HANDOFF_CREATED, types)
         self.assertIn(EventType.HANDOFF_PERSIST_FAILED, types)
+        self.assertIn(EventType.RUN_FAILED, types)
         self.assertNotIn(EventType.RUN_COMPLETED, types)
         failed = _events_of_type(recorder, run_id, EventType.HANDOFF_PERSIST_FAILED)[0]
         self.assertEqual(failed.status, EventStatus.FAILED)
@@ -436,6 +438,33 @@ class TestPersistenceFailure(unittest.TestCase):
         for event in _events(recorder, run_id):
             payload = json.dumps(event.to_dict(), ensure_ascii=False).lower()
             self.assertNotIn("store exploded", payload)
+
+    def test_persistence_failure_remains_primary_when_run_failed_recording_fails(
+        self,
+    ) -> None:
+        from agents.monthly_plan_constructor import langgraph_runtime as lg
+
+        run_id = "run-10-3e-run-failed-chain"
+        recorder = InMemoryObservabilityRecorder()
+        original_emit = lg.ConstructorRuntimeInstrumentation.emit
+
+        def patched_emit(self, **kwargs):
+            if kwargs["key"].event_type == EventType.RUN_FAILED:
+                raise RuntimeError("recorder-down-on-run-failed")
+            return original_emit(self, **kwargs)
+
+        with patch.object(lg.ConstructorRuntimeInstrumentation, "emit", patched_emit):
+            with self.assertRaises(RuntimeError) as caught:
+                _run(run_id=run_id, recorder=recorder, handoff_store=BoomStore())
+        self.assertEqual(str(caught.exception), "store exploded")
+        recorder_failure = caught.exception.__cause__
+        self.assertIsInstance(recorder_failure, RuntimeError)
+        self.assertEqual(str(recorder_failure), "recorder-down-on-run-failed")
+        types = _event_types(recorder, run_id)
+        self.assertIn(EventType.HANDOFF_CREATED, types)
+        self.assertIn(EventType.HANDOFF_PERSIST_FAILED, types)
+        self.assertNotIn(EventType.RUN_FAILED, types)
+        self.assertNotIn(EventType.RUN_COMPLETED, types)
 
 
 class TestBuildFailure(unittest.TestCase):

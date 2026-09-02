@@ -48,6 +48,7 @@ from agents.monthly_plan_constructor.lifecycle import (
     CODE_LIFECYCLE_CONTRACT_BLOCKER,
     INVOCATION_STOP_STATUSES,
     STATUS_CREATED,
+    STATUS_FAILED,
     STATUS_LABOR_RESOLVED,
     STATUS_MISSION_BOUND,
     STATUS_PACKAGE_BUILT,
@@ -60,12 +61,21 @@ from agents.monthly_plan_constructor.lifecycle import (
     ConstructorLifecycleState,
     LaborEvidenceInput,
     LifecycleError,
+    LifecycleTransition,
     advance_constructor_lifecycle,
     create_lifecycle_state,
 )
 from agents.monthly_plan_constructor.mission_scope import ScopeValue
+from agents.monthly_plan_constructor.runtime_instrumentation import (
+    ConstructorRuntimeEventKey,
+    ConstructorRuntimeInstrumentation,
+)
 from agents.monthly_plan_constructor.secure_read_tools import ScopeReader
+from agents.observability.contracts import EventStatus, EventType
+from agents.observability.recorder import ObservabilityRecorder
 from security.agent_execution_context import AgentExecutionContext
+
+CONSTRUCTOR_AGENT_CODE = "MONTHLY_PLAN_CONSTRUCTOR"
 
 NODE_BIND_MISSION = "bind_mission"
 NODE_LOAD_REALITY = "load_reality"
@@ -75,6 +85,13 @@ NODE_EVALUATE_EXCEPTIONS = "evaluate_exceptions"
 NODE_HUMAN_WAIT = "human_wait"
 NODE_REVALIDATE_REALITY = "revalidate_reality"
 NODE_PERSIST_HANDOFF = "persist_handoff"
+
+_CORE_STAGE_BY_NODE: dict[str, str] = {
+    NODE_LOAD_REALITY: "REALITY_READ",
+    NODE_BUILD_PACKAGE: "CANDIDATE_ASSEMBLY",
+    NODE_RESOLVE_LABOR: "LABOR_NORM_RESOLUTION",
+    NODE_EVALUATE_EXCEPTIONS: "EXCEPTION_ANALYSIS",
+}
 
 
 class ConstructorGraphState(TypedDict):
@@ -175,6 +192,7 @@ def build_constructor_langgraph(
     handoff_store: Optional[ConstructorHandoffStore] = None,
     security_policy_version: Optional[str] = None,
     orchestration_run_id: Optional[str] = None,
+    recorder: ObservabilityRecorder | None = None,
 ):
     """
     Build compiled Constructor LangGraph with dependencies closed over at build time.
@@ -203,6 +221,12 @@ def build_constructor_langgraph(
         if security_policy_version is None
         else security_policy_version
     )
+    instrumentation = (
+        ConstructorRuntimeInstrumentation(recorder=recorder)
+        if recorder is not None
+        else None
+    )
+    event_stamp = now
 
     def _advance(lifecycle: ConstructorLifecycleState) -> ConstructorLifecycleState:
         return advance_constructor_lifecycle(
@@ -229,25 +253,73 @@ def build_constructor_langgraph(
         lifecycle = _require_status(
             state, STATUS_MISSION_BOUND, node_name=NODE_LOAD_REALITY
         )
-        return {"lifecycle": _advance(lifecycle)}
+        if instrumentation is None:
+            return {"lifecycle": _advance(lifecycle)}
+        stamp = event_stamp or lifecycle.updated_at
+        return {
+            "lifecycle": _instrumented_advance(
+                lifecycle,
+                node_name=NODE_LOAD_REALITY,
+                stage_id=_CORE_STAGE_BY_NODE[NODE_LOAD_REALITY],
+                advance_fn=_advance,
+                instrumentation=instrumentation,
+                occurred_at=stamp,
+            )
+        }
 
     def build_package(state: ConstructorGraphState) -> ConstructorGraphState:
         lifecycle = _require_status(
             state, STATUS_REALITY_LOADED, node_name=NODE_BUILD_PACKAGE
         )
-        return {"lifecycle": _advance(lifecycle)}
+        if instrumentation is None:
+            return {"lifecycle": _advance(lifecycle)}
+        stamp = event_stamp or lifecycle.updated_at
+        return {
+            "lifecycle": _instrumented_advance(
+                lifecycle,
+                node_name=NODE_BUILD_PACKAGE,
+                stage_id=_CORE_STAGE_BY_NODE[NODE_BUILD_PACKAGE],
+                advance_fn=_advance,
+                instrumentation=instrumentation,
+                occurred_at=stamp,
+            )
+        }
 
     def resolve_labor(state: ConstructorGraphState) -> ConstructorGraphState:
         lifecycle = _require_status(
             state, STATUS_PACKAGE_BUILT, node_name=NODE_RESOLVE_LABOR
         )
-        return {"lifecycle": _advance(lifecycle)}
+        if instrumentation is None:
+            return {"lifecycle": _advance(lifecycle)}
+        stamp = event_stamp or lifecycle.updated_at
+        return {
+            "lifecycle": _instrumented_advance(
+                lifecycle,
+                node_name=NODE_RESOLVE_LABOR,
+                stage_id=_CORE_STAGE_BY_NODE[NODE_RESOLVE_LABOR],
+                advance_fn=_advance,
+                instrumentation=instrumentation,
+                occurred_at=stamp,
+            )
+        }
 
     def evaluate_exceptions(state: ConstructorGraphState) -> ConstructorGraphState:
         lifecycle = _require_status(
             state, STATUS_LABOR_RESOLVED, node_name=NODE_EVALUATE_EXCEPTIONS
         )
-        return {"lifecycle": _advance(lifecycle)}
+        if instrumentation is None:
+            return {"lifecycle": _advance(lifecycle)}
+        stamp = event_stamp or lifecycle.updated_at
+        return {
+            "lifecycle": _instrumented_advance(
+                lifecycle,
+                node_name=NODE_EVALUATE_EXCEPTIONS,
+                stage_id=_CORE_STAGE_BY_NODE[NODE_EVALUATE_EXCEPTIONS],
+                advance_fn=_advance,
+                instrumentation=instrumentation,
+                occurred_at=stamp,
+            )
+        }
 
     def human_wait(state: ConstructorGraphState) -> ConstructorGraphState:
         """
@@ -410,6 +482,7 @@ def run_constructor_langgraph(
     handoff_store: Optional[ConstructorHandoffStore] = None,
     security_policy_version: Optional[str] = None,
     orchestration_run_id: Optional[str] = None,
+    recorder: ObservabilityRecorder | None = None,
 ) -> ConstructorLifecycleState:
     """
     Invoke Constructor LangGraph to an invocation-stop ConstructorLifecycleState.
@@ -455,6 +528,7 @@ def run_constructor_langgraph(
         handoff_store=handoff_store,
         security_policy_version=security_policy_version,
         orchestration_run_id=orchestration_run_id,
+        recorder=recorder,
     )
     invoke_kwargs: dict[str, Any] = {}
     if checkpointer is not None:
@@ -482,3 +556,150 @@ def run_constructor_langgraph(
                 f"LangGraph ended on non-terminal status {lifecycle.status}",
             )
     return lifecycle
+
+
+def _count_reality_loaded_transitions(
+    transitions: tuple[LifecycleTransition, ...],
+) -> int:
+    return sum(1 for item in transitions if item.to_status == STATUS_REALITY_LOADED)
+
+
+def _derive_resume_n(lifecycle: ConstructorLifecycleState) -> int:
+    return max(0, _count_reality_loaded_transitions(lifecycle.transitions) - 1)
+
+
+def _semantic_occurrence_key(
+    lifecycle: ConstructorLifecycleState,
+    *,
+    stage_id: str,
+) -> str:
+    if stage_id == "REALITY_READ":
+        return "initial"
+    if stage_id == "CANDIDATE_ASSEMBLY":
+        if lifecycle.reality_read is None:
+            raise LifecycleError(
+                CODE_LIFECYCLE_CONTRACT_BLOCKER,
+                "reality_read required for CANDIDATE_ASSEMBLY occurrence key",
+            )
+        return f"snapshot-{lifecycle.reality_read.read_id}"
+    if stage_id == "LABOR_NORM_RESOLUTION":
+        if lifecycle.package is None:
+            raise LifecycleError(
+                CODE_LIFECYCLE_CONTRACT_BLOCKER,
+                "package required for LABOR_NORM_RESOLUTION occurrence key",
+            )
+        return f"package-{lifecycle.package.package_id}"
+    if stage_id == "EXCEPTION_ANALYSIS":
+        if lifecycle.labor_resolutions is None:
+            raise LifecycleError(
+                CODE_LIFECYCLE_CONTRACT_BLOCKER,
+                "labor_resolutions required for EXCEPTION_ANALYSIS occurrence key",
+            )
+        return f"package-{lifecycle.labor_resolutions.package_id}"
+    raise LifecycleError(
+        CODE_LIFECYCLE_CONTRACT_BLOCKER,
+        f"unsupported core stage_id {stage_id}",
+    )
+
+
+def _artifact_correlation_id(
+    lifecycle: ConstructorLifecycleState,
+    *,
+    stage_id: str,
+) -> Optional[str]:
+    if stage_id == "REALITY_READ":
+        return None
+    if stage_id == "CANDIDATE_ASSEMBLY":
+        return lifecycle.reality_read.read_id if lifecycle.reality_read is not None else None
+    if stage_id == "LABOR_NORM_RESOLUTION":
+        return lifecycle.package.package_id if lifecycle.package is not None else None
+    if stage_id == "EXCEPTION_ANALYSIS":
+        if lifecycle.labor_resolutions is None:
+            return None
+        return lifecycle.labor_resolutions.package_id
+    return None
+
+
+def _instrumented_advance(
+    lifecycle: ConstructorLifecycleState,
+    *,
+    node_name: str,
+    stage_id: str,
+    advance_fn: Any,
+    instrumentation: ConstructorRuntimeInstrumentation,
+    occurred_at: datetime,
+) -> ConstructorLifecycleState:
+    status_before = lifecycle.status
+    resume_n = 0 if stage_id == "REALITY_READ" else _derive_resume_n(lifecycle)
+    semantic_key = _semantic_occurrence_key(lifecycle, stage_id=stage_id)
+    artifact_corr = _artifact_correlation_id(lifecycle, stage_id=stage_id)
+
+    started_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.STAGE_STARTED,
+        stage_id=stage_id,
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=resume_n,
+        semantic_occurrence_key=semantic_key,
+        artifact_correlation_id=artifact_corr,
+    )
+    instrumentation.emit(
+        key=started_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title=f"{stage_id} started",
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        snapshot_id=lifecycle.reality_read.read_id if lifecycle.reality_read else None,
+        package_id=(
+            lifecycle.package.package_id
+            if lifecycle.package is not None
+            else lifecycle.labor_resolutions.package_id
+            if lifecycle.labor_resolutions is not None
+            else None
+        ),
+        detail={"professional_status_before": status_before},
+    )
+
+    updated = advance_fn(lifecycle)
+
+    if updated.status == STATUS_FAILED:
+        terminal_type = EventType.STAGE_FAILED
+        terminal_status = EventStatus.FAILED
+    else:
+        terminal_type = EventType.STAGE_COMPLETED
+        terminal_status = EventStatus.OK
+
+    terminal_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=terminal_type,
+        stage_id=stage_id,
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=resume_n,
+        semantic_occurrence_key=semantic_key,
+        artifact_correlation_id=artifact_corr,
+    )
+    instrumentation.emit(
+        key=terminal_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title=f"{stage_id} {terminal_type.value.lower().replace('_', ' ')}",
+        status=terminal_status,
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        snapshot_id=updated.reality_read.read_id if updated.reality_read else None,
+        package_id=(
+            updated.package.package_id
+            if updated.package is not None
+            else updated.labor_resolutions.package_id
+            if updated.labor_resolutions is not None
+            else None
+        ),
+        detail={
+            "professional_status_before": status_before,
+            "professional_status_after": updated.status,
+        },
+    )
+    return updated

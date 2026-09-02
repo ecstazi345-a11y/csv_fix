@@ -13,10 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation
-- **NEXT:** [10.3E] Handoff / Completion Runtime Instrumentation (within Increment 10 — Agent Control Room / Observability)
-- **Recovery code HEAD:** `0060e6509a036c77c8ff03d569a1727f82e4ded6` (Increment 10.3D on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E NEXT · 10.3 **NOT COMPLETE** · Increment 10 overall **NOT COMPLETE**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation
+- **NEXT:** Architecture sequencing review for remaining Increment 10 scope (Durable Store · Query Port · Managed Runtime Launcher · Supabase persistence · Control Room UI — dependency order TBD; do **not** auto-start 10.4)
+- **Recovery code HEAD:** `1b7003ee067c94bbb6b75f9aa4fa16740d6f2f7f` (Increment 10.3E on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · 10.4 NOT STARTED · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -3792,3 +3792,152 @@ handoff artifact creation
 Expected events (deferred): `HANDOFF_CREATED`, `HANDOFF_PERSISTED`, `HANDOFF_PERSIST_FAILED`, `RUN_COMPLETED`.
 
 Increment 10.3E **не** реализован в этом checkpoint.
+
+---
+
+============================================================
+CHECKPOINT — 2026-09-02 — CONSTRUCTOR AGENT — INCREMENT 10.3E
+HANDOFF / COMPLETION RUNTIME INSTRUMENTATION
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+Increment 10.3E completed the Constructor managed completion observability chain. **10.3A–E Runtime Instrumentation is DONE.** Increment 10 overall is **NOT COMPLETE**. Constructor progress remains **9 / 10** — do **not** claim 10 / 10.
+
+------------------------------------------------------------
+MANAGED COMPLETION CHAIN
+------------------------------------------------------------
+
+```
+READY_FOR_HANDOFF
+→ HANDOFF_CREATED
+→ HANDOFF_PERSISTED
+→ RUN_COMPLETED
+```
+
+**Law:** `READY_FOR_HANDOFF` ≠ `RUN_COMPLETED`.
+
+| Status / Event | Meaning |
+|----------------|---------|
+| `READY_FOR_HANDOFF` | Professional result is ready for transfer — eligibility only |
+| `HANDOFF_CREATED` | Valid `ConstructorHandoff` built with deterministic `handoff_id` — **not** persistence success |
+| `HANDOFF_PERSISTED` | Persistence boundary accepted handoff as `CREATED` or `IDEMPOTENT_REPLAY` |
+| `HANDOFF_PERSIST_FAILED` | Actual persistence/store operation failed |
+| `RUN_COMPLETED` | Managed completion — only after `HANDOFF_PERSISTED` successfully recorded |
+
+Legacy path (`handoff_store=None`): ends at `READY_FOR_HANDOFF` — **no** `RUN_COMPLETED`.
+
+------------------------------------------------------------
+HANDOFF RECIPIENT (unchanged contract)
+------------------------------------------------------------
+
+| Field | Value |
+|-------|-------|
+| `handoff_type` | `CONSTRUCTOR_TO_ADMISSION` |
+| `source_agent` | `MONTHLY_PLAN_CONSTRUCTOR` |
+| `target_role` | `MONTHLY_PLAN_ADMISSION_AGENT` |
+
+Constructor transfers a structured professional result to the next digital role — not a local finish. Admission Agent consumption is **not** implemented yet.
+
+------------------------------------------------------------
+ARTIFACT OWNERSHIP
+------------------------------------------------------------
+
+**`ConstructorHandoff` does NOT emit `ARTIFACT_CREATED`.** Dedicated ownership: `HANDOFF_*` events only. Reason: avoid duplicate semantic representation of the same `handoff_id`.
+
+------------------------------------------------------------
+IDENTITY & REPLAY
+------------------------------------------------------------
+
+`handoff_id` is deterministic from `source_run_id` + `package_id` + `snapshot_id` + accepted contract coordinates. No synthetic observability UUID. Same semantic handoff replay → same `handoff_id` → **`IDEMPOTENT_REPLAY`**. Different package/snapshot → different handoff identity.
+
+------------------------------------------------------------
+BUSINESS TRUTH FIRST
+------------------------------------------------------------
+
+**Business truth > Telemetry.**
+
+If persistence fails and recorder also fails while recording `HANDOFF_PERSIST_FAILED`: the **original persistence/store exception** remains the primary business failure; recorder failure stays chained/contextual. Business truth must **not** be erased by telemetry failure.
+
+If persistence **already succeeded** but recorder fails on `HANDOFF_PERSISTED`: handoff remains persisted — do **not** rollback; do **not** emit `HANDOFF_PERSIST_FAILED`; do **not** emit `RUN_COMPLETED`; recorder failure propagates.
+
+Recorder failure must **never** masquerade as persistence failure.
+
+------------------------------------------------------------
+FAILURE SEMANTICS (summary)
+------------------------------------------------------------
+
+| Case | Events |
+|------|--------|
+| Handoff build failure | No handoff events · no `RUN_COMPLETED` |
+| Persistence failure | `HANDOFF_CREATED` · `HANDOFF_PERSIST_FAILED` · no `RUN_COMPLETED` |
+| Recorder failure | Never `HANDOFF_PERSIST_FAILED` |
+| ABORT / WAIT / FAILED | No `RUN_COMPLETED` |
+| `handoff_store=None` | No `RUN_COMPLETED` |
+
+------------------------------------------------------------
+DATA MINIMIZATION
+------------------------------------------------------------
+
+Safe metadata only: `handoff_id`, `package_id`, `snapshot_id`, `schema_version`, `source_agent`, `target_role`, `persistence_status`, `payload_digest`, bounded summaries. No full handoff body · no candidate arrays · no scope body · no credentials · no tokens · no `AgentExecutionContext`. No secret leakage.
+
+------------------------------------------------------------
+FULL 10.3A–E RUNTIME TRACE
+------------------------------------------------------------
+
+Constructor now has an almost end-to-end observable runtime trace:
+
+```
+RUN → STAGE → TOOL → ARTIFACT
+→ HUMAN WAIT → HUMAN DECISION → RUN RESUME → REALITY REFRESH
+→ HANDOFF CREATED → HANDOFF PERSISTED → RUN COMPLETED
+```
+
+После завершения 10.3A–E цифровой сотрудник оставляет структурированный след практически по всему своему runtime-жизненному циклу: что делал, каким инструментом пользовался, какой результат создавал, когда остановился для решения человека, как возобновился, как перечитал актуальную реальность, как сформировал передачу следующей роли и когда действительно завершил свою ответственность.
+
+Observability **RECORDS** execution truth. It does **NOT** become execution truth.
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+Targeted 10.3E: **18 / 18 PASS** · 10.3A–D + handoff regression: **99 / 99 PASS** · Broader accepted gate: **566 PASS** · Failure-chain: **PASS** · Original persistence failure preserved: **YES** · Recorder failure chained: **YES**
+
+Postgres durable restart: **ENVIRONMENT_BLOCKED** — not a 10.3E regression.
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+CODE: `1b7003ee067c94bbb6b75f9aa4fa16740d6f2f7f` · message: `feat(agents): instrument constructor handoff completion observability` · BRANCH: `wip/increment-10-agent-control-room` · PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES**
+
+FILES (2): `langgraph_runtime.py` · `test_constructor_langgraph_handoff_observability.py` · NON-10.3E FILES: **NO**
+
+**Not modified:** handoff contracts/store, lifecycle, observability contracts, Run Control, HITL modules.
+
+------------------------------------------------------------
+REMAINING INCREMENT 10 SCOPE
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| 10.4 Durable Observability Store | **NOT STARTED** |
+| Query Port | **NOT STARTED** |
+| Control Room UI | **NOT STARTED** |
+| `ConstructorManagedRuntimeLauncher` | **NOT STARTED** |
+| Supabase observability persistence | **NOT STARTED** |
+| Labor / exception artifact observability | Not yet formally completed — separate decision required |
+
+Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**Architecture sequencing review** for remaining Increment 10 scope. Do **not** automatically set NEXT = Control Room UI. Decide correct dependency order between Durable Observability Store · Query Port · Managed Runtime Launcher · Supabase persistence · Control Room UI **before** implementation. Do **not** start 10.4 in this checkpoint.
+
+------------------------------------------------------------
+PROFESSIONAL PASSPORT REMINDER
+------------------------------------------------------------
+
+After Constructor reaches full completion, create **Constructor Professional Passport v1.0** / **Профессиональный паспорт Constructor v1.0**. **Not** part of this checkpoint. Do **not** create the passport now.

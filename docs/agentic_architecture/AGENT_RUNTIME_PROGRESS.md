@@ -13,10 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring
-- **NEXT:** [10.3C] Tool / Artifact Runtime Instrumentation (within Increment 10 — Agent Control Room / Observability)
-- **Recovery code HEAD:** `08a061a216f2ccc5d8daf7906e0b155882f40b9d` (Increment 10.3B on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C NEXT · 10.3D NOT STARTED · 10.3E NOT STARTED · 10.3 **NOT COMPLETE** · Increment 10 overall **NOT COMPLETE**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation
+- **NEXT:** [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation (within Increment 10 — Agent Control Room / Observability)
+- **Recovery code HEAD:** `719178c63434a8a822ecd65dd16e7f4824058be4` (Increment 10.3C on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D NEXT · 10.3E NOT STARTED · 10.3 **NOT COMPLETE** · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -2983,3 +2983,409 @@ Expected scope:
 - still no Control Room UI, no durable store, no Supabase observability persistence
 
 Increment 10.3C **не** реализован в этом checkpoint.
+
+---
+
+============================================================
+CHECKPOINT — 2026-09-02 — CONSTRUCTOR AGENT — INCREMENT 10.3C
+TOOL / ARTIFACT RUNTIME INSTRUMENTATION
+============================================================
+
+PROGRAM:
+Monthly Planning Agentic Orchestration
+
+CURRENT AGENT:
+MONTHLY_PLAN_CONSTRUCTOR
+
+CURRENT INCREMENT:
+[10.3C] Tool / Artifact Runtime Instrumentation
+
+STATUS:
+DONE
+
+------------------------------------------------------------
+WHAT WE BUILT
+------------------------------------------------------------
+
+Increment 10.3C extended the live Constructor runtime observability hierarchy from:
+
+```
+RUN
+→ STAGE
+```
+
+to:
+
+```
+RUN
+→ STAGE
+    → TOOL
+    → ARTIFACT
+```
+
+Architecture law preserved: **Python function call ≠ tool call** · **Skill ≠ tool**.
+
+Not every Python function in the Constructor graph is classified as a tool. Only the current core professional EOS-SEC tool seam is instrumented in 10.3C.
+
+**REALITY_READ chronology (10.3C):**
+
+```
+STAGE_STARTED
+→ TOOL_CALL_STARTED
+→ professional secure read (single-source lifecycle step)
+→ TOOL_CALL_COMPLETED or TOOL_CALL_DENIED
+→ ARTIFACT_CREATED (if new ConstructorRealityRead)
+→ STAGE_COMPLETED or STAGE_FAILED   (10.3B ownership unchanged)
+```
+
+**CANDIDATE_ASSEMBLY chronology (10.3C addition):**
+
+```
+STAGE_STARTED
+→ professional advance (10.3B unchanged)
+→ ARTIFACT_CREATED (if new CandidatePackage)
+→ STAGE_COMPLETED or STAGE_FAILED
+```
+
+------------------------------------------------------------
+TOOL OBSERVABILITY
+------------------------------------------------------------
+
+Current 10.3C tool scope is intentionally narrow.
+
+The only core professional EOS-SEC tool instrumented in 10.3C:
+
+| Constant | Tool name | Node | Stage |
+|----------|-----------|------|-------|
+| `TOOL_LOAD_SCOPE` | `load_constructor_scope` | `load_reality` | `REALITY_READ` |
+
+Structured events:
+
+- `TOOL_CALL_STARTED`
+- `TOOL_CALL_COMPLETED`
+- `TOOL_CALL_DENIED`
+
+Existing contract does **NOT** use `TOOL_CALL_FAILED`.
+
+Failure distinction within `TOOL_CALL_DENIED`:
+
+| Failure class | Event | EventStatus |
+|---------------|-------|-------------|
+| Security denial | `TOOL_CALL_DENIED` | `DENIED` |
+| Controlled read / contract / tool failure | `TOOL_CALL_DENIED` | `FAILED` |
+
+No observability contract changes were required (`agents/observability/contracts.py` untouched).
+
+**Not classified as tools in 10.3C:** `assemble_candidates`, `build_candidate_package`, `resolve_labor_norms`, `exceptions_from_labor_resolutions`, scope reader internal port, checkpointer, HITL store, handoff persistence.
+
+------------------------------------------------------------
+BUSINESS ARTIFACT OBSERVABILITY
+------------------------------------------------------------
+
+Exactly two accepted artifact types in 10.3C:
+
+| Artifact | `artifact_id` | Event |
+|----------|---------------|-------|
+| `ConstructorRealityRead` | `read_id` | `ARTIFACT_CREATED` |
+| `CandidatePackage` | `package_id` | `ARTIFACT_CREATED` |
+
+Observability stores only safe metadata and correlation references.
+
+Safe metadata (examples): `row_count`, `schema_version`, `tool_name`, `candidate_count`, `snapshot_id` reference.
+
+Observability does **NOT** store:
+
+- raw rows
+- DataFrames
+- candidate arrays
+- raw evidence
+- `AgentExecutionContext`
+- credentials
+- tokens
+- full business payloads
+
+**CandidatePackage detection:** post-hoc before/after lifecycle comparison. Emit only when `before.package` absent/different and `after.package` represents a newly created package. No artifact event on replay of existing package identity.
+
+------------------------------------------------------------
+IMPORTANT ARTIFACT BOUNDARY
+------------------------------------------------------------
+
+10.3C did **NOT** instrument:
+
+- `LaborNormResolutionSet`
+- `ConstructorExceptionSet`
+
+Reason: they currently do not have accepted independent stable business artifact identity. No synthetic artifact IDs were invented (e.g. no `{package_id}-exceptions`).
+
+Architecture law:
+
+**OBSERVABILITY MUST NOT INVENT BUSINESS ENTITIES OR BUSINESS IDENTITY FOR UI CONVENIENCE.**
+
+`ConstructorHandoff` also remains out of scope and belongs to **10.3E**.
+
+------------------------------------------------------------
+SINGLE-SOURCE REALITY READ
+------------------------------------------------------------
+
+Lifecycle refactor (mechanical extraction only):
+
+- `advance_constructor_reality_read_step(...)` extracted from `lifecycle.py`
+- Purpose: allow LangGraph runtime instrumentation to wrap the real professional reality-read step without duplicating business transition logic
+
+Architecture law:
+
+**ONE PROFESSIONAL LOGIC = ONE SOURCE OF TRUTH**
+
+- `advance_constructor_lifecycle()` delegates the `MISSION_BOUND` reality-read branch to the extracted function
+- LangGraph `_instrumented_reality_read_advance()` calls the same function
+
+Verified:
+
+- no lifecycle semantic change
+- no new status
+- no new state field
+- no routing change
+- no failure mapping change
+- transition history preserved
+
+------------------------------------------------------------
+TEST COMPATIBILITY FIX (10.3B REGRESSION)
+------------------------------------------------------------
+
+`tests/test_constructor_langgraph_stage_instrumentation.py` received a justified compatibility correction.
+
+Reason: before 10.3C only `STAGE_*` events carried the relevant core `stage_id` in those tests. After nested TOOL / ARTIFACT observability, tool/artifact events legitimately share `stage_id`.
+
+The `_stage_events()` helper now filters actual stage event types:
+
+- `STAGE_STARTED`
+- `STAGE_COMPLETED`
+- `STAGE_FAILED`
+
+This does **NOT** weaken 10.3B regression protection:
+
+| Check | Result |
+|-------|--------|
+| Assertions removed | **NO** |
+| Tests disabled | **NO** |
+| Expected stage semantics weakened | **NO** |
+
+------------------------------------------------------------
+REPLAY / IDEMPOTENCY
+------------------------------------------------------------
+
+Deterministic semantic occurrence identity continues to use existing runtime coordinates.
+
+Examples:
+
+| Kind | `semantic_occurrence_key` concept |
+|------|-----------------------------------|
+| Tool | `{stage_key}/tool-{TOOL_LOAD_SCOPE}` |
+| Reality artifact | `{stage_key}/artifact-snapshot-{read_id}` |
+| Package artifact | `{stage_key}/artifact-package-{package_id}` |
+
+No random observability UUID/counters were introduced.
+
+Same semantic replay → **`IDEMPOTENT_REPLAY`**.
+
+Do **not** claim exactly-once delivery. Do **not** emit `REPLAY_DETECTED` without explicit runtime proof.
+
+Post-HITL fresh reality instrumentation belongs to **10.3D** — not solved in 10.3C.
+
+------------------------------------------------------------
+DATA MINIMIZATION / EOS-SEC
+------------------------------------------------------------
+
+Observability is **NOT** a second business database.
+
+Events contain safe references and metadata only.
+
+**Recorder failure policy (unchanged from 10.3B):** fail-closed propagation:
+
+- propagates
+- does not silently disappear
+- does not rewrite professional lifecycle to `FAILED`
+- does not invent `RUN_FAILED`
+- does not remove already-created business artifacts
+
+If `TOOL_CALL_STARTED` emission fails → tool is not executed. If `ARTIFACT_CREATED` emission fails after professional artifact creation → business artifact is not rewritten/removed.
+
+------------------------------------------------------------
+OUT-OF-SCOPE PRESERVED
+------------------------------------------------------------
+
+10.3C did **NOT** implement:
+
+- `HUMAN_WAIT_STARTED`
+- `HUMAN_DECISION_RECEIVED`
+- `RUN_RESUMED`
+- `REALITY_REFRESH_*`
+
+→ belong to **10.3D**
+
+10.3C did **NOT** implement:
+
+- `HANDOFF_CREATED`
+- `HANDOFF_PERSISTED`
+- `HANDOFF_PERSIST_FAILED`
+- `RUN_COMPLETED`
+
+→ belong to **10.3E**
+
+Also preserved: no Run Control duplication · no duplicate `STAGE_*` events beyond 10.3B ownership · no `revalidate_reality` instrumentation.
+
+------------------------------------------------------------
+WHAT THIS GIVES THE SYSTEM
+------------------------------------------------------------
+
+После 10.3C цифровой сотрудник оставляет структурированный след уже не только о том, какую профессиональную стадию он выполнял, но и каким разрешённым инструментом пользовался и какой структурированный бизнес-артефакт создал.
+
+Control Room в будущем сможет показывать фактическую цепочку:
+
+```
+работа агента → стадия → инструмент → результат
+```
+
+…а не декоративные UI-статусы.
+
+Conceptual chain now:
+
+Run Control<br>
+→ authorized runtime start boundary<br>
+→ Runtime Instrumentation Foundation (10.3A)<br>
+→ Core LangGraph Stage Wiring (10.3B)<br>
+→ **Tool / Artifact Runtime Instrumentation (10.3C)** ← this checkpoint<br>
+→ HITL / Resume / Reality Refresh instrumentation (10.3D)
+
+Observability RECORDS execution truth. It does NOT become execution truth.
+
+------------------------------------------------------------
+PLACE IN OVERALL ARCHITECTURE
+------------------------------------------------------------
+
+Increment 10.3C sits between:
+
+- **10.3B** Core LangGraph Stage Wiring (STAGE events)
+- **10.3D** HITL / Resume / Reality Refresh Runtime Instrumentation
+
+10.3C is thin runtime-boundary instrumentation only. Minimal mechanical lifecycle extraction for single-source reality read. No observability contract changes. No domain module changes.
+
+------------------------------------------------------------
+WHAT IS NOT DONE
+------------------------------------------------------------
+
+- NO `HUMAN_WAIT_STARTED` / `HUMAN_DECISION_RECEIVED` / `RUN_RESUMED` / `REALITY_REFRESH_*` (10.3D)
+- NO `HANDOFF_CREATED` / `HANDOFF_PERSISTED` / `RUN_COMPLETED` terminal wiring (10.3E)
+- NO labor/exception/handoff artifact observability
+- NO `ConstructorManagedRuntimeLauncher`
+- NO durable observability store (Increment 10.4)
+- NO Query Port
+- NO Control Room UI
+- NO Supabase observability persistence
+- Increment 10.3 overall is **NOT COMPLETE**
+- Increment 10 overall is **NOT COMPLETE**
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+Targeted 10.3C: **15 / 15 PASS**<br>
+10.3B regression: **16 PASS**<br>
+10.3A regression: **37 PASS**<br>
+LangGraph runtime + handoff: **45 PASS**<br>
+Lifecycle regression: **52 PASS**<br>
+Constructor standard gate: **397 / 397 PASS**<br>
+Observability + Run Control + EOS-SEC combined: **155 / 155 PASS**
+
+**FULL POSTGRES DURABLE RESTART SUITE:** **ENVIRONMENT_BLOCKED**<br>
+This is **NOT** classified as a 10.3C regression. Do **not** claim full postgres integration PASS.
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+CODE COMMIT:
+
+- `719178c63434a8a822ecd65dd16e7f4824058be4`
+- message: `feat(agents): instrument constructor tool and artifact runtime`
+
+BRANCH: `wip/increment-10-agent-control-room`
+
+PUSH: **SUCCESS**<br>
+LOCAL == UPSTREAM: **YES**<br>
+WORKTREE: **CLEAN**
+
+------------------------------------------------------------
+FILES
+------------------------------------------------------------
+
+Product:
+
+- `agents/monthly_plan_constructor/lifecycle.py`
+- `agents/monthly_plan_constructor/langgraph_runtime.py`
+
+Tests:
+
+- `tests/test_constructor_langgraph_stage_instrumentation.py` (compatibility fix)
+- `tests/test_constructor_langgraph_tool_artifact_instrumentation.py`
+
+FILE COUNT IN CODE COMMIT: **4**
+
+NON-10.3C FILES IN COMMIT: **NO**
+
+NEW DEPENDENCIES: **NONE**
+
+**Not modified:** `runtime_instrumentation.py`, observability contracts/recorder, Run Control, domain modules, HITL/handoff modules.
+
+------------------------------------------------------------
+WHERE WE ARE IN THE AGENT ROADMAP
+------------------------------------------------------------
+
+Constructor Agent Runtime v0.1:
+
+[1]–[9] — **DONE**<br>
+[10] Agent Control Room / Observability — **IN PROGRESS**
+
+Increment 10 decomposition:
+
+- 10.0 — Architecture Discovery — **DONE**
+- 10.A0 — WIP branch prep — **DONE**
+- 10.A1 — Formal Architecture Spec — **DONE**
+- 10.1 — Agent-Neutral Observability Foundation — **DONE**
+- 10.2 — Run Control — **DONE**
+- 10.3A — Runtime Instrumentation Foundation — **DONE**
+- 10.3B — Core LangGraph Stage Wiring — **DONE**
+- 10.3C — Tool / Artifact Runtime Instrumentation — **DONE** (this checkpoint)
+- 10.3D — HITL / Resume / Reality Refresh Runtime Instrumentation — **NEXT / NOT STARTED**
+- 10.3E — Handoff / Completion Runtime Instrumentation — **NOT STARTED**
+- 10.4 — Durable Observability Store — **NOT STARTED**
+
+Progress: **9 / 10** (Increment 10 overall not complete; do not claim 10 / 10)
+
+------------------------------------------------------------
+ONE-LINE SUMMARY
+------------------------------------------------------------
+
+На этом этапе Execution OS добавил к Constructor LangGraph runtime структурированную observability вокруг одного профессионального EOS-SEC инструмента (`load_constructor_scope`) и двух бизнес-артефактов (`ConstructorRealityRead`, `CandidatePackage`) — с single-source reality-read lifecycle extraction и без изобретения синтетических artifact identity.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+Increment 10.3D — HITL / Resume / Reality Refresh Runtime Instrumentation.
+
+Expected scope (brief only — not designed here):
+
+10.3D will instrument the runtime lifecycle around:
+
+```
+agent waits for human
+→ human decision arrives
+→ runtime resumes
+→ current reality is refreshed/revalidated
+→ professional work continues
+```
+
+Expected events (deferred): `HUMAN_WAIT_STARTED`, `HUMAN_DECISION_RECEIVED`, `RUN_RESUMED`, `REALITY_REFRESH_*`.
+
+Increment 10.3D **не** реализован в этом checkpoint.

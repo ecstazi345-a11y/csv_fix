@@ -13,10 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** (Local Managed Runtime Backend v0.1) · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 State-of-the-Art HITL Architecture Gate** · **10.8A Structured HITL Read Contract**
-- **NEXT:** Increment **10.8B** Professional HITL / Live Agent Execution Visualization preflight — do **not** start before this checkpoint is committed
-- **Recovery code HEAD:** `8d1e8d5f13a95e31be2ca84aa2c0de90c98d077b` (10.8A Structured HITL Read Contract on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · **10.5 Separate-Process Durability Proof DONE** · **ConstructorManagedRuntimeLauncher DONE** · **10.6 AgentControlRoomQueryPort DONE** · **10.7 Control Room Core DONE** · **10.8 State-of-the-Art HITL Architecture Gate DONE** · **10.8A Structured HITL Read Contract DONE** · Increment 10 overall **NOT COMPLETE**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** (Local Managed Runtime Backend v0.1) · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 State-of-the-Art HITL Architecture Gate** · **10.8A Structured HITL Read Contract** · **10.8B Professional HITL / Live Agent Execution Visualization**
+- **NEXT:** Increment **10.9** Handoff / Completion / Digital Organization Visualization preflight — do **not** start before this checkpoint is committed
+- **Recovery code HEAD:** `c975419f502e52cd2ef477b1d7b4821db0c0ad0b` (10.8B Professional HITL / Live Agent Execution Visualization on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · **10.5 Separate-Process Durability Proof DONE** · **ConstructorManagedRuntimeLauncher DONE** · **10.6 AgentControlRoomQueryPort DONE** · **10.7 Control Room Core DONE** · **10.8 State-of-the-Art HITL Architecture Gate DONE** · **10.8A Structured HITL Read Contract DONE** · **10.8B Professional HITL / Live Agent Execution Visualization DONE** · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -5070,5 +5070,378 @@ NEXT
 World-class agent observability patterns = minimum design baseline. Execution OS adds: professional digital work · physical execution semantics · Human Decision Surface · evidence · reality refresh · post-decision consequence · handoff · governance.
 
 Remaining: **10.8B** Professional HITL / Live Agent Execution Visualization → **10.9** Handoff / Completion / Digital Organization Visualization → **10.10** full live-run proof + regressions + EOS-SEC + final docs
+
+Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**
+
+---
+
+============================================================
+CHECKPOINT — 2026-09-02
+INCREMENT 10.8B
+PROFESSIONAL HITL /
+LIVE AGENT EXECUTION VISUALIZATION
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** first operator-facing **Professional Execution Path** — observe-only digital workforce execution visualization. Control Room now represents the observable **professional work** of a digital employee, not merely runtime status and raw events.
+
+------------------------------------------------------------
+BEFORE / AFTER — PRODUCT MILESTONE
+------------------------------------------------------------
+
+**Before 10.8B** operator mainly saw:
+
+- run status
+- current stage
+- stage history table
+- bounded event timeline
+- HITL headline only
+
+**After 10.8B** operator can follow:
+
+Mission → Professional Execution Step → Tool usage → Artifact creation → Human Decision → Resume / Abort → Reality Refresh → Downstream continuation → Audit trace
+
+**Product meaning:** 10.8B changes the Control Room from a runtime monitoring page toward an **operational digital workforce console**. Operator can observe: what professional stage was executed · which safe tool was used · which safe artifact appeared · where autonomy stopped · what human decision occurred · whether reality was refreshed · where execution continued — **without** reading raw events or developer internals.
+
+This is a key milestone toward **DIGITAL WORKFORCE EXECUTION OBSERVABILITY**.
+
+**Definition (observable digital labor must answer):** WHAT mission was received · WHAT professional work was performed · WHAT safe tools were used · WHAT business artifact/result was produced · WHERE autonomy stopped · WHAT human decision occurred · WHAT happened after the decision · WHERE work moved next — while preserving deterministic truth · security · auditability · human responsibility.
+
+------------------------------------------------------------
+ARCHITECTURE CHAIN
+------------------------------------------------------------
+
+```
+Durable structured events
+  → AgentControlRoomQueryPort.get_run_snapshot()
+  → AgentProfessionalExecutionPathView
+  → ProfessionalExecutionStepView
+  → Streamlit Control Room (pages/53)
+```
+
+```
+AgentHumanDecisionSurfaceView
+  → embedded into professional execution path at HUMAN_GATE
+  (not detached headline only)
+```
+
+**No** direct persistence/UI bypass · **no** SqliteObservabilityStore / Supabase / checkpoint / HITL store from page · **no** Constructor imports in `agents/control_room/**`.
+
+Public Query Port methods **unchanged:** `list_runs` · `get_run` · `get_run_snapshot`
+
+------------------------------------------------------------
+PROFESSIONAL EXECUTION PATH LAW
+------------------------------------------------------------
+
+Professional Execution Path is derived from **ACTUAL DURABLE EVENT ORDER**.
+
+It is **NOT** generated from:
+
+- catalog sequence alone
+- hardcoded Constructor flow
+- `event.detail`
+- free-form narrative
+- LLM interpretation
+
+Catalog may supply labels; **observed event order** supplies execution truth.
+
+The path is **not** equivalent to raw LangGraph nodes.
+
+------------------------------------------------------------
+AGENT-NEUTRAL READ MODEL
+------------------------------------------------------------
+
+New agent-neutral read concepts (frozen DTOs in `agents/control_room/dtos.py`):
+
+| DTO | Role |
+|-----|------|
+| `ProfessionalExecutionStepView` | one step in professional execution path |
+| `StageToolExecutionView` | safe tool identity + status + correlation |
+| `StageArtifactView` | safe artifact type/id + correlation |
+| `AgentProfessionalExecutionPathView` | full path on `AgentRunSnapshot.professional_execution_path` |
+
+**No** Constructor-specific types/enums/imports inside `agents/control_room`.
+
+Supported professional step kinds:
+
+| Kind | Source |
+|------|--------|
+| `STAGE` | `STAGE_STARTED` / `STAGE_COMPLETED` / `STAGE_FAILED` |
+| `HUMAN_DECISION` | structured HITL (`HUMAN_WAIT_STARTED` + 10.8A surface) |
+| `REALITY_REFRESH` | `REALITY_REFRESH_STARTED` / `REALITY_REFRESH_COMPLETED` |
+| `HANDOFF_MARKER` | `HANDOFF_CREATED` / persist events where structurally available |
+
+------------------------------------------------------------
+PROFESSIONAL STAGE VISIBILITY
+------------------------------------------------------------
+
+Stage presentation exposes when structurally proven:
+
+- stage identity (`stage_id`)
+- professional Russian label (deterministic mapping)
+- status (`COMPLETED` · `RUNNING` · `WAITING_FOR_HUMAN` · `FAILED` · `INCOMPLETE` · `INCONSISTENT`)
+- start time · completion time · derived duration
+- attempt · resume episode where useful
+
+**No** fake duration for incomplete/inconsistent occurrences.
+
+**Run status vs stage status remain separate truths.** Example: `RUNNING` + `REALITY_REVALIDATION` or `WAITING_FOR_HUMAN` + `HUMAN_GATE`. No conflation.
+
+------------------------------------------------------------
+TOOL VISIBILITY
+------------------------------------------------------------
+
+Tools correlated to professional steps using structured observability fields (`stage_id` · `attempt_n` · `resume_n` · `tool_name` · event order).
+
+Control Room may show: tool identity/name (presentation RU mapping optional).
+
+**Must NOT expose:** tool arguments · tool raw output · tool credentials · `AgentExecutionContext` · arbitrary tool payload.
+
+Tools = **safe references only**.
+
+------------------------------------------------------------
+ARTIFACT VISIBILITY
+------------------------------------------------------------
+
+Artifacts correlated using structured: `artifact_type` · `artifact_id` · `stage_id` · `resume_n` · event order.
+
+UI may show artifact identity/type. **Artifact body forbidden.**
+
+**No:** CandidatePackage body · snapshot body · business data rows · checkpoint payload.
+
+Output may be shown when artifact correlation proves it. **Explicit typed Stage Input / Output Contract: DEFERRED** — 10.8B does **NOT** infer professional input from architecture knowledge.
+
+------------------------------------------------------------
+TYPED STAGE METRICS — DEFERRED
+------------------------------------------------------------
+
+**Typed Stage Metrics: DEFERRED.**
+
+10.8B does **NOT** claim metrics such as: `candidate_count` · `validated_count` · `unresolved_count` etc. when they only exist in `event.detail`.
+
+Visualization must **never fabricate** professional metrics from non-authoritative payload.
+
+Future **Professional Observability v0.2** may introduce typed stage metrics.
+
+------------------------------------------------------------
+HUMAN DECISION EMBEDDED
+------------------------------------------------------------
+
+Human Decision is now **embedded inside** the professional execution path at `HUMAN_GATE` — no longer merely a detached status headline.
+
+Where structured 10.8A data exists, operator may see:
+
+- wait ordinal
+- `reason_code` / `human_readable_reason`
+- `allowed_decisions`
+- evidence reference count / IDs (expander)
+- `decision_code`
+- `actor_id` · `actor_type`
+- decision time
+- post-decision consequence
+
+**No** write controls · **no** approve/reject/resume/abort buttons.
+
+Legacy events without structured request context → safe message: professional wait context unavailable — **never** reconstructed from detail.
+
+------------------------------------------------------------
+AUTHORITY HONESTY
+------------------------------------------------------------
+
+| Topic | Status |
+|-------|--------|
+| Authority modeled | **NO** (`authority_modeled=False`) |
+
+Control Room may say: «Решение отправил …»
+
+Control Room may **NOT** claim: «Уполномоченное лицо» · «Решение авторизовано» · «Полномочия подтверждены»
+
+**Law:** actor observed **≠** actor authorized.
+
+------------------------------------------------------------
+MULTI-WAIT LAW
+------------------------------------------------------------
+
+Multiple real Human Wait episodes displayed **separately**.
+
+Example chain:
+
+WAIT-1 → decision → resume → reality refresh → execution → WAIT-2
+
+**No** cross-association. Correlation remains structural: `interrupt_id` · `decision_id` · `resume_n` · durable event order.
+
+------------------------------------------------------------
+REALITY REFRESH VISIBILITY
+------------------------------------------------------------
+
+Reality Refresh is now a **first-class visible execution concept**.
+
+When structured events prove it, operator sees:
+
+decision received → execution resumed → production reality refresh started → production reality refresh completed → execution continued
+
+**Do NOT** claim what business data changed unless typed truth exists.
+
+This is a key Execution OS differentiator.
+
+------------------------------------------------------------
+POST-DECISION CONSEQUENCE
+------------------------------------------------------------
+
+Post-decision consequence visible using **structured correlation only** — **no** timestamp-proximity causality.
+
+Possible observed chain when proven:
+
+Human Decision → `RUN_RESUMED` / `RUN_ABORTED` → `REALITY_REFRESH` → downstream stage → completion/handoff
+
+Only structurally proven links may be presented.
+
+------------------------------------------------------------
+RUSSIAN PROFESSIONAL PRESENTATION
+------------------------------------------------------------
+
+Deterministic Russian mappings in `agents/control_room/presentation.py` — **no** LLM-generated labels.
+
+| `stage_id` | RU label |
+|------------|----------|
+| `AUTHORIZATION` | Проверка допуска |
+| `MISSION_BINDING` | Привязка миссии |
+| `REALITY_READ` | Чтение производственной реальности |
+| `CANDIDATE_ASSEMBLY` | Формирование пакета кандидатов |
+| `LABOR_NORM_RESOLUTION` | Проверка норм труда |
+| `EXCEPTION_ANALYSIS` | Анализ исключений |
+| `HUMAN_GATE` | Требуется решение человека |
+| `REALITY_REVALIDATION` | Повторная проверка производственной реальности |
+| `HANDOFF_PREPARATION` | Подготовка передачи |
+| `HANDOFF_PERSISTENCE` | Сохранение передачи |
+| `RUN_COMPLETION` | Завершение выполнения |
+
+Decision codes: `CLARIFY_SCOPE` · `ABORT_RUN` mapped deterministically. Unknown codes → safe code fallback.
+
+------------------------------------------------------------
+CONTROL ROOM LAYERS
+------------------------------------------------------------
+
+| Level | Scope | Status |
+|-------|-------|--------|
+| 1 Digital Organization | multi-agent topology | mostly **10.9** |
+| 2 Agent Execution | professional path | **10.8B DONE** |
+| 3 Professional Stage Detail | safe stage/tool/artifact | **10.8B DONE** (within current safe data) |
+| 4 Human Decision | embedded observe-only | **10.8B DONE** |
+| 5 Audit Trace | secondary forensic layer | existing |
+
+------------------------------------------------------------
+PAGE LAYOUT · VERTICAL EXECUTION PATH
+------------------------------------------------------------
+
+**Two-pane layout retained.**
+
+| LEFT | RIGHT |
+|------|-------|
+| filters · run list · manual «Обновить» | Run Header 2.0 · integrity warnings · professional vertical execution path · embedded Human Decision · reality refresh / consequence · stage details · secondary audit timeline |
+
+Single-agent execution uses **vertical professional stepper/timeline** — operational clarity · chronology · no unnecessary graph complexity.
+
+**Multi-agent topology graph: DEFERRED to 10.9.**
+
+**No** complex graph in 10.8B · **no** auto polling · **no** Streamlit background worker · **no** UI/runtime coupling.
+
+------------------------------------------------------------
+FORENSIC TIMELINE · INCOMPLETE · INCONSISTENT LAW
+------------------------------------------------------------
+
+**«Доступное окно событий»** remains a **SECONDARY** technical/audit layer. Primary operator surface = Professional Execution Path.
+
+**Never** call bounded event window «Полная история».
+
+| Condition | UI behavior |
+|-----------|-------------|
+| `events_complete=False` | warn: «Показана доступная часть истории выполнения.» |
+| Unobserved prefix | **NOT** rendered as `NOT_REACHED` |
+| `INCONSISTENT` derivation | warning has priority; **no** guessed transition/stage/causality |
+
+------------------------------------------------------------
+PERFORMANCE LAW
+------------------------------------------------------------
+
+One selected run → **one** `get_run_snapshot()`.
+
+Professional path composed from the **same bounded event window**. **No** N+1 stage/artifact/tool reads.
+
+Performance risk accepted: **LOW–MEDIUM**.
+
+------------------------------------------------------------
+EOS-SEC
+------------------------------------------------------------
+
+10.8B still does **NOT** expose:
+
+`event.detail` · raw DTO dump · checkpoint state · `AgentExecutionContext` · `authorization_id` · tokens · credentials · tool arguments · tool raw outputs · artifact bodies · CandidatePackage body · scope body · prompt/model content · chain-of-thought
+
+**No** write controls · **no** LLM.
+
+------------------------------------------------------------
+WORLD-CLASS BASELINE
+------------------------------------------------------------
+
+10.8B follows professional direction of leading agent/multi-agent systems: workflow/execution tracing · stage visibility · tool visibility · HITL · durability · decision/resume observability · multi-agent readiness · structured telemetry.
+
+Execution OS adds: professional digital work · physical execution semantics · Human Decision Surface · reality refresh · post-decision consequence · business artifacts · future governance/handoff.
+
+World-class practice = **minimum baseline**, not maximum target.
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+| Gate | Result |
+|------|--------|
+| Targeted 10.8B | **20 / 20 PASS** |
+| Query Port + guards + 10.8A | **74 / 74 PASS** |
+| Other regressions (durable/runtime combined) | **191 / 191 PASS** |
+| 10.8A | **PASS** |
+| 10.7 | **PASS** |
+| Stage | **PASS** |
+| Tool/artifact | **PASS** |
+| HITL | **PASS** |
+| Handoff | **PASS** |
+| 10.4 | **PASS** |
+| 10.5 | **PASS** |
+| Run Control | **PASS** |
+| Launcher | **PASS** |
+| EOS-SEC | **PASS** |
+| py_compile | **PASS** |
+| Architecture drift | **NO** |
+
+**DURABLE_RESTART:** **ENVIRONMENT_BLOCKED_NOT_REGRESSION** — do **NOT** write PASS.
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+CODE: `c975419f502e52cd2ef477b1d7b4821db0c0ad0b` · message: `feat(agents): add live agent execution view` · BRANCH: `wip/increment-10-agent-control-room` · PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES** · worktree after code commit: **CLEAN**
+
+FILES (8): `agents/control_room/dtos.py` · `agents/control_room/derivations.py` · `agents/control_room/query_port.py` · `agents/control_room/presentation.py` · `pages/53_AI_Центр_управления_агентами.py` · `tests/test_agent_control_room_query_port.py` · `tests/test_control_room_page_guards.py` · `tests/test_control_room_execution_visualization.py`
+
+Observability / Constructor runtime / Run Control / HITL write path: **unchanged**
+
+------------------------------------------------------------
+NEXT — INCREMENT 10.9
+------------------------------------------------------------
+
+**Increment 10.9** Handoff / Completion / Digital Organization Visualization preflight — do **not** start before this checkpoint is committed.
+
+10.9 must lift the Control Room from **one digital employee** to the structure of a **DIGITAL ORGANIZATION**.
+
+Target chain: Constructor → business handoff/artifact → Admission Agent → future downstream digital employees.
+
+Operator must eventually understand: WHO produced the result · WHAT was transferred · TO WHOM · WHEN · WITH WHAT STATUS · WHETHER handoff persisted · WHETHER receiving role/agent is known · HOW the run completed · how this fits into the multi-agent production chain.
+
+**10.9 boundary (focus):** handoff identity · handoff state · source role/agent · target role/agent · business artifact identity/type · completion relationship · digital organization topology · cross-agent work transfer visualization.
+
+**Without:** artifact bodies · arbitrary payload · LLM inference · superuser orchestrator semantics · write actions.
+
+Remaining: **10.9** Handoff / Completion / Digital Organization Visualization → **10.10** full live-run proof + regression + EOS-SEC + final documentation
 
 Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**

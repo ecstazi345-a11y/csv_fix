@@ -13,10 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** (Local Managed Runtime Backend v0.1) · **10.6 AgentControlRoomQueryPort**
-- **NEXT:** Increment **10.7** Control Room Core preflight — operator UI on top of Query Port; do **not** bypass `AgentControlRoomQueryPort`
-- **Recovery code HEAD:** `3542f9dfaa03abcd21f3818977b415659f635614` (10.6 AgentControlRoomQueryPort on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · **10.5 Separate-Process Durability Proof DONE** · **ConstructorManagedRuntimeLauncher DONE** · **10.6 AgentControlRoomQueryPort DONE** · 10.7 NOT STARTED · Increment 10 overall **NOT COMPLETE**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** (Local Managed Runtime Backend v0.1) · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core**
+- **NEXT:** Increment **10.8** State-of-the-Art HITL Architecture Gate → HITL visualization preflight — do **not** start before this checkpoint is committed
+- **Recovery code HEAD:** `9a7eeed931a40dc6dd8fa615979c40675a057b6c` (10.7 Control Room Core on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · **10.5 Separate-Process Durability Proof DONE** · **ConstructorManagedRuntimeLauncher DONE** · **10.6 AgentControlRoomQueryPort DONE** · **10.7 Control Room Core DONE** · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -4623,5 +4623,169 @@ NEXT
 **Increment 10.7** Control Room Core preflight — do **not** start during this checkpoint.
 
 Remaining: 10.7 Control Room Core → 10.8 HITL visualization → 10.9 Handoff / Completion / Digital Organization visualization → 10.10 full live-run proof + regression + EOS-SEC
+
+Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**
+
+---
+
+============================================================
+CHECKPOINT — 2026-09-02
+INCREMENT 10.7
+CONTROL ROOM CORE
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** first real operator-facing surface for the digital workforce — observation only, not execution engine, not control plane. **10.8 is NOT implemented in this checkpoint.**
+
+------------------------------------------------------------
+CORE ARCHITECTURE LAW
+------------------------------------------------------------
+
+```
+Operator → Streamlit Control Room → AgentControlRoomQueryPort → ObservabilityStore
+```
+
+**Observe-only:** no start · resume · approve · reject · abort · kill · restart · delete · handoff control · database write · Run Control actions · HITL decision controls.
+
+**Query Port law:** Control Room reads operational truth **ONLY** through `AgentControlRoomQueryPort` (`list_runs(...)` · `get_run_snapshot(...)`).
+
+**Forbidden bypass:** Control Room → `SqliteObservabilityStore` directly · `sqlite3` · Supabase observability tables directly · raw `ObservabilityEvent`. Query Port bypass: **FORBIDDEN**.
+
+------------------------------------------------------------
+CORE PRODUCT MEANING
+------------------------------------------------------------
+
+For the first time an operator can observe:
+
+- managed agent runs · operational status · project · month · mission · timestamps · projection version
+- current stage when deterministically known · stage history · available event timeline
+- completeness warnings · derivation warnings
+
+**Without accessing:** runtime internals · raw SQLite · raw `ObservabilityEvent.detail` · Constructor professional logic.
+
+------------------------------------------------------------
+CONTROL ROOM FACTORY · OBSERVABILITY PATH LAW
+------------------------------------------------------------
+
+`agents/control_room/factory.py` — headless composition root.
+
+| Does | Does NOT |
+|------|----------|
+| resolve observability configuration | import Streamlit |
+| construct `SqliteObservabilityStore` | write runs / append events |
+| construct `AgentControlRoomQueryPort` | start agents |
+| return Query Port | know Constructor professional logic |
+| | expose path to page |
+
+**Production requires:** `AGENT_OBSERVABILITY_DB_PATH` · missing config: **FAIL CLOSED** · nonexistent configured file: **FAIL CLOSED** · ghost database auto-creation: **FORBIDDEN**.
+
+**No false reality:** Control Room must never silently create an empty observability database and present it as operational reality. If durable truth is unavailable → UI reports observability unavailable/not configured. No synthetic empty truth.
+
+**10.7 distinction:** establishes `AGENT_OBSERVABILITY_DB_PATH` as Control Room configuration convention. Does **NOT** yet prove Run Control + Launcher + Control Room all use the same production observability path — that full same-file end-to-end proof belongs to **10.10**.
+
+------------------------------------------------------------
+STREAMLIT RESOURCE LAW · PAGE SCOPE
+------------------------------------------------------------
+
+`st.cache_resource` — page-side composition wrapper only; caches Query Port/store resource for Streamlit process lifetime. Query data: **NOT cached** — every rerun reads current bounded durable truth through Query Port.
+
+**Page:** `pages/53_AI_Центр_управления_агентами.py` · user-facing language: **Russian** · navigation: `▌ Контур агентной оркестрации` → **Центр управления агентами** · layout: wide · two-pane · operator-oriented.
+
+**Core UX sections:** filters · available run list · selected run · operational status · project/month/mission · timestamps · current stage · stage history · available event window · completeness warnings · derivation warnings. No raw technical dump.
+
+**Filters:** Агент · Проект · Месяц · Статус — values from bounded Query Port data and stable operational status codes only. No SQL-like filter · no raw DB lookup.
+
+------------------------------------------------------------
+BOUNDED-READ HONESTY · STAGE TRUTH
+------------------------------------------------------------
+
+| Flag | UI law |
+|------|--------|
+| `runs_complete=False` | explicit warning — only bounded sample visible; do **not** claim all agents / all runs / all active workers / complete fleet |
+| `events_complete=False` | explicit warning — only part of event history visible; do **not** claim latest events globally |
+
+**Timeline title:** **Доступное окно событий** — **NOT** «Последние события».
+
+**Stage truth:** UI does **NOT** derive current stage — consumes `snapshot.stage` from Query Port. `INCOMPLETE` → warning only · `INCONSISTENT` → warning only · UI never guesses current stage · no reconstruction from timeline.
+
+------------------------------------------------------------
+HITL / HANDOFF BOUNDARIES
+------------------------------------------------------------
+
+**10.7 HITL:** when `operational_status == WAITING_FOR_HUMAN` — headline only: **Ожидает решения человека**. Does **NOT** display: decision form · approval/rejection · interrupt drilldown · resume action · decision payload. Dedicated HITL visualization: **10.8**.
+
+**10.7 Handoff:** does **NOT** include handoff organization graph · recipient visualization · artifact drilldown · digital organization graph. Rich handoff/completion visualization: **10.9**.
+
+------------------------------------------------------------
+PRESENTATION MODULE · SAFE SUMMARY / COUNTS
+------------------------------------------------------------
+
+`agents/control_room/presentation.py` — presentation semantics only: Russian operational status mapping · stage state mapping · event labels · visual category · Moscow timestamp formatting · short run identifier formatting · safe fallback for unknown codes.
+
+**No:** Streamlit · database · Query Port reads · Constructor logic · business truth mutation.
+
+**NOT DISPLAYED in 10.7:** `AgentRun.safe_summary` · `AgentRun.safe_counts` — keep Control Room Core minimal; avoid turning generic dictionaries into uncontrolled presentation contract. DTO capability remains for future explicit design.
+
+------------------------------------------------------------
+TIME / IDENTIFIERS · ERROR HANDLING
+------------------------------------------------------------
+
+**Timestamps:** source UTC-aware · operator display Europe/Moscow · `DD.MM.YYYY HH:MM` · suffix **МСК**.
+
+**Run identity:** full `run_id` = internal selection identity · list = short display form · full `run_id` in technical identifier area only. No authorization/security ids shown.
+
+**Safe UI errors:** missing/unavailable observability · run not found · query blocker · unexpected error — all operator-safe. **No:** traceback · SQLite path · raw exception text · environment dump.
+
+------------------------------------------------------------
+SECURITY / EOS-SEC
+------------------------------------------------------------
+
+Control Room does **NOT** render: raw `event.detail` · `AgentExecutionContext` · `authorization_id` · tokens · credentials · DSN · service_role · scope blobs · CandidatePackage · package/snapshot blobs · handoff artifact · event fingerprints · append_sequence · raw DB rows · prompt/model content · chain-of-thought. No unrestricted DTO dump · no unsafe operational HTML.
+
+------------------------------------------------------------
+TECHNICAL CHAIN · PROCESS-INDEPENDENCE
+------------------------------------------------------------
+
+```
+Run Control → ConstructorManagedRuntimeLauncher → Constructor LangGraph Runtime
+  → Durable Observability → AgentControlRoomQueryPort → Control Room Core
+```
+
+First complete path from managed digital employee execution to safe operator visibility.
+
+**Process-independent memory:** **PROVEN** · **Process-independent execution:** **NOT PROVEN** — Control Room does not change this. Current Constructor worker: **THREAD** inside host Python process.
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+Targeted 10.7: **26 / 26 PASS** · 10.6 regression: **21 / 21 PASS** · Launcher: **PASS** · Run Control: **PASS** · 10.4: **PASS** · 10.5: **PASS** · Operational Truth: **PASS** · 10.3A–E: **PASS** · EOS-SEC: **PASS** · Architecture drift: **NO** · Factory SQLite smoke: **PASS**
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+CODE: `9a7eeed931a40dc6dd8fa615979c40675a057b6c` · message: `feat(agents): add control room core` · BRANCH: `wip/increment-10-agent-control-room` · PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES**
+
+FILES (7): `app.py` · `pages/53_AI_Центр_управления_агентами.py` · `agents/control_room/factory.py` · `agents/control_room/presentation.py` · `tests/test_control_room_presentation.py` · `tests/test_control_room_factory.py` · `tests/test_control_room_page_guards.py`
+
+Query Port / Observability / Run Control / Launcher / Constructor runtime: **unchanged in this commit**
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**Increment 10.8** State-of-the-Art HITL Architecture Gate — do **not** start before this checkpoint is committed.
+
+10.8 gate must compare current leading agent/multi-agent HITL architecture patterns and define Execution OS Human Decision Surface:
+
+```
+Human Wait → wait identity → required professional decision → evidence/context
+  → required authority → human decision → decision provenance
+  → controlled resume → reality refresh → post-decision consequence
+```
+
+Remaining: 10.8 HITL Architecture Gate + HITL visualization → 10.9 Handoff / Completion / Digital Organization visualization → 10.10 full live-run proof + regression + EOS-SEC + final documentation
 
 Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**

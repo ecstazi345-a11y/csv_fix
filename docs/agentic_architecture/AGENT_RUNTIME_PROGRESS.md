@@ -13,10 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation
-- **NEXT:** Architecture sequencing review for remaining Increment 10 scope (Durable Store · Query Port · Managed Runtime Launcher · Supabase persistence · Control Room UI — dependency order TBD; do **not** auto-start 10.4)
-- **Recovery code HEAD:** `1b7003ee067c94bbb6b75f9aa4fa16740d6f2f7f` (Increment 10.3E on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · 10.4 NOT STARTED · Increment 10 overall **NOT COMPLETE**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix**
+- **NEXT:** Increment 10.4 Durable Observability Store — revalidate 10.4 preflight assumptions against Operational Truth Fix before implementation; do **not** repeat full historical investigation
+- **Recovery code HEAD:** `edab8d9d80531b1ab58d13864042fe1506538163` (Operational Truth Fix on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · 10.4 NOT STARTED (architecturally **UNBLOCKED**) · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -3941,3 +3941,201 @@ PROFESSIONAL PASSPORT REMINDER
 ------------------------------------------------------------
 
 After Constructor reaches full completion, create **Constructor Professional Passport v1.0** / **Профессиональный паспорт Constructor v1.0**. **Not** part of this checkpoint. Do **not** create the passport now.
+
+---
+
+============================================================
+CHECKPOINT — 2026-09-02
+OPERATIONAL TRUTH FIX
+/ ЗАКРЫТИЕ МОДЕЛИ ОПЕРАЦИОННОЙ ИСТИНЫ
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE** (documentation + code)
+
+**Purpose:** close AgentRun operational status truth gaps that blocked Increment 10.4 Durable Observability Store. **10.4 is NOT implemented in this checkpoint.**
+
+------------------------------------------------------------
+WHY THIS FIX WAS REQUIRED
+------------------------------------------------------------
+
+Before this fix, `AgentRun` operational truth was **not fully reconstructable** from immutable events:
+
+- Run Control silently set `RUNNING` in memory after `launcher.launch()`
+- no authoritative event represented `STARTING → RUNNING`
+- `WAITING_FOR_HUMAN → RUNNING` had no explicit projection law
+- terminal FAILED paths did not consistently emit `RUN_FAILED`
+- human `ABORT_RUN` did not emit `RUN_ABORTED`
+
+Therefore Durable Observability Store 10.4 was correctly **BLOCKED**.
+
+------------------------------------------------------------
+CORE ARCHITECTURE LAW
+------------------------------------------------------------
+
+**Projection must NEVER invent operational truth.**
+
+- **Event log** = authoritative operational history
+- **Projection** = materialized read/control state derived from accepted events
+- No hidden process-local status may be treated as durable truth
+
+------------------------------------------------------------
+THREE PLANES / ТРИ ПЛОСКОСТИ
+------------------------------------------------------------
+
+| Plane | Scope |
+|-------|-------|
+| **Control plane** | request · authorization · mission binding · launch acceptance |
+| **Runtime plane** | actual advancing · waiting · resume · runtime failure · abort · completion |
+| **Professional plane** | Constructor lifecycle · candidate package · exceptions · labor norms · handoff readiness · professional failure/status |
+
+These planes interact but must **not** be collapsed into one state model.
+
+------------------------------------------------------------
+RUNNING TRUTH LAW
+------------------------------------------------------------
+
+| Event / action | Operational meaning |
+|----------------|---------------------|
+| `RUN_STARTED` | Run Control initiating runtime handoff; `operational_status` remains **STARTING** |
+| `launcher.launch()` success | accept/schedule only — **NOT RUNNING** |
+| Run Control post-launch result | **STARTING** |
+| `RUN_ADVANCING` | actual **RUNNING** — runtime-owned only |
+
+------------------------------------------------------------
+RUN_ADVANCING
+------------------------------------------------------------
+
+| Field | Value |
+|-------|-------|
+| **EventType** | `RUN_ADVANCING` (new) |
+| **Owner** | Runtime / runtime instrumentation |
+| **Meaning** | The authorized professional runtime has actually begun execution / Авторизованный профессиональный runtime фактически начал исполнение |
+| **Emission seam** | actual entry into `bind_mission` graph node, **before** existing professional `_advance` logic |
+| **NOT** | before `app.invoke` · launcher return · `STAGE_STARTED` inference |
+| **Projection** | `RUN_ADVANCING → RUNNING` · `started_at` set on initial advancing event |
+| **Identity** | `semantic_occurrence_key="start"`, `attempt_n=1`, `resume_n=0` · one per managed run · no second on HITL resume |
+
+------------------------------------------------------------
+LAUNCHER SEMANTICS
+------------------------------------------------------------
+
+`ManagedRuntimeLauncher.launch(...)` = accept/schedule authorized runtime execution in a decoupled execution context.
+
+**NOT:** whole graph execution · proof of RUNNING · proof of completion.
+
+`ConstructorManagedRuntimeLauncher` itself: **NOT IMPLEMENTED**.
+
+------------------------------------------------------------
+WAITING / RESUME TRUTH
+------------------------------------------------------------
+
+| Event | Projection |
+|-------|------------|
+| `HUMAN_WAIT_STARTED` | `WAITING_FOR_HUMAN` |
+| `RUN_RESUMED` | `RUNNING` |
+
+`RUN_RESUMED` is authoritative only after: human decision validated · resume command applied · `ABORT_RUN` excluded · runtime continues into reality revalidation.
+
+No second `RUN_ADVANCING` on resume. `started_at` unchanged.
+
+------------------------------------------------------------
+ABORT TRUTH
+------------------------------------------------------------
+
+Human `ABORT_RUN`: `HUMAN_DECISION_RECEIVED` → abort validated/applied → `RUN_ABORTED`.
+
+| Projection | |
+|------------|--|
+| `RUN_ABORTED` | `ABORTED` · `completed_at` set |
+
+**Does NOT emit:** `RUN_RESUMED` · `RUN_FAILED`.
+
+Professional lifecycle may still use `STATUS_FAILED` + `CODE_RUN_ABORTED_BY_HUMAN`. Operational **ABORTED** ≠ professional generic **FAILED**.
+
+------------------------------------------------------------
+FAILED TRUTH
+------------------------------------------------------------
+
+`RUN_FAILED` = Constructor professional/runtime responsibility ended in a **known terminal failure** that is **not** controlled human abort.
+
+**Wired terminal paths:** (A) stage terminal lifecycle failure · (B) `bind_mission` terminal failure · (C) revalidation terminal failure · (D) handoff persistence terminal failure.
+
+**Do NOT emit for:** observability failure · launcher outcome unknown · control-plane failure · `WAITING_FOR_HUMAN` · `ABORT_RUN` · generic `app.invoke` exception with unknown outcome.
+
+**Plane separation:** `STAGE_FAILED` = stage fact · `RUN_FAILED` = terminal run fact. For terminal stage failure: `STAGE_FAILED → RUN_FAILED`. For non-terminal WAIT/recoverable route: `RUN_FAILED` only if lifecycle truly terminates `FAILED`.
+
+------------------------------------------------------------
+HANDOFF FAILURE CHAIN
+------------------------------------------------------------
+
+```
+HANDOFF_CREATED → persistence attempt → HANDOFF_PERSIST_FAILED → RUN_FAILED → no RUN_COMPLETED → original persistence exception re-raised
+```
+
+**Business truth first / Бизнес-истина первична.** If recorder fails while recording `RUN_FAILED`: original persistence/store exception remains primary; recorder failure stays chained. Telemetry must not erase business failure.
+
+------------------------------------------------------------
+GENERIC EXCEPTION LAW
+------------------------------------------------------------
+
+Generic `app.invoke` exception does **NOT** automatically emit `RUN_FAILED`. Exception may represent observability failure · contract bug · infrastructure issue · unknown professional outcome.
+
+------------------------------------------------------------
+RETRYING · NON-PROJECTED OUTCOMES
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| `OperationalStatus.RETRYING` | **DEFERRED** — executable retry path not wired; not blocking 10.4 |
+| `LAUNCH_OUTCOME_UNKNOWN` · `CONTROL_PLANE_FAILURE` · `OBSERVABILITY_UNAVAILABLE` | **NOT** `AgentRun` operational statuses — control-plane/local failure outcomes; must **not** project to `FAILED` |
+
+------------------------------------------------------------
+FINAL OPERATIONAL TRUTH TABLE
+------------------------------------------------------------
+
+| Event | Operational status |
+|-------|-------------------|
+| `RUN_REQUESTED` | `REQUESTED` |
+| `RUN_AUTHORIZATION_STARTED` / `RUN_AUTHORIZED` | `AUTHORIZING` |
+| `RUN_DENIED` | `AUTHORIZATION_DENIED` |
+| `MISSION_BOUND` / `RUN_STARTED` | `STARTING` |
+| `RUN_ADVANCING` | `RUNNING` |
+| `HUMAN_WAIT_STARTED` | `WAITING_FOR_HUMAN` |
+| `RUN_RESUMED` | `RUNNING` |
+| `RUN_FAILED` | `FAILED` |
+| `RUN_ABORTED` | `ABORTED` |
+| `RUN_COMPLETED` | `COMPLETED` |
+| `RETRYING` | **DEFERRED** |
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+Targeted operational truth: **19 / 19 PASS** · Constructor standard: **116 / 116 PASS** · Observability + Run Control + EOS-SEC: **315 / 315 PASS** · Architecture drift: **NO**
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+CODE: `edab8d9d80531b1ab58d13864042fe1506538163` · message: `fix(agents): close constructor operational status truth gaps` · BRANCH: `wip/increment-10-agent-control-room` · PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES** · WORKTREE: **CLEAN**
+
+FILES (10): `agents/observability/contracts.py` · `agents/run_control/contracts.py` · `agents/run_control/service.py` · `agents/monthly_plan_constructor/runtime_instrumentation.py` · `agents/monthly_plan_constructor/langgraph_runtime.py` · `tests/test_run_control_service.py` · `tests/test_agent_observability_contracts.py` · `tests/test_constructor_langgraph_hitl_observability.py` · `tests/test_constructor_langgraph_handoff_observability.py` · `tests/test_constructor_langgraph_operational_truth.py`
+
+------------------------------------------------------------
+10.4 STATUS
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| Increment 10.4 Durable Observability Store | **NOT IMPLEMENTED** |
+| Architecture blocker | **RESOLVED** |
+
+10.4 is architecturally **UNBLOCKED** because: `RUNNING` has authoritative runtime-owned event · WAITING exit has `RUN_RESUMED` mapping · terminal FAILED paths emit `RUN_FAILED` · human abort emits `RUN_ABORTED` · Run Control no longer silently creates `RUNNING` · projection engine no longer needs state inference.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+Return to **Increment 10.4 Durable Observability Store**. Before implementation: revalidate 10.4 preflight assumptions against this Operational Truth Fix. Update 10.4 design only where event/projection assumptions changed. Do **not** repeat the entire historical investigation.
+
+Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**

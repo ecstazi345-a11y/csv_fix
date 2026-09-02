@@ -240,11 +240,20 @@ def _semantic_parity(
     ]
 
 
+STAGE_EVENT_TYPES = frozenset(
+    {
+        EventType.STAGE_STARTED,
+        EventType.STAGE_COMPLETED,
+        EventType.STAGE_FAILED,
+    }
+)
+
+
 def _stage_events(recorder: InMemoryObservabilityRecorder, run_id: str):
     return [
         event
         for event in recorder.events_for_run(run_id)
-        if event.stage_id in CORE_STAGES
+        if event.stage_id in CORE_STAGES and event.event_type in STAGE_EVENT_TYPES
     ]
 
 
@@ -348,10 +357,9 @@ class TestFailureSemantics(unittest.TestCase):
             reader=raising_reader,  # type: ignore[arg-type]
         )
         self.assertEqual(state.status, STATUS_FAILED)
+        reality_events = _stage_events(recorder, FIXED_RUN_ID)
         reality_events = [
-            event
-            for event in recorder.events_for_run(FIXED_RUN_ID)
-            if event.stage_id == "REALITY_READ"
+            event for event in reality_events if event.stage_id == "REALITY_READ"
         ]
         self.assertEqual(
             [event.event_type for event in reality_events],
@@ -388,7 +396,7 @@ class TestWaitingForHumanSemantics(unittest.TestCase):
         self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN)
         exc_events = [
             event
-            for event in recorder.events_for_run(FIXED_RUN_ID)
+            for event in _stage_events(recorder, FIXED_RUN_ID)
             if event.stage_id == "EXCEPTION_ANALYSIS"
         ]
         self.assertEqual(

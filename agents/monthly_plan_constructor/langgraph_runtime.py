@@ -63,6 +63,7 @@ from agents.monthly_plan_constructor.lifecycle import (
     LifecycleError,
     LifecycleTransition,
     advance_constructor_lifecycle,
+    advance_constructor_reality_read_step,
     create_lifecycle_state,
 )
 from agents.monthly_plan_constructor.mission_scope import ScopeValue
@@ -70,10 +71,16 @@ from agents.monthly_plan_constructor.runtime_instrumentation import (
     ConstructorRuntimeEventKey,
     ConstructorRuntimeInstrumentation,
 )
-from agents.monthly_plan_constructor.secure_read_tools import ScopeReader
+from agents.monthly_plan_constructor.secure_read_tools import (
+    CODE_SECURITY_DENIED,
+    ScopeReader,
+)
 from agents.observability.contracts import EventStatus, EventType
 from agents.observability.recorder import ObservabilityRecorder
-from security.agent_execution_context import AgentExecutionContext
+from security.agent_execution_context import (
+    AgentExecutionContext,
+    TOOL_LOAD_SCOPE,
+)
 
 CONSTRUCTOR_AGENT_CODE = "MONTHLY_PLAN_CONSTRUCTOR"
 
@@ -257,13 +264,14 @@ def build_constructor_langgraph(
             return {"lifecycle": _advance(lifecycle)}
         stamp = event_stamp or lifecycle.updated_at
         return {
-            "lifecycle": _instrumented_advance(
+            "lifecycle": _instrumented_reality_read_advance(
                 lifecycle,
                 node_name=NODE_LOAD_REALITY,
                 stage_id=_CORE_STAGE_BY_NODE[NODE_LOAD_REALITY],
-                advance_fn=_advance,
                 instrumentation=instrumentation,
                 occurred_at=stamp,
+                context=context,
+                scope_reader=scope_reader,
             )
         }
 
@@ -620,6 +628,269 @@ def _artifact_correlation_id(
     return None
 
 
+_SECURITY_TOOL_DENIAL_CODES = frozenset(
+    {
+        CODE_SECURITY_DENIED,
+        "TOOL_NOT_ALLOWED",
+        "CONTEXT_EXPIRED",
+        "CONTEXT_MISSING",
+    }
+)
+
+
+def _tool_denied_status_for_error_code(error_code: Optional[str]) -> EventStatus:
+    code = str(error_code or "").strip().upper()
+    if code in _SECURITY_TOOL_DENIAL_CODES:
+        return EventStatus.DENIED
+    return EventStatus.FAILED
+
+
+def _is_new_reality_read(
+    before: ConstructorLifecycleState,
+    after: ConstructorLifecycleState,
+) -> bool:
+    if after.reality_read is None:
+        return False
+    if before.reality_read is None:
+        return True
+    return before.reality_read.read_id != after.reality_read.read_id
+
+
+def _is_new_package(
+    before: ConstructorLifecycleState,
+    after: ConstructorLifecycleState,
+) -> bool:
+    if after.package is None:
+        return False
+    if before.package is None:
+        return True
+    return before.package.package_id != after.package.package_id
+
+
+def _emit_reality_snapshot_artifact(
+    *,
+    lifecycle: ConstructorLifecycleState,
+    reality_read: Any,
+    stage_id: str,
+    node_name: str,
+    stage_semantic_key: str,
+    resume_n: int,
+    instrumentation: ConstructorRuntimeInstrumentation,
+    occurred_at: datetime,
+) -> None:
+    read_id = reality_read.read_id
+    artifact_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.ARTIFACT_CREATED,
+        stage_id=stage_id,
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=resume_n,
+        semantic_occurrence_key=f"{stage_semantic_key}/artifact-snapshot-{read_id}",
+        artifact_correlation_id=read_id,
+    )
+    instrumentation.emit(
+        key=artifact_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Reality snapshot artifact created",
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        snapshot_id=read_id,
+        tool_name=TOOL_LOAD_SCOPE,
+        detail={
+            "artifact_type": "snapshot",
+            "schema_version": str(reality_read.schema_version),
+            "row_count": str(reality_read.row_count),
+            "tool_name": str(reality_read.tool_name),
+        },
+    )
+
+
+def _emit_candidate_package_artifact(
+    *,
+    lifecycle: ConstructorLifecycleState,
+    package: Any,
+    stage_id: str,
+    node_name: str,
+    stage_semantic_key: str,
+    resume_n: int,
+    instrumentation: ConstructorRuntimeInstrumentation,
+    occurred_at: datetime,
+    snapshot_id: Optional[str],
+) -> None:
+    package_id = package.package_id
+    artifact_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.ARTIFACT_CREATED,
+        stage_id=stage_id,
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=resume_n,
+        semantic_occurrence_key=f"{stage_semantic_key}/artifact-package-{package_id}",
+        artifact_correlation_id=package_id,
+    )
+    detail: dict[str, str] = {
+        "artifact_type": "package",
+        "schema_version": str(package.schema_version),
+        "candidate_count": str(package.candidate_count),
+    }
+    if snapshot_id:
+        detail["snapshot_id"] = snapshot_id
+    instrumentation.emit(
+        key=artifact_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Candidate package artifact created",
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        snapshot_id=snapshot_id,
+        package_id=package_id,
+        detail=detail,
+    )
+
+
+def _instrumented_reality_read_advance(
+    lifecycle: ConstructorLifecycleState,
+    *,
+    node_name: str,
+    stage_id: str,
+    instrumentation: ConstructorRuntimeInstrumentation,
+    occurred_at: datetime,
+    context: AgentExecutionContext,
+    scope_reader: Optional[ScopeReader],
+) -> ConstructorLifecycleState:
+    status_before = lifecycle.status
+    resume_n = 0
+    semantic_key = _semantic_occurrence_key(lifecycle, stage_id=stage_id)
+    tool_semantic_key = f"{semantic_key}/tool-{TOOL_LOAD_SCOPE}"
+
+    started_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.STAGE_STARTED,
+        stage_id=stage_id,
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=resume_n,
+        semantic_occurrence_key=semantic_key,
+        artifact_correlation_id=None,
+    )
+    instrumentation.emit(
+        key=started_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title=f"{stage_id} started",
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        detail={"professional_status_before": status_before},
+    )
+
+    tool_started_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.TOOL_CALL_STARTED,
+        stage_id=stage_id,
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=resume_n,
+        semantic_occurrence_key=tool_semantic_key,
+        artifact_correlation_id=None,
+    )
+    instrumentation.emit(
+        key=tool_started_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title=f"{TOOL_LOAD_SCOPE} started",
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        tool_name=TOOL_LOAD_SCOPE,
+        detail={"professional_status_before": status_before},
+    )
+
+    updated = advance_constructor_reality_read_step(
+        lifecycle,
+        context=context,
+        scope_reader=scope_reader,
+        at=occurred_at,
+    )
+
+    if _is_new_reality_read(lifecycle, updated):
+        tool_terminal_type = EventType.TOOL_CALL_COMPLETED
+        tool_terminal_status = EventStatus.OK
+    else:
+        tool_terminal_type = EventType.TOOL_CALL_DENIED
+        tool_terminal_status = _tool_denied_status_for_error_code(updated.error_code)
+
+    tool_terminal_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=tool_terminal_type,
+        stage_id=stage_id,
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=resume_n,
+        semantic_occurrence_key=tool_semantic_key,
+        artifact_correlation_id=None,
+    )
+    instrumentation.emit(
+        key=tool_terminal_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title=f"{TOOL_LOAD_SCOPE} {tool_terminal_type.value.lower().replace('_', ' ')}",
+        status=tool_terminal_status,
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        tool_name=TOOL_LOAD_SCOPE,
+        detail={
+            "professional_status_after": updated.status,
+            "error_code": str(updated.error_code or ""),
+        },
+    )
+
+    if _is_new_reality_read(lifecycle, updated):
+        _emit_reality_snapshot_artifact(
+            lifecycle=lifecycle,
+            reality_read=updated.reality_read,
+            stage_id=stage_id,
+            node_name=node_name,
+            stage_semantic_key=semantic_key,
+            resume_n=resume_n,
+            instrumentation=instrumentation,
+            occurred_at=occurred_at,
+        )
+
+    if updated.status == STATUS_FAILED:
+        terminal_type = EventType.STAGE_FAILED
+        terminal_status = EventStatus.FAILED
+    else:
+        terminal_type = EventType.STAGE_COMPLETED
+        terminal_status = EventStatus.OK
+
+    terminal_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=terminal_type,
+        stage_id=stage_id,
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=resume_n,
+        semantic_occurrence_key=semantic_key,
+        artifact_correlation_id=None,
+    )
+    instrumentation.emit(
+        key=terminal_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title=f"{stage_id} {terminal_type.value.lower().replace('_', ' ')}",
+        status=terminal_status,
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        snapshot_id=updated.reality_read.read_id if updated.reality_read else None,
+        detail={
+            "professional_status_before": status_before,
+            "professional_status_after": updated.status,
+        },
+    )
+    return updated
+
+
 def _instrumented_advance(
     lifecycle: ConstructorLifecycleState,
     *,
@@ -663,6 +934,26 @@ def _instrumented_advance(
     )
 
     updated = advance_fn(lifecycle)
+
+    if (
+        stage_id == "CANDIDATE_ASSEMBLY"
+        and _is_new_package(lifecycle, updated)
+        and updated.package is not None
+    ):
+        snapshot_id = (
+            lifecycle.reality_read.read_id if lifecycle.reality_read is not None else None
+        )
+        _emit_candidate_package_artifact(
+            lifecycle=lifecycle,
+            package=updated.package,
+            stage_id=stage_id,
+            node_name=node_name,
+            stage_semantic_key=semantic_key,
+            resume_n=resume_n,
+            instrumentation=instrumentation,
+            occurred_at=occurred_at,
+            snapshot_id=snapshot_id,
+        )
 
     if updated.status == STATUS_FAILED:
         terminal_type = EventType.STAGE_FAILED

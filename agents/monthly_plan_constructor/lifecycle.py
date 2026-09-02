@@ -520,6 +520,60 @@ def _resolve_evidence(
 _MAX_LIFECYCLE_ADVANCES = 5
 
 
+def advance_constructor_reality_read_step(
+    state: ConstructorLifecycleState,
+    *,
+    context: AgentExecutionContext,
+    scope_reader: Optional[ScopeReader] = None,
+    at: datetime,
+) -> ConstructorLifecycleState:
+    """
+    Advance MISSION_BOUND by one secure reality read.
+
+    MISSION_BOUND → REALITY_LOADED, or domain-mapped WAITING_FOR_HUMAN / FAILED.
+    Single source of truth for initial Constructor reality read (Increment 6/7/10.3C).
+    """
+    if state is None or not isinstance(state, ConstructorLifecycleState):
+        raise LifecycleError(
+            CODE_LIFECYCLE_CONTRACT_BLOCKER,
+            "ConstructorLifecycleState is required",
+        )
+    if context is None or not isinstance(context, AgentExecutionContext):
+        raise LifecycleError(
+            CODE_LIFECYCLE_CONTRACT_BLOCKER,
+            "AgentExecutionContext is required",
+        )
+    if state.status != STATUS_MISSION_BOUND:
+        raise LifecycleError(
+            CODE_LIFECYCLE_CONTRACT_BLOCKER,
+            f"reality read step requires MISSION_BOUND, got {state.status}",
+        )
+    if state.scope is None:
+        raise LifecycleError(
+            CODE_LIFECYCLE_CONTRACT_BLOCKER,
+            "scope required for REALITY_LOADED advance",
+        )
+    stamp = _require_aware_utc(at, "at")
+    try:
+        reality = read_constructor_reality(
+            context,
+            state.scope,
+            scope_reader=scope_reader,
+        )
+    except SecureReadError as exc:
+        return _map_domain_failure(state, exc, at=stamp)
+    except MissionScopeError as exc:
+        return _map_domain_failure(state, exc, at=stamp)
+    return _append_transition(
+        state,
+        to_status=STATUS_REALITY_LOADED,
+        at=stamp,
+        source_capability=SOURCE_SECURE_READ,
+        note="trusted reality loaded",
+        reality_read=reality,
+    )
+
+
 def advance_constructor_lifecycle(
     state: ConstructorLifecycleState,
     *,
@@ -596,28 +650,11 @@ def advance_constructor_lifecycle(
         )
 
     if status == STATUS_MISSION_BOUND:
-        if state.scope is None:
-            raise LifecycleError(
-                CODE_LIFECYCLE_CONTRACT_BLOCKER,
-                "scope required for REALITY_LOADED advance",
-            )
-        try:
-            reality = read_constructor_reality(
-                context,
-                state.scope,
-                scope_reader=scope_reader,
-            )
-        except SecureReadError as exc:
-            return _map_domain_failure(state, exc, at=stamp)
-        except MissionScopeError as exc:
-            return _map_domain_failure(state, exc, at=stamp)
-        return _append_transition(
+        return advance_constructor_reality_read_step(
             state,
-            to_status=STATUS_REALITY_LOADED,
+            context=context,
+            scope_reader=scope_reader,
             at=stamp,
-            source_capability=SOURCE_SECURE_READ,
-            note="trusted reality loaded",
-            reality_read=reality,
         )
 
     if status == STATUS_REALITY_LOADED:

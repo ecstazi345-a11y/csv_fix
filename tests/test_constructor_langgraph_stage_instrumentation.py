@@ -534,7 +534,7 @@ class TestReentryOccurrenceIdentity(unittest.TestCase):
             [
                 event.stage_id
                 for event in recorder.events_for_run(run_id)
-                if event.stage_id is not None
+                if event.stage_id in CORE_STAGES
             ],
             [],
         )

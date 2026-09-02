@@ -38,6 +38,7 @@ from agents.monthly_plan_constructor.hitl_contracts import (
     ConstructorHitlStore,
     HitlContractError,
     coerce_resume_command,
+    count_wait_ordinal,
 )
 from agents.monthly_plan_constructor.hitl_resume import (
     apply_constructor_resume_command,
@@ -340,54 +341,82 @@ def build_constructor_langgraph(
         lifecycle = _require_status(
             state, STATUS_WAITING_FOR_HUMAN, node_name=NODE_HUMAN_WAIT
         )
-        request = build_decision_request_from_lifecycle(lifecycle, created_at=now)
-        if hitl_store is not None:
-            # MUST be idempotent — LangGraph replays code before interrupt().
-            hitl_store.upsert_open_request(request)
-        resume_payload = interrupt(request)
-        resume = coerce_resume_command(resume_payload)
-        cfg = get_config()
-        configurable = cfg.get("configurable") or {}
-        thread_id = str(configurable.get("thread_id") or "").strip()
-        if thread_id != lifecycle.run_id:
-            raise HitlContractError(
-                CODE_HITL_CONTRACT_BLOCKER,
-                "thread_id must equal run_id",
+        if instrumentation is None:
+            request = build_decision_request_from_lifecycle(lifecycle, created_at=now)
+            if hitl_store is not None:
+                hitl_store.upsert_open_request(request)
+            resume_payload = interrupt(request)
+            resume = coerce_resume_command(resume_payload)
+            cfg = get_config()
+            configurable = cfg.get("configurable") or {}
+            thread_id = str(configurable.get("thread_id") or "").strip()
+            if thread_id != lifecycle.run_id:
+                raise HitlContractError(
+                    CODE_HITL_CONTRACT_BLOCKER,
+                    "thread_id must equal run_id",
+                )
+            runtime_ckpt = configurable.get("checkpoint_id")
+            resolved = resolve_current_checkpoint_id(
+                checkpointer,
+                thread_id=thread_id,
+                checkpoint_id=str(runtime_ckpt) if runtime_ckpt else None,
             )
-        runtime_ckpt = configurable.get("checkpoint_id")
-        resolved = resolve_current_checkpoint_id(
-            checkpointer,
-            thread_id=thread_id,
-            checkpoint_id=str(runtime_ckpt) if runtime_ckpt else None,
-        )
-        require_durable_resume_checkpoint(
-            expected_checkpoint_id=resume.expected_checkpoint_id,
-            current_checkpoint_id=resolved,
-            context=context,
-        )
-        updated = apply_constructor_resume_command(
-            lifecycle,
-            resume,
-            context=context,
-            project_code=project_code,
-            month_key=month_key,
-            checkpoint_id=resolved,
-            now=now,
-        )
-        if hitl_store is not None:
-            hitl_store.record_answer(
-                interrupt_id=request.interrupt_id,
-                command=resume,
+            require_durable_resume_checkpoint(
+                expected_checkpoint_id=resume.expected_checkpoint_id,
+                current_checkpoint_id=resolved,
+                context=context,
             )
-        return {"lifecycle": updated}
+            updated = apply_constructor_resume_command(
+                lifecycle,
+                resume,
+                context=context,
+                project_code=project_code,
+                month_key=month_key,
+                checkpoint_id=resolved,
+                now=now,
+            )
+            if hitl_store is not None:
+                hitl_store.record_answer(
+                    interrupt_id=request.interrupt_id,
+                    command=resume,
+                )
+            return {"lifecycle": updated}
+        stamp = event_stamp or lifecycle.updated_at
+        return {
+            "lifecycle": _instrumented_human_wait(
+                lifecycle,
+                node_name=NODE_HUMAN_WAIT,
+                instrumentation=instrumentation,
+                occurred_at=stamp,
+                context=context,
+                project_code=project_code,
+                month_key=month_key,
+                checkpointer=checkpointer,
+                hitl_store=hitl_store,
+                now=now,
+            )
+        }
 
     def revalidate_reality(state: ConstructorGraphState) -> ConstructorGraphState:
         lifecycle = _require_status(
             state, STATUS_REVALIDATING_REALITY, node_name=NODE_REVALIDATE_REALITY
         )
+        if instrumentation is None:
+            return {
+                "lifecycle": revalidate_constructor_resume_reality(
+                    lifecycle,
+                    context=context,
+                    scope_reader=scope_reader,
+                    now=now,
+                )
+            }
+        stamp = event_stamp or lifecycle.updated_at
         return {
-            "lifecycle": revalidate_constructor_resume_reality(
+            "lifecycle": _instrumented_revalidate_reality_refresh(
                 lifecycle,
+                node_name=NODE_REVALIDATE_REALITY,
+                instrumentation=instrumentation,
+                occurred_at=stamp,
                 context=context,
                 scope_reader=scope_reader,
                 now=now,
@@ -993,4 +1022,298 @@ def _instrumented_advance(
             "professional_status_after": updated.status,
         },
     )
+    return updated
+
+
+def _hitl_wait_ordinal(lifecycle: ConstructorLifecycleState) -> int:
+    ordinal = count_wait_ordinal(lifecycle.transitions)
+    return max(1, ordinal)
+
+
+def _instrumented_human_wait(
+    lifecycle: ConstructorLifecycleState,
+    *,
+    node_name: str,
+    instrumentation: ConstructorRuntimeInstrumentation,
+    occurred_at: datetime,
+    context: AgentExecutionContext,
+    project_code: Any,
+    month_key: Any,
+    checkpointer: Any,
+    hitl_store: Optional[ConstructorHitlStore],
+    now: Optional[datetime],
+) -> ConstructorLifecycleState:
+    request = build_decision_request_from_lifecycle(lifecycle, created_at=now)
+    wait_ordinal = request.wait_ordinal
+    if hitl_store is not None:
+        hitl_store.upsert_open_request(request)
+
+    wait_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.HUMAN_WAIT_STARTED,
+        stage_id="HUMAN_GATE",
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=wait_ordinal,
+        semantic_occurrence_key=f"wait-{wait_ordinal}",
+        artifact_correlation_id=None,
+    )
+    instrumentation.emit(
+        key=wait_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Human wait started",
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        interrupt_id=request.interrupt_id,
+        detail={
+            "reason_code": request.reason_code,
+            "wait_ordinal": str(wait_ordinal),
+            "route": request.route,
+            "severity": request.severity,
+            "professional_status_before": lifecycle.status,
+        },
+    )
+
+    resume_payload = interrupt(request)
+    resume = coerce_resume_command(resume_payload)
+    cfg = get_config()
+    configurable = cfg.get("configurable") or {}
+    thread_id = str(configurable.get("thread_id") or "").strip()
+    if thread_id != lifecycle.run_id:
+        raise HitlContractError(
+            CODE_HITL_CONTRACT_BLOCKER,
+            "thread_id must equal run_id",
+        )
+    runtime_ckpt = configurable.get("checkpoint_id")
+    resolved = resolve_current_checkpoint_id(
+        checkpointer,
+        thread_id=thread_id,
+        checkpoint_id=str(runtime_ckpt) if runtime_ckpt else None,
+    )
+    require_durable_resume_checkpoint(
+        expected_checkpoint_id=resume.expected_checkpoint_id,
+        current_checkpoint_id=resolved,
+        context=context,
+    )
+
+    decision_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.HUMAN_DECISION_RECEIVED,
+        stage_id="HUMAN_GATE",
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=wait_ordinal,
+        semantic_occurrence_key=f"decision-{resume.decision_id}",
+        artifact_correlation_id=resume.decision_id,
+    )
+    instrumentation.emit(
+        key=decision_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Human decision received",
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        checkpoint_id=resolved,
+        interrupt_id=request.interrupt_id,
+        decision_id=resume.decision_id,
+        detail={
+            "decision_type": resume.decision,
+            "actor_type": resume.actor_type,
+            "actor_id": resume.actor_id,
+            "reason_code": str(lifecycle.error_code or ""),
+            "wait_ordinal": str(wait_ordinal),
+            "route": request.route,
+            "severity": request.severity,
+            "professional_status_before": lifecycle.status,
+        },
+    )
+
+    updated = apply_constructor_resume_command(
+        lifecycle,
+        resume,
+        context=context,
+        project_code=project_code,
+        month_key=month_key,
+        checkpoint_id=resolved,
+        now=now,
+    )
+
+    if updated.status == STATUS_REVALIDATING_REALITY:
+        resumed_key = ConstructorRuntimeEventKey(
+            run_id=lifecycle.run_id,
+            event_type=EventType.RUN_RESUMED,
+            stage_id="HUMAN_GATE",
+            node_name=node_name,
+            attempt_n=1,
+            resume_n=wait_ordinal,
+            semantic_occurrence_key=f"resume-{resume.decision_id}",
+            artifact_correlation_id=resume.decision_id,
+        )
+        instrumentation.emit(
+            key=resumed_key,
+            occurred_at=occurred_at,
+            agent_code=CONSTRUCTOR_AGENT_CODE,
+            title="Run resumed",
+            mission_id=lifecycle.mission_id,
+            authorization_id=lifecycle.authorization_id,
+            checkpoint_id=resolved,
+            interrupt_id=request.interrupt_id,
+            decision_id=resume.decision_id,
+            detail={
+                "decision_type": resume.decision,
+                "wait_ordinal": str(wait_ordinal),
+                "professional_status_before": lifecycle.status,
+                "professional_status_after": updated.status,
+            },
+        )
+
+    if hitl_store is not None:
+        hitl_store.record_answer(
+            interrupt_id=request.interrupt_id,
+            command=resume,
+        )
+    return updated
+
+
+def _instrumented_revalidate_reality_refresh(
+    lifecycle: ConstructorLifecycleState,
+    *,
+    node_name: str,
+    instrumentation: ConstructorRuntimeInstrumentation,
+    occurred_at: datetime,
+    context: AgentExecutionContext,
+    scope_reader: Optional[ScopeReader],
+    now: Optional[datetime],
+) -> ConstructorLifecycleState:
+    stage_id = "REALITY_REVALIDATION"
+    wait_ordinal = _hitl_wait_ordinal(lifecycle)
+    refresh_semantic_key = f"refresh-{wait_ordinal}"
+    tool_semantic_key = f"{refresh_semantic_key}/tool-{TOOL_LOAD_SCOPE}"
+    status_before = lifecycle.status
+
+    refresh_started_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.REALITY_REFRESH_STARTED,
+        stage_id=stage_id,
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=wait_ordinal,
+        semantic_occurrence_key=refresh_semantic_key,
+        artifact_correlation_id=None,
+    )
+    instrumentation.emit(
+        key=refresh_started_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Reality refresh started",
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        detail={
+            "wait_ordinal": str(wait_ordinal),
+            "professional_status_before": status_before,
+        },
+    )
+
+    tool_started_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.TOOL_CALL_STARTED,
+        stage_id=stage_id,
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=wait_ordinal,
+        semantic_occurrence_key=tool_semantic_key,
+        artifact_correlation_id=None,
+    )
+    instrumentation.emit(
+        key=tool_started_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title=f"{TOOL_LOAD_SCOPE} started",
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        tool_name=TOOL_LOAD_SCOPE,
+        detail={
+            "wait_ordinal": str(wait_ordinal),
+            "professional_status_before": status_before,
+        },
+    )
+
+    updated = revalidate_constructor_resume_reality(
+        lifecycle,
+        context=context,
+        scope_reader=scope_reader,
+        now=now,
+    )
+
+    if _is_new_reality_read(lifecycle, updated):
+        tool_terminal_type = EventType.TOOL_CALL_COMPLETED
+        tool_terminal_status = EventStatus.OK
+    else:
+        tool_terminal_type = EventType.TOOL_CALL_DENIED
+        tool_terminal_status = _tool_denied_status_for_error_code(updated.error_code)
+
+    tool_terminal_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=tool_terminal_type,
+        stage_id=stage_id,
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=wait_ordinal,
+        semantic_occurrence_key=tool_semantic_key,
+        artifact_correlation_id=None,
+    )
+    instrumentation.emit(
+        key=tool_terminal_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title=f"{TOOL_LOAD_SCOPE} {tool_terminal_type.value.lower().replace('_', ' ')}",
+        status=tool_terminal_status,
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        tool_name=TOOL_LOAD_SCOPE,
+        detail={
+            "professional_status_after": updated.status,
+            "error_code": str(updated.error_code or ""),
+        },
+    )
+
+    refresh_ok = updated.status == STATUS_REALITY_LOADED
+    refresh_completed_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.REALITY_REFRESH_COMPLETED,
+        stage_id=stage_id,
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=wait_ordinal,
+        semantic_occurrence_key=refresh_semantic_key,
+        artifact_correlation_id=None,
+    )
+    instrumentation.emit(
+        key=refresh_completed_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Reality refresh completed",
+        status=EventStatus.OK if refresh_ok else EventStatus.FAILED,
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        detail={
+            "professional_status_before": status_before,
+            "professional_status_after": updated.status,
+            "error_code": str(updated.error_code or ""),
+        },
+    )
+
+    if _is_new_reality_read(lifecycle, updated) and updated.reality_read is not None:
+        _emit_reality_snapshot_artifact(
+            lifecycle=lifecycle,
+            reality_read=updated.reality_read,
+            stage_id=stage_id,
+            node_name=node_name,
+            stage_semantic_key=refresh_semantic_key,
+            resume_n=wait_ordinal,
+            instrumentation=instrumentation,
+            occurred_at=occurred_at,
+        )
+
     return updated

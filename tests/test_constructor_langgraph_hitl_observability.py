@@ -352,6 +352,10 @@ class TestHumanWaitEvents(unittest.TestCase):
         self.assertEqual(waits[0].stage_id, "HUMAN_GATE")
         self.assertEqual(waits[0].node_name, "human_wait")
         self.assertIsNotNone(waits[0].interrupt_id)
+        self.assertIsNotNone(waits[0].human_decision_request)
+        self.assertIsNone(waits[0].human_decision_record)
+        self.assertTrue(waits[0].human_decision_request.reason_code)
+        self.assertGreaterEqual(len(waits[0].human_decision_request.allowed_decisions), 1)
 
     def test_wait_replay_is_idempotent(self) -> None:
         run_id = "run-10-3d-wait-replay"
@@ -515,6 +519,9 @@ class TestHumanWaitEvents(unittest.TestCase):
             if e.event_type == EventType.HUMAN_DECISION_RECEIVED
         ]
         self.assertEqual(decisions[0].decision_id, "dec-clarify-1")
+        self.assertIsNotNone(decisions[0].human_decision_record)
+        self.assertIsNone(decisions[0].human_decision_request)
+        self.assertEqual(decisions[0].human_decision_record.decision_code, DECISION_CLARIFY_SCOPE)
 
     def test_invalid_resume_emits_no_decision(self) -> None:
         from langgraph.checkpoint.memory import InMemorySaver

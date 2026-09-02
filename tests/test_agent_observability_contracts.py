@@ -777,6 +777,8 @@ class ObservabilityContractTests(unittest.TestCase):
             node_name=base_event.node_name,
             attempt_n=base_event.attempt_n,
             resume_n=base_event.resume_n,
+            human_decision_request=base_event.human_decision_request,
+            human_decision_record=base_event.human_decision_record,
             detail=base_event.detail,
         )
         self.assertEqual(direct_event.occurred_at.utcoffset(), timedelta(0))
@@ -816,6 +818,166 @@ class ObservabilityContractTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
+
+
+class HumanDecisionObservabilitySubcontractTests(unittest.TestCase):
+    def test_request_subcontract_valid(self) -> None:
+        from agents.observability.contracts import (
+            HUMAN_DECISION_REQUEST_OBSERVABILITY_SCHEMA_VERSION,
+            build_human_decision_request_observability_context,
+        )
+
+        ctx = build_human_decision_request_observability_context(
+            reason_code="ambiguous_scope",
+            allowed_decisions=("CLARIFY_SCOPE", "ABORT_RUN"),
+            human_readable_reason="Scope ambiguous",
+            evidence_refs=("ref-1",),
+        )
+        self.assertEqual(ctx.schema_version, HUMAN_DECISION_REQUEST_OBSERVABILITY_SCHEMA_VERSION)
+        self.assertEqual(ctx.reason_code, "AMBIGUOUS_SCOPE")
+
+    def test_record_subcontract_valid(self) -> None:
+        from agents.observability.contracts import (
+            HUMAN_DECISION_RECORD_OBSERVABILITY_SCHEMA_VERSION,
+            build_human_decision_record_observability_context,
+        )
+
+        ctx = build_human_decision_record_observability_context(
+            decision_code="CLARIFY_SCOPE",
+            actor_id="operator-1",
+            actor_type="HUMAN",
+        )
+        self.assertEqual(ctx.schema_version, HUMAN_DECISION_RECORD_OBSERVABILITY_SCHEMA_VERSION)
+
+    def test_human_wait_started_requires_request(self) -> None:
+        from agents.observability.contracts import build_human_decision_request_observability_context
+
+        with self.assertRaises(ObservabilityContractError):
+            build_observability_event(
+                **_event_kwargs(
+                    event_type=EventType.HUMAN_WAIT_STARTED,
+                    family=EventFamily.HITL,
+                    interrupt_id="intr-001",
+                )
+            )
+        event = build_observability_event(
+            **_event_kwargs(
+                event_type=EventType.HUMAN_WAIT_STARTED,
+                family=EventFamily.HITL,
+                interrupt_id="intr-001",
+                human_decision_request=build_human_decision_request_observability_context(
+                    reason_code="WAIT",
+                    allowed_decisions=("CONTINUE",),
+                ),
+            )
+        )
+        self.assertIsNotNone(event.human_decision_request)
+
+    def test_human_decision_received_requires_record(self) -> None:
+        from agents.observability.contracts import build_human_decision_record_observability_context
+
+        with self.assertRaises(ObservabilityContractError):
+            build_observability_event(
+                **_event_kwargs(
+                    event_type=EventType.HUMAN_DECISION_RECEIVED,
+                    family=EventFamily.HITL,
+                    interrupt_id="intr-001",
+                    decision_id="dec-001",
+                )
+            )
+
+    def test_wrong_subcontract_placement_fails(self) -> None:
+        from agents.observability.contracts import (
+            build_human_decision_record_observability_context,
+            build_human_decision_request_observability_context,
+        )
+
+        record = build_human_decision_record_observability_context(
+            decision_code="ABORT_RUN",
+            actor_id="op-1",
+            actor_type="HUMAN",
+        )
+        with self.assertRaises(ObservabilityContractError):
+            build_observability_event(
+                **_event_kwargs(
+                    event_type=EventType.HUMAN_WAIT_STARTED,
+                    family=EventFamily.HITL,
+                    interrupt_id="intr-001",
+                    human_decision_record=record,
+                )
+            )
+        request = build_human_decision_request_observability_context(
+            reason_code="WAIT",
+            allowed_decisions=("CONTINUE",),
+        )
+        with self.assertRaises(ObservabilityContractError):
+            build_observability_event(
+                **_event_kwargs(
+                    event_type=EventType.RUN_STARTED,
+                    human_decision_request=request,
+                )
+            )
+
+    def test_fingerprint_includes_hitl_semantics(self) -> None:
+        from agents.observability.recorder import compute_observability_event_fingerprint
+        from agents.observability.contracts import (
+            build_human_decision_request_observability_context,
+        )
+
+        request_a = build_human_decision_request_observability_context(
+            reason_code="REASON_A",
+            allowed_decisions=("CONTINUE",),
+        )
+        request_b = build_human_decision_request_observability_context(
+            reason_code="REASON_B",
+            allowed_decisions=("CONTINUE",),
+        )
+        base = _event_kwargs(
+            event_id="evt-hitl-fp",
+            event_type=EventType.HUMAN_WAIT_STARTED,
+            family=EventFamily.HITL,
+            interrupt_id="intr-001",
+        )
+        event_a = build_observability_event(**base, human_decision_request=request_a)
+        event_b = build_observability_event(**base, human_decision_request=request_b)
+        self.assertNotEqual(
+            compute_observability_event_fingerprint(event_a),
+            compute_observability_event_fingerprint(event_b),
+        )
+        replay = build_observability_event(**base, human_decision_request=request_a)
+        self.assertEqual(
+            compute_observability_event_fingerprint(event_a),
+            compute_observability_event_fingerprint(replay),
+        )
+
+    def test_legacy_deserialization_without_subcontracts(self) -> None:
+        from agents.observability.store import _observability_event_from_dict
+
+        payload = build_observability_event(
+            **_event_kwargs(
+                event_type=EventType.RUN_STARTED,
+            )
+        ).to_dict()
+        roundtrip = _observability_event_from_dict(payload)
+        self.assertIsNone(roundtrip.human_decision_request)
+        legacy_wait = {
+            "schema_version": OBSERVABILITY_EVENT_SCHEMA_VERSION,
+            "event_id": "evt-legacy-wait",
+            "run_id": "run-001",
+            "agent_code": "MONTHLY_PLAN_CONSTRUCTOR",
+            "occurred_at": FIXED_AT.isoformat(),
+            "family": EventFamily.HITL.value,
+            "event_type": EventType.HUMAN_WAIT_STARTED.value,
+            "status": EventStatus.OK.value,
+            "title": "Legacy wait",
+            "stage_id": "HUMAN_GATE",
+            "interrupt_id": "intr-legacy",
+            "attempt_n": 1,
+            "resume_n": 1,
+            "detail": {"reason_code": "SHOULD_NOT_MATTER"},
+        }
+        legacy = _observability_event_from_dict(legacy_wait)
+        self.assertIsNone(legacy.human_decision_request)
 
 
 if __name__ == "__main__":

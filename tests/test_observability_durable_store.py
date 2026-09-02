@@ -25,6 +25,7 @@ from agents.observability.contracts import (
     OperationalStatus,
     TriggerType,
     build_agent_run,
+    build_human_decision_request_observability_context,
     build_observability_event,
 )
 from agents.observability.durable_recorder import StoreObservabilityRecorder
@@ -416,6 +417,10 @@ class OperationalTruthProjectionTests(unittest.TestCase):
             occurred_at=LATER_AT,
             title="Human wait",
             interrupt_id="intr-001",
+            human_decision_request=build_human_decision_request_observability_context(
+                reason_code="AMBIGUOUS_SCOPE",
+                allowed_decisions=("CLARIFY_SCOPE", "ABORT_RUN"),
+            ),
         )
         self.assertEqual(run.operational_status, OperationalStatus.WAITING_FOR_HUMAN)
         self.assertEqual(run.interrupt_id, "intr-001")

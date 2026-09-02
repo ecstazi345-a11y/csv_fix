@@ -30,6 +30,7 @@ from agents.observability.contracts import (
     OperationalStatus,
     TriggerType,
     build_agent_run,
+    build_human_decision_request_observability_context,
     build_observability_event,
 )
 from agents.observability.durable_recorder import StoreObservabilityRecorder
@@ -139,6 +140,10 @@ def _event_sequence() -> list[Any]:
             status=EventStatus.OK,
             title="Human wait started",
             interrupt_id=INTERRUPT_ID,
+            human_decision_request=build_human_decision_request_observability_context(
+                reason_code="WAIT_REASON",
+                allowed_decisions=("CONTINUE", "ABORT_RUN"),
+            ),
             detail={"phase": "hitl"},
         ),
         build_observability_event(

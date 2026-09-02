@@ -285,9 +285,15 @@ def _agent_run_from_dict(payload: dict[str, Any]) -> AgentRun:
 
 
 def _observability_event_from_dict(payload: dict[str, Any]) -> ObservabilityEvent:
-    from agents.observability.contracts import build_observability_event
+    from agents.observability.contracts import (
+        build_observability_event,
+        human_decision_record_observability_context_from_dict,
+        human_decision_request_observability_context_from_dict,
+    )
 
     detail = payload.get("detail")
+    request_payload = payload.get("human_decision_request")
+    record_payload = payload.get("human_decision_record")
     return build_observability_event(
         event_id=payload["event_id"],
         run_id=payload["run_id"],
@@ -313,8 +319,19 @@ def _observability_event_from_dict(payload: dict[str, Any]) -> ObservabilityEven
         node_name=payload.get("node_name"),
         attempt_n=int(payload.get("attempt_n", 1)),
         resume_n=int(payload.get("resume_n", 0)),
+        human_decision_request=(
+            None
+            if request_payload is None
+            else human_decision_request_observability_context_from_dict(request_payload)
+        ),
+        human_decision_record=(
+            None
+            if record_payload is None
+            else human_decision_record_observability_context_from_dict(record_payload)
+        ),
         detail=detail if isinstance(detail, dict) else {},
         schema_version=payload["schema_version"],
+        allow_legacy_missing_hitl_subcontracts=True,
     )
 
 

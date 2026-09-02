@@ -37,6 +37,8 @@ from agents.monthly_plan_constructor.hitl_contracts import (
     CODE_HITL_CONTRACT_BLOCKER,
     CODE_RUN_ABORTED_BY_HUMAN,
     ConstructorHitlStore,
+    ConstructorHumanDecisionRequest,
+    ConstructorResumeCommand,
     DECISION_ABORT_RUN,
     HitlContractError,
     coerce_resume_command,
@@ -78,7 +80,14 @@ from agents.monthly_plan_constructor.secure_read_tools import (
     CODE_SECURITY_DENIED,
     ScopeReader,
 )
-from agents.observability.contracts import EventStatus, EventType
+from agents.observability.contracts import (
+    EventStatus,
+    EventType,
+    HumanDecisionRecordObservabilityContext,
+    HumanDecisionRequestObservabilityContext,
+    build_human_decision_record_observability_context,
+    build_human_decision_request_observability_context,
+)
 from agents.observability.recorder import ObservabilityRecorder
 from security.agent_execution_context import (
     AgentExecutionContext,
@@ -108,6 +117,27 @@ class ConstructorGraphState(TypedDict):
     """Thin LangGraph envelope — authoritative business truth is lifecycle only."""
 
     lifecycle: ConstructorLifecycleState
+
+
+def _observability_request_from_constructor(
+    request: ConstructorHumanDecisionRequest,
+) -> HumanDecisionRequestObservabilityContext:
+    return build_human_decision_request_observability_context(
+        reason_code=request.reason_code,
+        human_readable_reason=request.human_readable_reason,
+        allowed_decisions=request.allowed_decisions,
+        evidence_refs=request.evidence_refs,
+    )
+
+
+def _observability_record_from_resume(
+    resume: ConstructorResumeCommand,
+) -> HumanDecisionRecordObservabilityContext:
+    return build_human_decision_record_observability_context(
+        decision_code=resume.decision,
+        actor_id=resume.actor_id,
+        actor_type=resume.actor_type,
+    )
 
 
 def _resolve_mission_id(mission_id: Optional[str]) -> str:
@@ -817,6 +847,7 @@ def _emit_run_aborted(
         checkpoint_id=checkpoint_id,
         interrupt_id=interrupt_id,
         decision_id=decision_id,
+        human_decision_record=_observability_record_from_resume(resume),
         detail={
             "decision_type": resume.decision,
             "actor_type": resume.actor_type,
@@ -1243,6 +1274,7 @@ def _instrumented_human_wait(
         mission_id=lifecycle.mission_id,
         authorization_id=lifecycle.authorization_id,
         interrupt_id=request.interrupt_id,
+        human_decision_request=_observability_request_from_constructor(request),
         detail={
             "reason_code": request.reason_code,
             "wait_ordinal": str(wait_ordinal),
@@ -1294,6 +1326,7 @@ def _instrumented_human_wait(
         checkpoint_id=resolved,
         interrupt_id=request.interrupt_id,
         decision_id=resume.decision_id,
+        human_decision_record=_observability_record_from_resume(resume),
         detail={
             "decision_type": resume.decision,
             "actor_type": resume.actor_type,

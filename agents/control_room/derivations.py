@@ -13,6 +13,7 @@ from typing import Optional
 from agents.control_room.dtos import (
     AgentEventView,
     AgentHandoffView,
+    AgentHumanDecisionSurfaceView,
     AgentHumanWaitView,
     AgentRunDetail,
     AgentRunSummary,
@@ -20,6 +21,9 @@ from agents.control_room.dtos import (
     AgentStageView,
     DerivationState,
     HandoffStatus,
+    HumanDecisionConsequenceView,
+    HumanDecisionRecordView,
+    HumanDecisionRequestView,
     StageDisplayState,
     WaitClosedBy,
 )
@@ -457,4 +461,264 @@ def derive_handoff_view(
         created_at=builder.created_at,
         persisted_at=builder.persisted_at,
         derivation_state=derivation_state,
+    )
+
+
+def derive_human_decision_request_view(
+    events: tuple[ObservabilityEvent, ...],
+    *,
+    wait_ordinal: Optional[int],
+    interrupt_id: Optional[str],
+    events_complete: bool,
+) -> Optional[HumanDecisionRequestView]:
+    if wait_ordinal is None:
+        return None
+    matches = [
+        event
+        for event in events
+        if event.event_type is EventType.HUMAN_WAIT_STARTED and event.resume_n == wait_ordinal
+    ]
+    if not matches:
+        return None
+    derivation_state = DerivationState.OK
+    if len(matches) > 1:
+        derivation_state = DerivationState.INCONSISTENT
+    event = matches[0]
+    if interrupt_id is not None and event.interrupt_id is not None and event.interrupt_id != interrupt_id:
+        derivation_state = DerivationState.INCONSISTENT
+    context = event.human_decision_request
+    if context is None:
+        derivation_state = _merge_derivation_state(
+            derivation_state,
+            DerivationState.INCOMPLETE,
+        )
+        return HumanDecisionRequestView(
+            interrupt_id=event.interrupt_id or interrupt_id or "",
+            wait_ordinal=wait_ordinal,
+            stage_id=event.stage_id or _HITL_WAIT_STAGE,
+            reason_code="",
+            human_readable_reason=None,
+            allowed_decisions=(),
+            evidence_refs=(),
+            derivation_state=derivation_state,
+        )
+    return HumanDecisionRequestView(
+        interrupt_id=event.interrupt_id or interrupt_id or "",
+        wait_ordinal=wait_ordinal,
+        stage_id=event.stage_id or _HITL_WAIT_STAGE,
+        reason_code=context.reason_code,
+        human_readable_reason=context.human_readable_reason,
+        allowed_decisions=context.allowed_decisions,
+        evidence_refs=context.evidence_refs,
+        derivation_state=derivation_state,
+    )
+
+
+def derive_human_decision_record_view(
+    events: tuple[ObservabilityEvent, ...],
+    *,
+    wait_ordinal: Optional[int],
+    interrupt_id: Optional[str],
+    events_complete: bool,
+) -> Optional[HumanDecisionRecordView]:
+    if wait_ordinal is None:
+        return None
+    matches = [
+        event
+        for event in events
+        if event.event_type is EventType.HUMAN_DECISION_RECEIVED and event.resume_n == wait_ordinal
+    ]
+    if not matches:
+        abort_matches = [
+            event
+            for event in events
+            if event.event_type is EventType.RUN_ABORTED
+            and event.stage_id == _HITL_WAIT_STAGE
+            and event.resume_n == wait_ordinal
+            and event.decision_id is not None
+        ]
+        if len(abort_matches) == 1:
+            event = abort_matches[0]
+            context = event.human_decision_record
+            derivation_state = DerivationState.OK
+            if context is None:
+                derivation_state = _merge_derivation_state(
+                    derivation_state,
+                    DerivationState.INCOMPLETE,
+                )
+                return None
+            return HumanDecisionRecordView(
+                decision_id=event.decision_id or "",
+                interrupt_id=event.interrupt_id or interrupt_id or "",
+                wait_ordinal=wait_ordinal,
+                decision_code=context.decision_code,
+                actor_id=context.actor_id,
+                actor_type=context.actor_type,
+                received_at=event.occurred_at,
+                derivation_state=derivation_state,
+            )
+        return None
+    derivation_state = DerivationState.OK
+    if len(matches) > 1:
+        derivation_state = DerivationState.INCONSISTENT
+    event = matches[0]
+    if interrupt_id is not None and event.interrupt_id is not None and event.interrupt_id != interrupt_id:
+        derivation_state = DerivationState.INCONSISTENT
+    context = event.human_decision_record
+    if context is None:
+        derivation_state = _merge_derivation_state(
+            derivation_state,
+            DerivationState.INCOMPLETE,
+        )
+        return None
+    return HumanDecisionRecordView(
+        decision_id=event.decision_id or "",
+        interrupt_id=event.interrupt_id or interrupt_id or "",
+        wait_ordinal=wait_ordinal,
+        decision_code=context.decision_code,
+        actor_id=context.actor_id,
+        actor_type=context.actor_type,
+        received_at=event.occurred_at,
+        derivation_state=derivation_state,
+    )
+
+
+def derive_human_decision_consequence_view(
+    events: tuple[ObservabilityEvent, ...],
+    *,
+    wait_ordinal: Optional[int],
+    decision_id: Optional[str],
+    events_complete: bool,
+) -> Optional[HumanDecisionConsequenceView]:
+    from agents.observability.contracts import EventStatus
+
+    if wait_ordinal is None:
+        return None
+
+    decision_events = [
+        event
+        for event in events
+        if event.event_type is EventType.HUMAN_DECISION_RECEIVED and event.resume_n == wait_ordinal
+    ]
+    if not decision_events:
+        return HumanDecisionConsequenceView(
+            decision_received_at=None,
+            closed_by=None,
+            closed_at=None,
+            reality_refresh_started_at=None,
+            reality_refresh_completed_at=None,
+            reality_refresh_failed_at=None,
+            next_stage_id=None,
+            next_stage_started_at=None,
+            terminal_event_type=None,
+            derivation_state=(
+                DerivationState.INCOMPLETE if not events_complete else DerivationState.OK
+            ),
+        )
+
+    derivation_state = DerivationState.OK
+    if len(decision_events) > 1:
+        derivation_state = DerivationState.INCONSISTENT
+    decision_event = decision_events[0]
+    decision_received_at = decision_event.occurred_at
+    if decision_id is not None and decision_event.decision_id is not None and decision_event.decision_id != decision_id:
+        derivation_state = DerivationState.INCONSISTENT
+
+    closed_by: Optional[WaitClosedBy] = None
+    closed_at: Optional[datetime] = None
+    reality_refresh_started_at: Optional[datetime] = None
+    reality_refresh_completed_at: Optional[datetime] = None
+    reality_refresh_failed_at: Optional[datetime] = None
+    next_stage_id: Optional[str] = None
+    next_stage_started_at: Optional[datetime] = None
+    terminal_event_type: Optional[str] = None
+
+    start_index = events.index(decision_event)
+    for event in events[start_index + 1 :]:
+        if event.event_type is EventType.RUN_RESUMED and event.resume_n == wait_ordinal:
+            if closed_by is not None:
+                derivation_state = DerivationState.INCONSISTENT
+            closed_by = WaitClosedBy.RESUMED
+            closed_at = event.occurred_at
+            continue
+        if (
+            event.event_type is EventType.RUN_ABORTED
+            and event.stage_id == _HITL_WAIT_STAGE
+            and event.resume_n == wait_ordinal
+        ):
+            if closed_by is not None:
+                derivation_state = DerivationState.INCONSISTENT
+            closed_by = WaitClosedBy.ABORTED
+            closed_at = event.occurred_at
+            continue
+        if event.event_type is EventType.REALITY_REFRESH_STARTED and event.resume_n == wait_ordinal:
+            reality_refresh_started_at = event.occurred_at
+            continue
+        if event.event_type is EventType.REALITY_REFRESH_COMPLETED and event.resume_n == wait_ordinal:
+            if event.status is EventStatus.OK:
+                reality_refresh_completed_at = event.occurred_at
+            else:
+                reality_refresh_failed_at = event.occurred_at
+            continue
+        if (
+            event.event_type is EventType.STAGE_STARTED
+            and closed_at is not None
+            and next_stage_id is None
+        ):
+            next_stage_id = event.stage_id
+            next_stage_started_at = event.occurred_at
+            continue
+        if event.event_type in {EventType.RUN_COMPLETED, EventType.RUN_FAILED}:
+            terminal_event_type = event.event_type.value
+
+    if not events_complete and closed_at is None and reality_refresh_started_at is None:
+        derivation_state = _merge_derivation_state(derivation_state, DerivationState.INCOMPLETE)
+
+    return HumanDecisionConsequenceView(
+        decision_received_at=decision_received_at,
+        closed_by=closed_by,
+        closed_at=closed_at,
+        reality_refresh_started_at=reality_refresh_started_at,
+        reality_refresh_completed_at=reality_refresh_completed_at,
+        reality_refresh_failed_at=reality_refresh_failed_at,
+        next_stage_id=next_stage_id,
+        next_stage_started_at=next_stage_started_at,
+        terminal_event_type=terminal_event_type,
+        derivation_state=derivation_state,
+    )
+
+
+def derive_human_decision_surface(
+    run: AgentRun,
+    events: tuple[ObservabilityEvent, ...],
+    *,
+    human_wait: AgentHumanWaitView,
+    events_complete: bool,
+) -> AgentHumanDecisionSurfaceView:
+    wait_ordinal = human_wait.wait_ordinal
+    interrupt_id = human_wait.interrupt_id
+    request = derive_human_decision_request_view(
+        events,
+        wait_ordinal=wait_ordinal,
+        interrupt_id=interrupt_id,
+        events_complete=events_complete,
+    )
+    decision = derive_human_decision_record_view(
+        events,
+        wait_ordinal=wait_ordinal,
+        interrupt_id=interrupt_id,
+        events_complete=events_complete,
+    )
+    consequence = derive_human_decision_consequence_view(
+        events,
+        wait_ordinal=wait_ordinal,
+        decision_id=decision.decision_id if decision is not None else human_wait.decision_id,
+        events_complete=events_complete,
+    )
+    return AgentHumanDecisionSurfaceView(
+        wait=human_wait,
+        request=request,
+        decision=decision,
+        consequence=consequence,
+        authority_modeled=False,
     )

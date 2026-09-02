@@ -25,6 +25,7 @@ import pandas as pd
 from agents.control_room.dtos import (
     AgentEventView,
     AgentHandoffView,
+    AgentHumanDecisionSurfaceView,
     AgentHumanWaitView,
     AgentRunDetail,
     AgentRunListView,
@@ -262,6 +263,21 @@ def _snapshot(**overrides: Any) -> AgentRunSnapshot:
             wait_closed_by=None,
             wait_ordinal=None,
             derivation_state=DerivationState.OK,
+        ),
+        "human_decision_surface": AgentHumanDecisionSurfaceView(
+            wait=AgentHumanWaitView(
+                waiting_for_human=False,
+                interrupt_id=None,
+                wait_started_at=None,
+                decision_id=None,
+                wait_closed_by=None,
+                wait_ordinal=None,
+                derivation_state=DerivationState.OK,
+            ),
+            request=None,
+            decision=None,
+            consequence=None,
+            authority_modeled=False,
         ),
         "handoff": AgentHandoffView(
             handoff_id=None,

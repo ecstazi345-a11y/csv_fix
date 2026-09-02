@@ -233,6 +233,8 @@ class ConstructorRuntimeInstrumentation:
         span_id: Optional[str] = None,
         tool_name: Optional[str] = None,
         detail: Optional[Mapping[str, Any]] = None,
+        human_decision_request: Optional[Any] = None,
+        human_decision_record: Optional[Any] = None,
     ) -> RecordResult:
         """
         Build a canonical ObservabilityEvent and record it.
@@ -276,6 +278,8 @@ class ConstructorRuntimeInstrumentation:
             tool_name=tool_name,
             attempt_n=key.attempt_n,
             resume_n=key.resume_n,
+            human_decision_request=human_decision_request,
+            human_decision_record=human_decision_record,
             detail=dict(detail or {}),
         )
         return self._recorder.record_event(event)

@@ -15,6 +15,7 @@ from agents.control_room.derivations import (
     agent_run_to_summary,
     build_event_timeline,
     derive_handoff_view,
+    derive_human_decision_surface,
     derive_human_wait_view,
     derive_stage_view,
 )
@@ -125,10 +126,17 @@ class AgentControlRoomQueryPort:
 
         events_complete = len(events) < bounded_event_limit
         detail = agent_run_to_detail(run)
+        human_wait = derive_human_wait_view(run, events, events_complete=events_complete)
         return AgentRunSnapshot(
             run=detail,
             stage=derive_stage_view(events, events_complete=events_complete),
-            human_wait=derive_human_wait_view(run, events, events_complete=events_complete),
+            human_wait=human_wait,
+            human_decision_surface=derive_human_decision_surface(
+                run,
+                events,
+                human_wait=human_wait,
+                events_complete=events_complete,
+            ),
             handoff=derive_handoff_view(run, events, events_complete=events_complete),
             timeline_events=build_event_timeline(events),
             events_complete=events_complete,

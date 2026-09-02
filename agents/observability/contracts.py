@@ -24,6 +24,8 @@ OBSERVABILITY_SCHEMA_VERSION = "0.1"
 RUN_REQUEST_SCHEMA_VERSION = "run_request.v0.1"
 AGENT_RUN_SCHEMA_VERSION = "agent_run.v0.1"
 OBSERVABILITY_EVENT_SCHEMA_VERSION = "observability_event.v0.1"
+HUMAN_DECISION_REQUEST_OBSERVABILITY_SCHEMA_VERSION = "human_decision_request.v0.1"
+HUMAN_DECISION_RECORD_OBSERVABILITY_SCHEMA_VERSION = "human_decision_record.v0.1"
 STAGE_DEFINITION_SCHEMA_VERSION = "stage_definition.v0.1"
 
 CODE_OBSERVABILITY_CONTRACT_BLOCKER = "OBSERVABILITY_CONTRACT_BLOCKER"
@@ -41,6 +43,11 @@ MAX_METADATA_KEYS = 16
 MAX_SCOPE_KEYS = 32
 MAX_SAFE_COUNT_KEYS = 32
 MAX_SAFE_SUMMARY_KEYS = 32
+MAX_ALLOWED_DECISIONS = 8
+MAX_EVIDENCE_REFS = 32
+MAX_DECISION_CODE_LENGTH = 64
+MAX_ACTOR_TYPE_LENGTH = 64
+_HITL_WAIT_STAGE_ID = "HUMAN_GATE"
 
 _JSON_SEPARATORS = (",", ":")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -218,6 +225,8 @@ _KNOWN_SCHEMA_VERSIONS = frozenset(
         RUN_REQUEST_SCHEMA_VERSION,
         AGENT_RUN_SCHEMA_VERSION,
         OBSERVABILITY_EVENT_SCHEMA_VERSION,
+        HUMAN_DECISION_REQUEST_OBSERVABILITY_SCHEMA_VERSION,
+        HUMAN_DECISION_RECORD_OBSERVABILITY_SCHEMA_VERSION,
         STAGE_DEFINITION_SCHEMA_VERSION,
     }
 )
@@ -1074,6 +1083,251 @@ def build_agent_run(
     )
 
 
+def _require_opaque_code(value: Any, field_name: str, *, max_len: int = MAX_DECISION_CODE_LENGTH) -> str:
+    text = _require_text(value, field_name, max_len=max_len).upper()
+    if not _ID_RE.match(text):
+        _fail(f"{field_name} has invalid format")
+    return text
+
+
+def _normalize_opaque_code_tuple(
+    value: Any,
+    field_name: str,
+    *,
+    min_items: int,
+    max_items: int,
+    max_item_len: int = MAX_DECISION_CODE_LENGTH,
+) -> tuple[str, ...]:
+    if value is None:
+        items: tuple[Any, ...] = ()
+    elif isinstance(value, str):
+        items = (value,)
+    elif isinstance(value, (list, tuple)):
+        items = tuple(value)
+    else:
+        _fail(f"{field_name} must be str, list, tuple, or None")
+    if len(items) < min_items:
+        _fail(f"{field_name} requires at least {min_items} item(s)")
+    if len(items) > max_items:
+        _fail(f"{field_name} exceeds max items {max_items}")
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        code = _require_opaque_code(item, field_name, max_len=max_item_len)
+        if code in seen:
+            _fail(f"{field_name} contains duplicate code {code!r}")
+        seen.add(code)
+        out.append(code)
+    return tuple(out)
+
+
+def _normalize_evidence_ref_tuple(value: Any, field_name: str = "evidence_refs") -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        items: tuple[Any, ...] = (value,)
+    elif isinstance(value, (list, tuple)):
+        items = tuple(value)
+    else:
+        _fail(f"{field_name} must be str, list, tuple, or None")
+    if len(items) > MAX_EVIDENCE_REFS:
+        _fail(f"{field_name} exceeds max items {MAX_EVIDENCE_REFS}")
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        ref = _require_id(item, field_name)
+        if ref in seen:
+            _fail(f"{field_name} contains duplicate ref {ref!r}")
+        seen.add(ref)
+        out.append(ref)
+    return tuple(out)
+
+
+@dataclass(frozen=True)
+class HumanDecisionRequestObservabilityContext:
+    """Agent-neutral structured HITL wait request semantics for observability."""
+
+    schema_version: str
+    reason_code: str
+    human_readable_reason: Optional[str]
+    allowed_decisions: tuple[str, ...]
+    evidence_refs: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _require_schema(self.schema_version, HUMAN_DECISION_REQUEST_OBSERVABILITY_SCHEMA_VERSION)
+        object.__setattr__(self, "reason_code", _require_opaque_code(self.reason_code, "reason_code"))
+        if self.human_readable_reason is not None:
+            object.__setattr__(
+                self,
+                "human_readable_reason",
+                _require_text(self.human_readable_reason, "human_readable_reason", max_len=MAX_REASON_LENGTH),
+            )
+        if not isinstance(self.allowed_decisions, tuple):
+            _fail("allowed_decisions must be tuple")
+        if not isinstance(self.evidence_refs, tuple):
+            _fail("evidence_refs must be tuple")
+        try:
+            assert_no_secrets_in_payload(self.to_dict())
+        except AssertionError:
+            _fail("HumanDecisionRequestObservabilityContext failed secret scan")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "reason_code": self.reason_code,
+            "human_readable_reason": self.human_readable_reason,
+            "allowed_decisions": list(self.allowed_decisions),
+            "evidence_refs": list(self.evidence_refs),
+        }
+
+
+@dataclass(frozen=True)
+class HumanDecisionRecordObservabilityContext:
+    """Agent-neutral structured human decision record semantics for observability."""
+
+    schema_version: str
+    decision_code: str
+    actor_id: str
+    actor_type: str
+
+    def __post_init__(self) -> None:
+        _require_schema(self.schema_version, HUMAN_DECISION_RECORD_OBSERVABILITY_SCHEMA_VERSION)
+        object.__setattr__(
+            self,
+            "decision_code",
+            _require_opaque_code(self.decision_code, "decision_code"),
+        )
+        object.__setattr__(self, "actor_id", _require_id(self.actor_id, "actor_id"))
+        object.__setattr__(
+            self,
+            "actor_type",
+            _require_text(self.actor_type, "actor_type", max_len=MAX_ACTOR_TYPE_LENGTH),
+        )
+        try:
+            assert_no_secrets_in_payload(self.to_dict())
+        except AssertionError:
+            _fail("HumanDecisionRecordObservabilityContext failed secret scan")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "decision_code": self.decision_code,
+            "actor_id": self.actor_id,
+            "actor_type": self.actor_type,
+        }
+
+
+def build_human_decision_request_observability_context(
+    *,
+    reason_code: Any,
+    allowed_decisions: Any,
+    human_readable_reason: Any = None,
+    evidence_refs: Any = None,
+    schema_version: str = HUMAN_DECISION_REQUEST_OBSERVABILITY_SCHEMA_VERSION,
+) -> HumanDecisionRequestObservabilityContext:
+    return HumanDecisionRequestObservabilityContext(
+        schema_version=schema_version,
+        reason_code=_require_opaque_code(reason_code, "reason_code"),
+        human_readable_reason=(
+            None
+            if human_readable_reason is None
+            else _require_text(human_readable_reason, "human_readable_reason", max_len=MAX_REASON_LENGTH)
+        ),
+        allowed_decisions=_normalize_opaque_code_tuple(
+            allowed_decisions,
+            "allowed_decisions",
+            min_items=1,
+            max_items=MAX_ALLOWED_DECISIONS,
+        ),
+        evidence_refs=_normalize_evidence_ref_tuple(evidence_refs),
+    )
+
+
+def build_human_decision_record_observability_context(
+    *,
+    decision_code: Any,
+    actor_id: Any,
+    actor_type: Any,
+    schema_version: str = HUMAN_DECISION_RECORD_OBSERVABILITY_SCHEMA_VERSION,
+) -> HumanDecisionRecordObservabilityContext:
+    return HumanDecisionRecordObservabilityContext(
+        schema_version=schema_version,
+        decision_code=_require_opaque_code(decision_code, "decision_code"),
+        actor_id=_require_id(actor_id, "actor_id"),
+        actor_type=_require_text(actor_type, "actor_type", max_len=MAX_ACTOR_TYPE_LENGTH),
+    )
+
+
+def human_decision_request_observability_context_from_dict(
+    payload: Any,
+) -> HumanDecisionRequestObservabilityContext:
+    if not isinstance(payload, Mapping):
+        _fail("human_decision_request must be a mapping")
+    return build_human_decision_request_observability_context(
+        reason_code=payload.get("reason_code"),
+        human_readable_reason=payload.get("human_readable_reason"),
+        allowed_decisions=payload.get("allowed_decisions"),
+        evidence_refs=payload.get("evidence_refs"),
+        schema_version=payload.get("schema_version", HUMAN_DECISION_REQUEST_OBSERVABILITY_SCHEMA_VERSION),
+    )
+
+
+def human_decision_record_observability_context_from_dict(
+    payload: Any,
+) -> HumanDecisionRecordObservabilityContext:
+    if not isinstance(payload, Mapping):
+        _fail("human_decision_record must be a mapping")
+    return build_human_decision_record_observability_context(
+        decision_code=payload.get("decision_code"),
+        actor_id=payload.get("actor_id"),
+        actor_type=payload.get("actor_type"),
+        schema_version=payload.get("schema_version", HUMAN_DECISION_RECORD_OBSERVABILITY_SCHEMA_VERSION),
+    )
+
+
+def _validate_hitl_subcontracts_for_event(
+    *,
+    event_type: EventType,
+    human_decision_request: Optional[HumanDecisionRequestObservabilityContext],
+    human_decision_record: Optional[HumanDecisionRecordObservabilityContext],
+    interrupt_id: Optional[str],
+    decision_id: Optional[str],
+    stage_id: Optional[str],
+    allow_legacy_missing_hitl_subcontracts: bool = False,
+) -> None:
+    if event_type is EventType.HUMAN_WAIT_STARTED:
+        if human_decision_request is None and not allow_legacy_missing_hitl_subcontracts:
+            _fail("HUMAN_WAIT_STARTED requires human_decision_request")
+        if human_decision_record is not None:
+            _fail("HUMAN_WAIT_STARTED must not carry human_decision_record")
+        if interrupt_id is None:
+            _fail("HUMAN_WAIT_STARTED requires interrupt_id")
+        return
+    if event_type is EventType.HUMAN_DECISION_RECEIVED:
+        if human_decision_record is None and not allow_legacy_missing_hitl_subcontracts:
+            _fail("HUMAN_DECISION_RECEIVED requires human_decision_record")
+        if human_decision_request is not None:
+            _fail("HUMAN_DECISION_RECEIVED must not carry human_decision_request")
+        if decision_id is None:
+            _fail("HUMAN_DECISION_RECEIVED requires decision_id")
+        if interrupt_id is None:
+            _fail("HUMAN_DECISION_RECEIVED requires interrupt_id")
+        return
+    if event_type is EventType.RUN_ABORTED:
+        if decision_id is not None and stage_id == _HITL_WAIT_STAGE_ID:
+            if human_decision_record is None and not allow_legacy_missing_hitl_subcontracts:
+                _fail("HITL RUN_ABORTED requires human_decision_record")
+            if human_decision_request is not None:
+                _fail("RUN_ABORTED must not carry human_decision_request")
+        return
+    if event_type is EventType.RUN_RESUMED:
+        if human_decision_request is not None or human_decision_record is not None:
+            _fail("RUN_RESUMED must not carry HITL subcontracts")
+        return
+    if human_decision_request is not None or human_decision_record is not None:
+        _fail(f"{event_type.value} must not carry HITL subcontracts")
+
+
 @dataclass(frozen=True)
 class ObservabilityEvent:
     """Immutable append-only observability fact. Not a professional decision."""
@@ -1103,6 +1357,8 @@ class ObservabilityEvent:
     node_name: Optional[str]
     attempt_n: int
     resume_n: int
+    human_decision_request: Optional[HumanDecisionRequestObservabilityContext]
+    human_decision_record: Optional[HumanDecisionRecordObservabilityContext]
     detail: tuple[Any, ...]
 
     def __post_init__(self) -> None:
@@ -1149,6 +1405,16 @@ class ObservabilityEvent:
             _fail("artifact_type and artifact_id must both exist or both be absent")
         _require_int(self.attempt_n, "attempt_n", minimum=1)
         _require_int(self.resume_n, "resume_n", minimum=0)
+        if self.human_decision_request is not None and not isinstance(
+            self.human_decision_request,
+            HumanDecisionRequestObservabilityContext,
+        ):
+            _fail("human_decision_request has invalid type")
+        if self.human_decision_record is not None and not isinstance(
+            self.human_decision_record,
+            HumanDecisionRecordObservabilityContext,
+        ):
+            _fail("human_decision_record has invalid type")
         try:
             assert_no_secrets_in_payload(self.to_dict())
         except AssertionError:
@@ -1181,6 +1447,16 @@ class ObservabilityEvent:
             "node_name": self.node_name,
             "attempt_n": self.attempt_n,
             "resume_n": self.resume_n,
+            "human_decision_request": (
+                None
+                if self.human_decision_request is None
+                else self.human_decision_request.to_dict()
+            ),
+            "human_decision_record": (
+                None
+                if self.human_decision_record is None
+                else self.human_decision_record.to_dict()
+            ),
             "detail": _unfreeze_jsonable(self.detail),
         }
 
@@ -1211,8 +1487,11 @@ def build_observability_event(
     node_name: Any = None,
     attempt_n: int = 1,
     resume_n: int = 0,
+    human_decision_request: Optional[HumanDecisionRequestObservabilityContext] = None,
+    human_decision_record: Optional[HumanDecisionRecordObservabilityContext] = None,
     detail: Optional[Mapping[str, Any]] = None,
     schema_version: str = OBSERVABILITY_EVENT_SCHEMA_VERSION,
+    allow_legacy_missing_hitl_subcontracts: bool = False,
 ) -> ObservabilityEvent:
     parsed_type = _require_enum(event_type, EventType, "event_type")
     expected_family = EVENT_FAMILY_BY_TYPE[parsed_type]
@@ -1227,6 +1506,18 @@ def build_observability_event(
         max_keys=MAX_DETAIL_KEYS,
         required=True,
     )
+    parsed_interrupt_id = _optional_id(interrupt_id, "interrupt_id")
+    parsed_decision_id = _optional_id(decision_id, "decision_id")
+    parsed_stage_id = _optional_id(stage_id, "stage_id")
+    _validate_hitl_subcontracts_for_event(
+        event_type=parsed_type,
+        human_decision_request=human_decision_request,
+        human_decision_record=human_decision_record,
+        interrupt_id=parsed_interrupt_id,
+        decision_id=parsed_decision_id,
+        stage_id=parsed_stage_id,
+        allow_legacy_missing_hitl_subcontracts=allow_legacy_missing_hitl_subcontracts,
+    )
     return ObservabilityEvent(
         schema_version=schema_version,
         event_id=_require_id(event_id, "event_id"),
@@ -1237,15 +1528,15 @@ def build_observability_event(
         event_type=parsed_type,
         status=_require_enum(status, EventStatus, "status"),
         title=_require_text(title, "title", max_len=MAX_TITLE_LENGTH),
-        stage_id=_optional_id(stage_id, "stage_id"),
+        stage_id=parsed_stage_id,
         span_id=_optional_id(span_id, "span_id"),
         request_id=_optional_id(request_id, "request_id"),
         mission_id=_optional_id(mission_id, "mission_id"),
         orchestration_run_id=_optional_id(orchestration_run_id, "orchestration_run_id"),
         authorization_id=_optional_id(authorization_id, "authorization_id"),
         checkpoint_id=_optional_id(checkpoint_id, "checkpoint_id"),
-        interrupt_id=_optional_id(interrupt_id, "interrupt_id"),
-        decision_id=_optional_id(decision_id, "decision_id"),
+        interrupt_id=parsed_interrupt_id,
+        decision_id=parsed_decision_id,
         artifact_type=(
             None
             if artifact_type is None
@@ -1261,5 +1552,7 @@ def build_observability_event(
         ),
         attempt_n=_require_int(attempt_n, "attempt_n", minimum=1),
         resume_n=_require_int(resume_n, "resume_n", minimum=0),
+        human_decision_request=human_decision_request,
+        human_decision_record=human_decision_record,
         detail=frozen_detail,
     )

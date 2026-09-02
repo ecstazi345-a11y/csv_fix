@@ -36,6 +36,8 @@ from agents.observability.contracts import (
     OperationalStatus,
     TriggerType,
     build_agent_run,
+    build_human_decision_record_observability_context,
+    build_human_decision_request_observability_context,
     build_observability_event,
 )
 from agents.observability.durable_recorder import StoreObservabilityRecorder
@@ -104,8 +106,33 @@ def _event_kwargs(**overrides: Any) -> dict[str, Any]:
     return payload
 
 
+def _hitl_request(**overrides: Any):
+    payload = {
+        "reason_code": "AMBIGUOUS_SCOPE",
+        "allowed_decisions": ("CLARIFY_SCOPE", "ABORT_RUN"),
+        "human_readable_reason": "Scope needs clarification",
+        "evidence_refs": ("ref-001",),
+    }
+    payload.update(overrides)
+    return build_human_decision_request_observability_context(**payload)
+
+
+def _hitl_record(**overrides: Any):
+    payload = {
+        "decision_code": "CLARIFY_SCOPE",
+        "actor_id": "operator-local",
+        "actor_type": "HUMAN",
+    }
+    payload.update(overrides)
+    return build_human_decision_record_observability_context(**payload)
+
+
 def _build_event(**overrides: Any):
-    return build_observability_event(**_event_kwargs(**overrides))
+    allow_legacy = overrides.pop("allow_legacy_missing_hitl_subcontracts", False)
+    return build_observability_event(
+        **_event_kwargs(**overrides),
+        allow_legacy_missing_hitl_subcontracts=allow_legacy,
+    )
 
 
 def _append(store: ObservabilityStore, event_kwargs: dict[str, Any]) -> None:
@@ -117,7 +144,6 @@ def _append(store: ObservabilityStore, event_kwargs: dict[str, Any]) -> None:
         expected_projection_version=run.projection_version,
         projection_change=change,
     )
-
 
 def _memory_store_factory() -> InMemoryObservabilityStore:
     return InMemoryObservabilityStore()
@@ -473,12 +499,50 @@ class HitlDerivationTests(unittest.TestCase):
                 "resume_n": 1,
                 "interrupt_id": "intr-001",
                 "title": "Human wait started",
+                "human_decision_request": _hitl_request(),
             },
         )
-        view = self.port.get_run_snapshot("run-001").human_wait
+        snapshot = self.port.get_run_snapshot("run-001")
+        view = snapshot.human_wait
         self.assertTrue(view.waiting_for_human)
         self.assertEqual(view.interrupt_id, "intr-001")
         self.assertEqual(view.wait_ordinal, 1)
+        surface = snapshot.human_decision_surface
+        self.assertFalse(surface.authority_modeled)
+        self.assertIsNotNone(surface.request)
+        self.assertEqual(surface.request.reason_code, "AMBIGUOUS_SCOPE")
+        self.assertEqual(surface.request.derivation_state, DerivationState.OK)
+
+    def test_legacy_wait_without_request_is_incomplete(self) -> None:
+        self.store.create_run(
+            _build_run(
+                operational_status=OperationalStatus.WAITING_FOR_HUMAN,
+                interrupt_id="intr-001",
+            )
+        )
+        _append(
+            self.store,
+            {
+                "event_id": "wait-legacy",
+                "event_type": EventType.HUMAN_WAIT_STARTED,
+                "family": EventFamily.HITL,
+                "stage_id": "HUMAN_GATE",
+                "node_name": "human_wait",
+                "resume_n": 1,
+                "interrupt_id": "intr-001",
+                "title": "Human wait started",
+                "detail": {
+                    "reason_code": "FAKE_REASON",
+                    "allowed_decisions": ["FAKE"],
+                },
+                "allow_legacy_missing_hitl_subcontracts": True,
+            },
+        )
+        surface = self.port.get_run_snapshot("run-001").human_decision_surface
+        self.assertIsNotNone(surface.request)
+        self.assertEqual(surface.request.derivation_state, DerivationState.INCOMPLETE)
+        self.assertEqual(surface.request.reason_code, "")
+        self.assertEqual(surface.request.allowed_decisions, ())
 
     def test_run_resumed_closes_wait(self) -> None:
         self.store.create_run(_build_run(operational_status=OperationalStatus.RUNNING, resume_n=1))
@@ -493,6 +557,7 @@ class HitlDerivationTests(unittest.TestCase):
                 "resume_n": 1,
                 "interrupt_id": "intr-001",
                 "title": "Human wait started",
+                "human_decision_request": _hitl_request(),
             },
         )
         _append(
@@ -507,6 +572,7 @@ class HitlDerivationTests(unittest.TestCase):
                 "interrupt_id": "intr-001",
                 "decision_id": "dec-001",
                 "title": "Human decision received",
+                "human_decision_record": _hitl_record(),
             },
         )
         _append(
@@ -526,6 +592,10 @@ class HitlDerivationTests(unittest.TestCase):
         self.assertFalse(view.waiting_for_human)
         self.assertEqual(view.wait_closed_by, WaitClosedBy.RESUMED)
         self.assertEqual(view.decision_id, "dec-001")
+        surface = self.port.get_run_snapshot("run-001").human_decision_surface
+        self.assertIsNotNone(surface.decision)
+        self.assertEqual(surface.decision.decision_code, "CLARIFY_SCOPE")
+        self.assertEqual(surface.consequence.closed_by, WaitClosedBy.RESUMED)
 
     def test_run_aborted_closes_wait(self) -> None:
         self.store.create_run(
@@ -545,6 +615,7 @@ class HitlDerivationTests(unittest.TestCase):
                 "resume_n": 1,
                 "interrupt_id": "intr-001",
                 "title": "Human wait started",
+                "allow_legacy_missing_hitl_subcontracts": True,
             },
         )
         _append(
@@ -560,10 +631,123 @@ class HitlDerivationTests(unittest.TestCase):
                 "title": "Run aborted",
                 "status": EventStatus.FAILED,
                 "occurred_at": EVEN_LATER_AT,
+                "allow_legacy_missing_hitl_subcontracts": True,
             },
         )
         view = self.port.get_run_snapshot("run-001").human_wait
         self.assertEqual(view.wait_closed_by, WaitClosedBy.ABORTED)
+
+
+class HumanDecisionSurfaceTests(unittest.TestCase):
+    def _for_each_store(self, test_fn: Callable[[ObservabilityStore, str], None]) -> None:
+        for label, factory in STORE_FACTORIES:
+            with self.subTest(store=label):
+                store = factory()
+                try:
+                    test_fn(store, label)
+                finally:
+                    close = getattr(store, "close", None)
+                    if callable(close):
+                        close()
+
+    def test_multi_wait_isolation(self) -> None:
+        def exercise(store: ObservabilityStore, _label: str) -> None:
+            store.create_run(_build_run(operational_status=OperationalStatus.RUNNING, resume_n=2))
+            port = AgentControlRoomQueryPort(store)
+            _append(
+                store,
+                {
+                    "event_id": "wait-1",
+                    "event_type": EventType.HUMAN_WAIT_STARTED,
+                    "family": EventFamily.HITL,
+                    "stage_id": "HUMAN_GATE",
+                    "resume_n": 1,
+                    "interrupt_id": "intr-a",
+                    "title": "Wait 1",
+                    "human_decision_request": _hitl_request(reason_code="REASON_A"),
+                },
+            )
+            _append(
+                store,
+                {
+                    "event_id": "dec-1",
+                    "event_type": EventType.HUMAN_DECISION_RECEIVED,
+                    "family": EventFamily.HITL,
+                    "stage_id": "HUMAN_GATE",
+                    "resume_n": 1,
+                    "interrupt_id": "intr-a",
+                    "decision_id": "dec-a",
+                    "title": "Decision 1",
+                    "human_decision_record": _hitl_record(decision_code="CLARIFY_SCOPE"),
+                },
+            )
+            _append(
+                store,
+                {
+                    "event_id": "res-1",
+                    "event_type": EventType.RUN_RESUMED,
+                    "family": EventFamily.HITL,
+                    "stage_id": "HUMAN_GATE",
+                    "resume_n": 1,
+                    "decision_id": "dec-a",
+                    "title": "Resume 1",
+                },
+            )
+            _append(
+                store,
+                {
+                    "event_id": "wait-2",
+                    "event_type": EventType.HUMAN_WAIT_STARTED,
+                    "family": EventFamily.HITL,
+                    "stage_id": "HUMAN_GATE",
+                    "resume_n": 2,
+                    "interrupt_id": "intr-b",
+                    "title": "Wait 2",
+                    "occurred_at": EVEN_LATER_AT,
+                    "human_decision_request": _hitl_request(reason_code="REASON_B"),
+                },
+            )
+            snapshot = port.get_run_snapshot("run-001")
+            surface = snapshot.human_decision_surface
+            self.assertEqual(surface.wait.wait_ordinal, 2)
+            self.assertEqual(surface.request.reason_code, "REASON_B")
+            self.assertIsNone(surface.decision)
+
+        self._for_each_store(exercise)
+
+    def test_detail_ban_on_human_decision_surface(self) -> None:
+        def exercise(store: ObservabilityStore, _label: str) -> None:
+            store.create_run(
+                _build_run(
+                    operational_status=OperationalStatus.WAITING_FOR_HUMAN,
+                    interrupt_id="intr-001",
+                )
+            )
+            _append(
+                store,
+                {
+                    "event_id": "wait-fake",
+                    "event_type": EventType.HUMAN_WAIT_STARTED,
+                    "family": EventFamily.HITL,
+                    "stage_id": "HUMAN_GATE",
+                    "resume_n": 1,
+                    "interrupt_id": "intr-001",
+                    "title": "Wait",
+                    "detail": {
+                        "reason_code": "FAKE_REASON",
+                        "decision_type": "FAKE_DECISION",
+                        "actor_id": "fake",
+                        "allowed_decisions": ["FAKE"],
+                        "evidence_refs": ["fake"],
+                    },
+                    "allow_legacy_missing_hitl_subcontracts": True,
+                },
+            )
+            surface = AgentControlRoomQueryPort(store).get_run_snapshot("run-001").human_decision_surface
+            self.assertEqual(surface.request.reason_code, "")
+            self.assertNotIn("FAKE", surface.request.allowed_decisions)
+
+        self._for_each_store(exercise)
 
 
 class HandoffDerivationTests(unittest.TestCase):

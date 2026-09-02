@@ -132,6 +132,53 @@ class AgentHumanWaitView:
 
 
 @dataclass(frozen=True)
+class HumanDecisionRequestView:
+    interrupt_id: str
+    wait_ordinal: int
+    stage_id: str
+    reason_code: str
+    human_readable_reason: Optional[str]
+    allowed_decisions: tuple[str, ...]
+    evidence_refs: tuple[str, ...]
+    derivation_state: DerivationState
+
+
+@dataclass(frozen=True)
+class HumanDecisionRecordView:
+    decision_id: str
+    interrupt_id: str
+    wait_ordinal: int
+    decision_code: str
+    actor_id: str
+    actor_type: str
+    received_at: datetime
+    derivation_state: DerivationState
+
+
+@dataclass(frozen=True)
+class HumanDecisionConsequenceView:
+    decision_received_at: Optional[datetime]
+    closed_by: Optional[WaitClosedBy]
+    closed_at: Optional[datetime]
+    reality_refresh_started_at: Optional[datetime]
+    reality_refresh_completed_at: Optional[datetime]
+    reality_refresh_failed_at: Optional[datetime]
+    next_stage_id: Optional[str]
+    next_stage_started_at: Optional[datetime]
+    terminal_event_type: Optional[str]
+    derivation_state: DerivationState
+
+
+@dataclass(frozen=True)
+class AgentHumanDecisionSurfaceView:
+    wait: AgentHumanWaitView
+    request: Optional[HumanDecisionRequestView]
+    decision: Optional[HumanDecisionRecordView]
+    consequence: Optional[HumanDecisionConsequenceView]
+    authority_modeled: bool
+
+
+@dataclass(frozen=True)
 class AgentHandoffView:
     handoff_id: Optional[str]
     status: HandoffStatus
@@ -145,6 +192,7 @@ class AgentRunSnapshot:
     run: AgentRunDetail
     stage: AgentStageView
     human_wait: AgentHumanWaitView
+    human_decision_surface: AgentHumanDecisionSurfaceView
     handoff: AgentHandoffView
     timeline_events: tuple[AgentEventView, ...]
     events_complete: bool

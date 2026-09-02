@@ -13,10 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** (Local Managed Runtime Backend v0.1) · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 State-of-the-Art HITL Architecture Gate** · **10.8A Structured HITL Read Contract** · **10.8B Professional HITL / Live Agent Execution Visualization**
-- **NEXT:** Increment **10.9** Handoff / Completion / Digital Organization Visualization preflight — do **not** start before this checkpoint is committed
-- **Recovery code HEAD:** `c975419f502e52cd2ef477b1d7b4821db0c0ad0b` (10.8B Professional HITL / Live Agent Execution Visualization on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · **10.5 Separate-Process Durability Proof DONE** · **ConstructorManagedRuntimeLauncher DONE** · **10.6 AgentControlRoomQueryPort DONE** · **10.7 Control Room Core DONE** · **10.8 State-of-the-Art HITL Architecture Gate DONE** · **10.8A Structured HITL Read Contract DONE** · **10.8B Professional HITL / Live Agent Execution Visualization DONE** · Increment 10 overall **NOT COMPLETE**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** (Local Managed Runtime Backend v0.1) · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 State-of-the-Art HITL Architecture Gate** · **10.8A Structured HITL Read Contract** · **10.8B Professional HITL / Live Agent Execution Visualization** · **10.9 Architecture Preflight** · **10.9A Handoff Observability Contract**
+- **NEXT:** Increment **10.9B** Digital Organization Visualization — do **not** start before this checkpoint is committed
+- **Recovery code HEAD:** `22b7de5f6be39707a4e9d3c7d579648be1edec6f` (10.9A Handoff Observability Contract on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · **10.5 Separate-Process Durability Proof DONE** · **ConstructorManagedRuntimeLauncher DONE** · **10.6 AgentControlRoomQueryPort DONE** · **10.7 Control Room Core DONE** · **10.8 State-of-the-Art HITL Architecture Gate DONE** · **10.8A Structured HITL Read Contract DONE** · **10.8B Professional HITL / Live Agent Execution Visualization DONE** · **10.9 Architecture Preflight DONE** · **10.9A Handoff Observability Contract DONE** · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -5443,5 +5443,380 @@ Operator must eventually understand: WHO produced the result · WHAT was transfe
 **Without:** artifact bodies · arbitrary payload · LLM inference · superuser orchestrator semantics · write actions.
 
 Remaining: **10.9** Handoff / Completion / Digital Organization Visualization → **10.10** full live-run proof + regression + EOS-SEC + final documentation
+
+Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**
+
+---
+
+============================================================
+CHECKPOINT — 2026-09-02
+INCREMENT 10.9A
+HANDOFF OBSERVABILITY CONTRACT
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** promote minimum professional handoff semantics from Constructor-specific business truth into agent-neutral structured observability — read/observability increment only. **10.9B is NOT implemented in this checkpoint.**
+
+------------------------------------------------------------
+PROGRAM SNAPSHOT
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| 10.7 | **DONE** |
+| 10.8 | **DONE** |
+| 10.8A | **DONE** |
+| 10.8B | **DONE** |
+| 10.9 Architecture Preflight | **DONE** |
+| 10.9A Handoff Observability Contract | **DONE** |
+| Constructor | **9 / 10** |
+| Increment 10 | **NOT COMPLETE** |
+| Recovery HEAD | `22b7de5f6be39707a4e9d3c7d579648be1edec6f` |
+| NEXT | **10.9B** Digital Organization Visualization |
+
+------------------------------------------------------------
+BEFORE / AFTER
+------------------------------------------------------------
+
+**Before 10.9A:** Control Room could prove `handoff_id` · CREATED / PERSISTED / PERSIST_FAILED · timestamps · source run completion · artifact refs on events — but could **NOT** safely prove through Query Port: `handoff_type` · intended target professional role. Those semantics lived in `ConstructorHandoff` and `event.detail`.
+
+**After 10.9A:** professional handoff semantics are available through typed structured observability.
+
+**Product meaning:** 10.9A creates the first safe professional digital-work transfer contract for Control Room. The system can now safely prove: WHO the source digital employee is · WHAT type of professional handoff was created · WHAT business artifact identity is transferred · TO WHICH intended professional role · WHETHER handoff was created · WHETHER handoff was durably persisted · WHETHER persistence failed — **without** reading `detail` · reading `ConstructorHandoffStore` · inventing receiver state · inventing ownership transfer.
+
+------------------------------------------------------------
+ARCHITECTURE CHAIN
+------------------------------------------------------------
+
+```
+ConstructorHandoff
+  → runtime typed mapping
+  → HandoffObservabilityContext
+  → ObservabilityEvent
+  → Durable ObservabilityStore
+  → AgentControlRoomQueryPort
+  → enriched AgentHandoffView
+```
+
+No Control Room access to `ConstructorHandoffStore`. No detail parsing.
+
+------------------------------------------------------------
+TYPED HANDOFF SUBCONTRACT
+------------------------------------------------------------
+
+**Schema approach:** `TYPED_HANDOFF_SUBCONTRACT`
+
+**Schema version:** `handoff_observability.v0.1`
+
+**Type:** `HandoffObservabilityContext`
+
+| Field | Rule |
+|-------|------|
+| `schema_version` | frozen contract version |
+| `handoff_type` | opaque professional handoff code |
+| `target_role_code` | intended professional recipient role |
+
+**No other professional fields.**
+
+**Forbidden in contract:** source agent · source run · artifact type/id · orchestration id · mission · project/month · candidate counts · scope · summaries · artifact body · handoff body · receiver state · authority.
+
+------------------------------------------------------------
+HANDOFF TYPE LAW
+------------------------------------------------------------
+
+`handoff_type` is an opaque professional handoff code.
+
+Example: `CONSTRUCTOR_TO_ADMISSION`
+
+It is **not** interpreted inside Query Port. Presentation may map it later to Russian operator wording.
+
+------------------------------------------------------------
+TARGET ROLE LAW
+------------------------------------------------------------
+
+`target_role_code` means: **INTENDED PROFESSIONAL RECIPIENT ROLE.**
+
+It does **NOT** prove:
+
+- target agent exists
+- target agent is running
+- target run exists
+- receiver accepted
+- receiver owns work
+- receiver is authorized
+
+This law is foundational for **10.9B**.
+
+------------------------------------------------------------
+NO DUPLICATION LAW
+------------------------------------------------------------
+
+10.9A intentionally does **NOT** duplicate:
+
+| Truth | Authoritative source |
+|-------|---------------------|
+| source agent | `ObservabilityEvent.agent_code` |
+| `artifact_type` / `artifact_id` | root event fields |
+| `orchestration_run_id` | root/run correlation |
+| `source_run_id` · `mission_id` · project/month | existing run/event truth |
+
+------------------------------------------------------------
+EVENT OWNERSHIP LAW
+------------------------------------------------------------
+
+| Event | Handoff subcontract |
+|-------|---------------------|
+| `HANDOFF_CREATED` | **REQUIRED** for new runtime events |
+| `HANDOFF_PERSISTED` | **ABSENT** |
+| `HANDOFF_PERSIST_FAILED` | **ABSENT** |
+| `RUN_COMPLETED` | **ABSENT** |
+
+Professional transfer intent is declared **once** at `HANDOFF_CREATED`. Lifecycle events correlate by `handoff_id`.
+
+------------------------------------------------------------
+FAIL-CLOSED LAW
+------------------------------------------------------------
+
+New `HANDOFF_CREATED` events without typed handoff context **fail closed**. Runtime cannot bypass typed handoff contract. This preserves machine-readable professional handoff truth.
+
+------------------------------------------------------------
+LEGACY COMPATIBILITY
+------------------------------------------------------------
+
+`allow_legacy_missing_handoff_subcontract` is **narrow compatibility only.**
+
+| Path | Allowed |
+|------|---------|
+| Trusted persistence deserialization | **YES** |
+| New runtime event creation | **NO** |
+| Query Port bypass | **NO** |
+
+Legacy event without subcontract: handoff lifecycle may remain readable · professional semantics become **INCOMPLETE**.
+
+------------------------------------------------------------
+DETAIL BAN
+------------------------------------------------------------
+
+`event.detail` remains **NON-AUTHORITATIVE.**
+
+Query Port **never** derives `handoff_type` · `target_role_code` · source identity · professional recipient meaning from `detail`. Fake detail values do **not** override typed structured truth.
+
+------------------------------------------------------------
+FINGERPRINT LAW
+------------------------------------------------------------
+
+Typed handoff semantics participate in `ObservabilityEvent` fingerprint.
+
+| Condition | Outcome |
+|-----------|---------|
+| same `event_id` + same handoff semantics | **IDEMPOTENT_REPLAY** |
+| same `event_id` + changed `handoff_type` | **EVENT CONFLICT** |
+| same `event_id` + changed `target_role_code` | **EVENT CONFLICT** |
+
+This protects professional transfer intent from silent mutation.
+
+------------------------------------------------------------
+WRITE PATH FREEZE
+------------------------------------------------------------
+
+10.9A did **NOT** change:
+
+- `ConstructorHandoff` schema semantics
+- `handoff_id` computation
+- handoff store `put_if_absent`
+- payload immutability
+- persistence ordering
+- `HANDOFF_PERSIST_FAILED` behavior
+- `RUN_FAILED` behavior
+- `RUN_COMPLETED` gate
+- `READY_FOR_HANDOFF` lifecycle semantics
+
+10.9A only **EXPORTS** existing typed truth.
+
+------------------------------------------------------------
+HANDOFF COMPLETION LAW
+------------------------------------------------------------
+
+**`HANDOFF_PERSISTED`** means only: durable handoff persistence succeeded.
+
+It does **NOT** mean: receiver received · receiver accepted · receiver started · ownership transferred.
+
+**`RUN_COMPLETED`** means: source Constructor agent completed its own professional run after successful durable handoff persistence.
+
+It does **NOT** mean: Admission accepted · orchestration completed · business plan approved · monthly plan completed.
+
+------------------------------------------------------------
+ENRICHED AGENT HANDOFF VIEW
+------------------------------------------------------------
+
+`AgentHandoffView` now safely exposes:
+
+`handoff_id` · `status` · `created_at` · `persisted_at` · `failed_at` · `handoff_type` · `target_role_code` · `artifact_type` · `artifact_id` · `derivation_state`
+
+Public Query Port method set **unchanged:**
+
+- `list_runs`
+- `get_run`
+- `get_run_snapshot`
+
+------------------------------------------------------------
+ARTIFACT-CENTRIC HANDOFF
+------------------------------------------------------------
+
+10.9A reuses existing root artifact refs: `artifact_type` · `artifact_id`.
+
+**No** artifact body · **no** CandidatePackage body · **no** business row payload.
+
+Handoff transfers formal business artifact identity, not chat context.
+
+------------------------------------------------------------
+RECEIVER HONESTY
+------------------------------------------------------------
+
+Absence of receiver evidence in selected source-run snapshot does **NOT** mean receiver does not exist.
+
+10.9A does **NOT** create:
+
+- `receiver_observed=False`
+- `receiver_started=False`
+- `receiver_ack=False`
+- `target_run_id=None` as business truth
+
+Correct semantic status: **UNKNOWN / NOT CONFIRMED IN CURRENT OBSERVED CONTEXT.**
+
+10.9B presentation must preserve this wording.
+
+------------------------------------------------------------
+DELIVERY STATES
+------------------------------------------------------------
+
+Currently supported handoff lifecycle:
+
+```
+NOT_STARTED → CREATED → PERSISTED
+NOT_STARTED → CREATED → PERSIST_FAILED
+```
+
+Plus `DerivationState`: `OK` · `INCOMPLETE` · `INCONSISTENT`
+
+**Forbidden** until receiver evidence exists: `DELIVERED` · `RECEIVED` · `ACCEPTED` · `CONSUMED` · `STARTED_BY_TARGET`
+
+------------------------------------------------------------
+AUTHORITY
+------------------------------------------------------------
+
+| Property | Status |
+|----------|--------|
+| HANDOFF AUTHORITY | **NOT MODELED** |
+| HANDOFF AUTHORITY ENFORCEMENT | **NOT IMPLEMENTED** |
+
+Observed creator **≠** authorized creator. No authorization claims in 10.9A.
+
+------------------------------------------------------------
+MULTI-AGENT GENERALITY
+------------------------------------------------------------
+
+Contract remains agent-neutral and supports future professional transfers such as:
+
+- Constructor → Admission
+- Admission → Constraint
+- Constraint → Resource Capacity
+
+**without** Constructor-specific fields.
+
+**MULTI_AGENT_GENERALITY:** **PASS**
+
+------------------------------------------------------------
+PHYSICAL AI GENERALITY
+------------------------------------------------------------
+
+Conceptual compatibility with:
+
+- Inspection Agent → Robot Execution Agent
+- Drone Reality Capture → Validation Agent
+
+through same generic `handoff_type` · `target_role_code` · artifact refs.
+
+**PHYSICAL_AI_GENERALITY:** **PASS** — no Physical AI execution implemented here.
+
+------------------------------------------------------------
+SQL / PROJECTION
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| SQL migration | **NO** — `ObservabilityEvent` persisted as JSON payload |
+| AgentRun projection change | **NO** — existing `handoff_id`/status projection remains sufficient |
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+| Gate | Result |
+|------|--------|
+| Targeted 10.9A | **21 / 21 PASS** |
+| Query Port regression | **PASS** (269 incl. subtests) |
+| 10.8B | **PASS** |
+| 10.8A | **PASS** |
+| Handoff / Completion | **PASS** |
+| 10.4 | **PASS** |
+| 10.5 | **PASS** |
+| Run Control | **PASS** |
+| Launcher | **PASS** |
+| EOS-SEC | **PASS** |
+| py_compile | **PASS** |
+| Architecture drift | **NO** |
+
+**DURABLE_RESTART:** **ENVIRONMENT_BLOCKED_NOT_REGRESSION** — do **NOT** write PASS.
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+CODE: `22b7de5f6be39707a4e9d3c7d579648be1edec6f` · message: `feat(agents): add handoff observability contract` · BRANCH: `wip/increment-10-agent-control-room` · PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES** · worktree after code commit: **CLEAN**
+
+FILES (12): `agents/observability/contracts.py` · `agents/observability/store.py` · `agents/monthly_plan_constructor/runtime_instrumentation.py` · `agents/monthly_plan_constructor/langgraph_runtime.py` · `agents/control_room/dtos.py` · `agents/control_room/derivations.py` · `tests/test_handoff_observability_read_contract.py` · `tests/test_agent_control_room_query_port.py` · `tests/test_agent_observability_contracts.py` · `tests/test_constructor_langgraph_handoff_observability.py` · `tests/test_control_room_page_guards.py` · `tests/test_control_room_execution_visualization.py`
+
+Handoff write path / ConstructorHandoffStore / UI / presentation: **unchanged**
+
+------------------------------------------------------------
+DIGITAL ORGANIZATION FOUNDATION
+------------------------------------------------------------
+
+10.9A is the contract foundation for **DIGITAL ORGANIZATION OBSERVABILITY.**
+
+Digital Organization is **not** a static diagram of agent names. It is: observable movement of professional work between digital employees and roles through durable business artifacts and structured handoff state.
+
+------------------------------------------------------------
+NEXT — INCREMENT 10.9B
+------------------------------------------------------------
+
+**10.9B** Digital Organization Visualization — do **not** start before this checkpoint is committed.
+
+Target first source-side organization view:
+
+```
+Constructor → Business Artifact → Handoff → Intended Target Professional Role
+```
+
+With explicit honesty:
+
+| Fact | Status |
+|------|--------|
+| Source agent | **COMPLETED** |
+| Handoff | **PERSISTED / FAILED** |
+| Target professional role | **KNOWN** if typed |
+| Receiver run | **NOT CONFIRMED IN CURRENT OBSERVED CONTEXT** |
+| Ownership transfer | **NOT PROVEN** |
+| Receiver acceptance | **NOT PROVEN** |
+
+**10.9B visualization law:** SOURCE COMPLETED **≠** HANDOFF PERSISTED **≠** RECEIVER ACCEPTED **≠** TARGET RUN STARTED **≠** ORCHESTRATION COMPLETED. These must be visually separated.
+
+**10.9B scope:** selected source run only. Expected operator flow: source digital employee → transferred artifact → handoff state → intended target role → receiver evidence status. **No** fleet-wide graph yet · **no** cross-run Query Port expansion yet · **no** active orchestrator node unless observed · **no** receiver ACK simulation.
+
+**Future cross-run law:** full multi-agent chain later requires structural correlation such as `handoff_id` · `orchestration_run_id` · future `target_run` link · future receiver-side evidence. Do **NOT** infer target run from timestamps or agent names.
+
+Remaining: **10.9B** Digital Organization Visualization → **10.10** full live-run proof + regressions + EOS-SEC + final documentation
 
 Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**

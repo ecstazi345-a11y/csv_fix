@@ -383,6 +383,12 @@ class _HandoffBuilder:
     status: HandoffStatus = HandoffStatus.CREATED
     created_at: Optional[datetime] = None
     persisted_at: Optional[datetime] = None
+    failed_at: Optional[datetime] = None
+    handoff_type: Optional[str] = None
+    target_role_code: Optional[str] = None
+    artifact_type: Optional[str] = None
+    artifact_id: Optional[str] = None
+    professional_derivation: DerivationState = DerivationState.OK
 
 
 def derive_handoff_view(
@@ -400,10 +406,28 @@ def derive_handoff_view(
         if event.event_type is EventType.HANDOFF_CREATED:
             if event.handoff_id in by_id:
                 derivation_state = DerivationState.INCONSISTENT
+            professional_derivation = DerivationState.OK
+            handoff_type: Optional[str] = None
+            target_role_code: Optional[str] = None
+            context = event.handoff_observability
+            if context is None:
+                professional_derivation = DerivationState.INCOMPLETE
+            else:
+                handoff_type = context.handoff_type
+                target_role_code = context.target_role_code
             by_id[event.handoff_id] = _HandoffBuilder(
                 handoff_id=event.handoff_id,
                 status=HandoffStatus.CREATED,
                 created_at=event.occurred_at,
+                handoff_type=handoff_type,
+                target_role_code=target_role_code,
+                artifact_type=event.artifact_type,
+                artifact_id=event.artifact_id,
+                professional_derivation=professional_derivation,
+            )
+            derivation_state = _merge_derivation_state(
+                derivation_state,
+                professional_derivation,
             )
             continue
         if event.event_type is EventType.HANDOFF_PERSISTED:
@@ -432,6 +456,7 @@ def derive_handoff_view(
                 derivation_state = DerivationState.INCONSISTENT
                 continue
             builder.status = HandoffStatus.PERSIST_FAILED
+            builder.failed_at = event.occurred_at
 
     if not events_complete:
         derivation_state = _merge_derivation_state(derivation_state, DerivationState.INCOMPLETE)
@@ -446,6 +471,11 @@ def derive_handoff_view(
             status=HandoffStatus.NOT_STARTED,
             created_at=None,
             persisted_at=None,
+            failed_at=None,
+            handoff_type=None,
+            target_role_code=None,
+            artifact_type=None,
+            artifact_id=None,
             derivation_state=derivation_state,
         )
 
@@ -460,6 +490,11 @@ def derive_handoff_view(
             status=HandoffStatus.NOT_STARTED,
             created_at=None,
             persisted_at=None,
+            failed_at=None,
+            handoff_type=None,
+            target_role_code=None,
+            artifact_type=None,
+            artifact_id=None,
             derivation_state=derivation_state,
         )
 
@@ -468,7 +503,15 @@ def derive_handoff_view(
         status=builder.status,
         created_at=builder.created_at,
         persisted_at=builder.persisted_at,
-        derivation_state=derivation_state,
+        failed_at=builder.failed_at,
+        handoff_type=builder.handoff_type,
+        target_role_code=builder.target_role_code,
+        artifact_type=builder.artifact_type,
+        artifact_id=builder.artifact_id,
+        derivation_state=_merge_derivation_state(
+            derivation_state,
+            builder.professional_derivation,
+        ),
     )
 
 

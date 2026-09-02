@@ -779,6 +779,7 @@ class ObservabilityContractTests(unittest.TestCase):
             resume_n=base_event.resume_n,
             human_decision_request=base_event.human_decision_request,
             human_decision_record=base_event.human_decision_record,
+            handoff_observability=base_event.handoff_observability,
             detail=base_event.detail,
         )
         self.assertEqual(direct_event.occurred_at.utcoffset(), timedelta(0))

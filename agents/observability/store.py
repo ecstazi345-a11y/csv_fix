@@ -287,6 +287,7 @@ def _agent_run_from_dict(payload: dict[str, Any]) -> AgentRun:
 def _observability_event_from_dict(payload: dict[str, Any]) -> ObservabilityEvent:
     from agents.observability.contracts import (
         build_observability_event,
+        handoff_observability_context_from_dict,
         human_decision_record_observability_context_from_dict,
         human_decision_request_observability_context_from_dict,
     )
@@ -294,6 +295,7 @@ def _observability_event_from_dict(payload: dict[str, Any]) -> ObservabilityEven
     detail = payload.get("detail")
     request_payload = payload.get("human_decision_request")
     record_payload = payload.get("human_decision_record")
+    handoff_payload = payload.get("handoff_observability")
     return build_observability_event(
         event_id=payload["event_id"],
         run_id=payload["run_id"],
@@ -329,9 +331,15 @@ def _observability_event_from_dict(payload: dict[str, Any]) -> ObservabilityEven
             if record_payload is None
             else human_decision_record_observability_context_from_dict(record_payload)
         ),
+        handoff_observability=(
+            None
+            if handoff_payload is None
+            else handoff_observability_context_from_dict(handoff_payload)
+        ),
         detail=detail if isinstance(detail, dict) else {},
         schema_version=payload["schema_version"],
         allow_legacy_missing_hitl_subcontracts=True,
+        allow_legacy_missing_handoff_subcontract=True,
     )
 
 

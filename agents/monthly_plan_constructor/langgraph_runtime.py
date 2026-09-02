@@ -85,6 +85,7 @@ from agents.observability.contracts import (
     EventType,
     HumanDecisionRecordObservabilityContext,
     HumanDecisionRequestObservabilityContext,
+    build_handoff_observability_context,
     build_human_decision_record_observability_context,
     build_human_decision_request_observability_context,
 )
@@ -1614,6 +1615,10 @@ def _instrumented_persist_handoff(
     handoff_id = artifact.handoff_id
     resume_n = _derive_resume_n(lifecycle)
     package_id = artifact.candidate_package_reference.package_id
+    handoff_observability = build_handoff_observability_context(
+        handoff_type=artifact.handoff_type,
+        target_role_code=artifact.target_role,
+    )
 
     created_key = ConstructorRuntimeEventKey(
         run_id=lifecycle.run_id,
@@ -1635,6 +1640,7 @@ def _instrumented_persist_handoff(
         orchestration_run_id=orchestration_run_id,
         handoff_id=handoff_id,
         package_id=package_id,
+        handoff_observability=handoff_observability,
         detail={
             "schema_version": artifact.schema_version,
             "source_agent": artifact.source_agent,

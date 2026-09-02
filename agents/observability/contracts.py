@@ -26,6 +26,7 @@ AGENT_RUN_SCHEMA_VERSION = "agent_run.v0.1"
 OBSERVABILITY_EVENT_SCHEMA_VERSION = "observability_event.v0.1"
 HUMAN_DECISION_REQUEST_OBSERVABILITY_SCHEMA_VERSION = "human_decision_request.v0.1"
 HUMAN_DECISION_RECORD_OBSERVABILITY_SCHEMA_VERSION = "human_decision_record.v0.1"
+HANDOFF_OBSERVABILITY_SCHEMA_VERSION = "handoff_observability.v0.1"
 STAGE_DEFINITION_SCHEMA_VERSION = "stage_definition.v0.1"
 
 CODE_OBSERVABILITY_CONTRACT_BLOCKER = "OBSERVABILITY_CONTRACT_BLOCKER"
@@ -227,6 +228,7 @@ _KNOWN_SCHEMA_VERSIONS = frozenset(
         OBSERVABILITY_EVENT_SCHEMA_VERSION,
         HUMAN_DECISION_REQUEST_OBSERVABILITY_SCHEMA_VERSION,
         HUMAN_DECISION_RECORD_OBSERVABILITY_SCHEMA_VERSION,
+        HANDOFF_OBSERVABILITY_SCHEMA_VERSION,
         STAGE_DEFINITION_SCHEMA_VERSION,
     }
 )
@@ -1285,6 +1287,84 @@ def human_decision_record_observability_context_from_dict(
     )
 
 
+@dataclass(frozen=True)
+class HandoffObservabilityContext:
+    """Agent-neutral structured professional handoff semantics for observability."""
+
+    schema_version: str
+    handoff_type: str
+    target_role_code: str
+
+    def __post_init__(self) -> None:
+        _require_schema(self.schema_version, HANDOFF_OBSERVABILITY_SCHEMA_VERSION)
+        object.__setattr__(
+            self,
+            "handoff_type",
+            _require_opaque_code(self.handoff_type, "handoff_type"),
+        )
+        object.__setattr__(
+            self,
+            "target_role_code",
+            _require_opaque_code(self.target_role_code, "target_role_code"),
+        )
+        try:
+            assert_no_secrets_in_payload(self.to_dict())
+        except AssertionError:
+            _fail("HandoffObservabilityContext failed secret scan")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "handoff_type": self.handoff_type,
+            "target_role_code": self.target_role_code,
+        }
+
+
+def build_handoff_observability_context(
+    *,
+    handoff_type: Any,
+    target_role_code: Any,
+    schema_version: str = HANDOFF_OBSERVABILITY_SCHEMA_VERSION,
+) -> HandoffObservabilityContext:
+    return HandoffObservabilityContext(
+        schema_version=schema_version,
+        handoff_type=_require_opaque_code(handoff_type, "handoff_type"),
+        target_role_code=_require_opaque_code(target_role_code, "target_role_code"),
+    )
+
+
+def handoff_observability_context_from_dict(payload: Any) -> HandoffObservabilityContext:
+    if not isinstance(payload, Mapping):
+        _fail("handoff_observability must be a mapping")
+    return build_handoff_observability_context(
+        handoff_type=payload.get("handoff_type"),
+        target_role_code=payload.get("target_role_code"),
+        schema_version=payload.get("schema_version", HANDOFF_OBSERVABILITY_SCHEMA_VERSION),
+    )
+
+
+def _validate_handoff_subcontract_for_event(
+    *,
+    event_type: EventType,
+    handoff_observability: Optional[HandoffObservabilityContext],
+    handoff_id: Optional[str],
+    artifact_type: Optional[str],
+    artifact_id: Optional[str],
+    allow_legacy_missing_handoff_subcontract: bool = False,
+) -> None:
+    if event_type is EventType.HANDOFF_CREATED:
+        if handoff_observability is None and not allow_legacy_missing_handoff_subcontract:
+            _fail("HANDOFF_CREATED requires handoff_observability")
+        if handoff_id is None:
+            _fail("HANDOFF_CREATED requires handoff_id")
+        if not allow_legacy_missing_handoff_subcontract:
+            if artifact_type is None or artifact_id is None:
+                _fail("HANDOFF_CREATED requires artifact_type and artifact_id")
+        return
+    if handoff_observability is not None:
+        _fail(f"{event_type.value} must not carry handoff_observability")
+
+
 def _validate_hitl_subcontracts_for_event(
     *,
     event_type: EventType,
@@ -1359,6 +1439,7 @@ class ObservabilityEvent:
     resume_n: int
     human_decision_request: Optional[HumanDecisionRequestObservabilityContext]
     human_decision_record: Optional[HumanDecisionRecordObservabilityContext]
+    handoff_observability: Optional[HandoffObservabilityContext]
     detail: tuple[Any, ...]
 
     def __post_init__(self) -> None:
@@ -1415,6 +1496,11 @@ class ObservabilityEvent:
             HumanDecisionRecordObservabilityContext,
         ):
             _fail("human_decision_record has invalid type")
+        if self.handoff_observability is not None and not isinstance(
+            self.handoff_observability,
+            HandoffObservabilityContext,
+        ):
+            _fail("handoff_observability has invalid type")
         try:
             assert_no_secrets_in_payload(self.to_dict())
         except AssertionError:
@@ -1457,6 +1543,11 @@ class ObservabilityEvent:
                 if self.human_decision_record is None
                 else self.human_decision_record.to_dict()
             ),
+            "handoff_observability": (
+                None
+                if self.handoff_observability is None
+                else self.handoff_observability.to_dict()
+            ),
             "detail": _unfreeze_jsonable(self.detail),
         }
 
@@ -1489,9 +1580,11 @@ def build_observability_event(
     resume_n: int = 0,
     human_decision_request: Optional[HumanDecisionRequestObservabilityContext] = None,
     human_decision_record: Optional[HumanDecisionRecordObservabilityContext] = None,
+    handoff_observability: Optional[HandoffObservabilityContext] = None,
     detail: Optional[Mapping[str, Any]] = None,
     schema_version: str = OBSERVABILITY_EVENT_SCHEMA_VERSION,
     allow_legacy_missing_hitl_subcontracts: bool = False,
+    allow_legacy_missing_handoff_subcontract: bool = False,
 ) -> ObservabilityEvent:
     parsed_type = _require_enum(event_type, EventType, "event_type")
     expected_family = EVENT_FAMILY_BY_TYPE[parsed_type]
@@ -1509,6 +1602,13 @@ def build_observability_event(
     parsed_interrupt_id = _optional_id(interrupt_id, "interrupt_id")
     parsed_decision_id = _optional_id(decision_id, "decision_id")
     parsed_stage_id = _optional_id(stage_id, "stage_id")
+    parsed_handoff_id = _optional_id(handoff_id, "handoff_id")
+    parsed_artifact_type = (
+        None
+        if artifact_type is None
+        else _require_text(artifact_type, "artifact_type", max_len=MAX_ID_LENGTH)
+    )
+    parsed_artifact_id = _optional_id(artifact_id, "artifact_id")
     _validate_hitl_subcontracts_for_event(
         event_type=parsed_type,
         human_decision_request=human_decision_request,
@@ -1517,6 +1617,14 @@ def build_observability_event(
         decision_id=parsed_decision_id,
         stage_id=parsed_stage_id,
         allow_legacy_missing_hitl_subcontracts=allow_legacy_missing_hitl_subcontracts,
+    )
+    _validate_handoff_subcontract_for_event(
+        event_type=parsed_type,
+        handoff_observability=handoff_observability,
+        handoff_id=parsed_handoff_id,
+        artifact_type=parsed_artifact_type,
+        artifact_id=parsed_artifact_id,
+        allow_legacy_missing_handoff_subcontract=allow_legacy_missing_handoff_subcontract,
     )
     return ObservabilityEvent(
         schema_version=schema_version,
@@ -1537,13 +1645,9 @@ def build_observability_event(
         checkpoint_id=_optional_id(checkpoint_id, "checkpoint_id"),
         interrupt_id=parsed_interrupt_id,
         decision_id=parsed_decision_id,
-        artifact_type=(
-            None
-            if artifact_type is None
-            else _require_text(artifact_type, "artifact_type", max_len=MAX_ID_LENGTH)
-        ),
-        artifact_id=_optional_id(artifact_id, "artifact_id"),
-        handoff_id=_optional_id(handoff_id, "handoff_id"),
+        artifact_type=parsed_artifact_type,
+        artifact_id=parsed_artifact_id,
+        handoff_id=parsed_handoff_id,
         tool_name=(
             None if tool_name is None else _require_text(tool_name, "tool_name", max_len=MAX_ID_LENGTH)
         ),
@@ -1554,5 +1658,6 @@ def build_observability_event(
         resume_n=_require_int(resume_n, "resume_n", minimum=0),
         human_decision_request=human_decision_request,
         human_decision_record=human_decision_record,
+        handoff_observability=handoff_observability,
         detail=frozen_detail,
     )

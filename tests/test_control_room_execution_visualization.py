@@ -383,6 +383,11 @@ def _path_snapshot(**overrides: Any) -> AgentRunSnapshot:
             status=HandoffStatus.NOT_STARTED,
             created_at=None,
             persisted_at=None,
+            failed_at=None,
+            handoff_type=None,
+            target_role_code=None,
+            artifact_type=None,
+            artifact_id=None,
             derivation_state=DerivationState.OK,
         ),
         "professional_execution_path": AgentProfessionalExecutionPathView(

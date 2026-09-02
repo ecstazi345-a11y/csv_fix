@@ -39,6 +39,7 @@ from agents.observability.contracts import (
     OperationalStatus,
     TriggerType,
     build_agent_run,
+    build_handoff_observability_context,
     build_human_decision_record_observability_context,
     build_human_decision_request_observability_context,
     build_observability_event,
@@ -130,11 +131,22 @@ def _hitl_record(**overrides: Any):
     return build_human_decision_record_observability_context(**payload)
 
 
+def _handoff_context(**overrides: Any):
+    payload = {
+        "handoff_type": "CONSTRUCTOR_TO_ADMISSION",
+        "target_role_code": "MONTHLY_PLAN_ADMISSION_AGENT",
+    }
+    payload.update(overrides)
+    return build_handoff_observability_context(**payload)
+
+
 def _build_event(**overrides: Any):
-    allow_legacy = overrides.pop("allow_legacy_missing_hitl_subcontracts", False)
+    allow_legacy_hitl = overrides.pop("allow_legacy_missing_hitl_subcontracts", False)
+    allow_legacy_handoff = overrides.pop("allow_legacy_missing_handoff_subcontract", False)
     return build_observability_event(
         **_event_kwargs(**overrides),
-        allow_legacy_missing_hitl_subcontracts=allow_legacy,
+        allow_legacy_missing_hitl_subcontracts=allow_legacy_hitl,
+        allow_legacy_missing_handoff_subcontract=allow_legacy_handoff,
     )
 
 
@@ -769,7 +781,10 @@ class HandoffDerivationTests(unittest.TestCase):
                 "stage_id": "HANDOFF_PREPARATION",
                 "node_name": "persist_handoff",
                 "handoff_id": "handoff-001",
+                "artifact_type": "package",
+                "artifact_id": "pkg-001",
                 "title": "Handoff created",
+                "handoff_observability": _handoff_context(),
                 "detail": {
                     "source_agent": "SHOULD_NOT_DERIVE",
                     "target_role": "SHOULD_NOT_DERIVE",
@@ -794,6 +809,12 @@ class HandoffDerivationTests(unittest.TestCase):
         self.assertEqual(view.status, HandoffStatus.PERSISTED)
         self.assertIsNotNone(view.created_at)
         self.assertIsNotNone(view.persisted_at)
+        self.assertIsNone(view.failed_at)
+        self.assertEqual(view.handoff_type, "CONSTRUCTOR_TO_ADMISSION")
+        self.assertEqual(view.target_role_code, "MONTHLY_PLAN_ADMISSION_AGENT")
+        self.assertEqual(view.artifact_type, "package")
+        self.assertEqual(view.artifact_id, "pkg-001")
+        self.assertEqual(view.derivation_state, DerivationState.OK)
         self.assertNotIn("source_agent", view.__dict__)
         self.assertNotIn("target_role", view.__dict__)
 
@@ -807,7 +828,10 @@ class HandoffDerivationTests(unittest.TestCase):
                 "stage_id": "HANDOFF_PREPARATION",
                 "node_name": "persist_handoff",
                 "handoff_id": "handoff-001",
+                "artifact_type": "package",
+                "artifact_id": "pkg-001",
                 "title": "Handoff created",
+                "handoff_observability": _handoff_context(),
             },
         )
         _append(
@@ -821,10 +845,42 @@ class HandoffDerivationTests(unittest.TestCase):
                 "handoff_id": "handoff-001",
                 "title": "Handoff persist failed",
                 "status": EventStatus.FAILED,
+                "occurred_at": LATER_AT,
             },
         )
         view = self.port.get_run_snapshot("run-001").handoff
         self.assertEqual(view.status, HandoffStatus.PERSIST_FAILED)
+        self.assertEqual(view.failed_at, LATER_AT)
+        self.assertIsNone(view.persisted_at)
+
+    def test_legacy_handoff_incomplete_professional_semantics(self) -> None:
+        _append(
+            self.store,
+            {
+                "event_id": "ho-create-legacy",
+                "event_type": EventType.HANDOFF_CREATED,
+                "family": EventFamily.HANDOFF,
+                "stage_id": "HANDOFF_PREPARATION",
+                "node_name": "persist_handoff",
+                "handoff_id": "handoff-legacy",
+                "title": "Handoff created",
+                "detail": {
+                    "handoff_type": "FAKE_TYPE",
+                    "target_role": "FAKE_ROLE",
+                    "source_agent": "FAKE_AGENT",
+                },
+                "allow_legacy_missing_handoff_subcontract": True,
+            },
+        )
+        view = self.port.get_run_snapshot("run-001").handoff
+        self.assertEqual(view.handoff_id, "handoff-legacy")
+        self.assertEqual(view.status, HandoffStatus.CREATED)
+        self.assertIsNone(view.handoff_type)
+        self.assertIsNone(view.target_role_code)
+        self.assertEqual(view.derivation_state, DerivationState.INCOMPLETE)
+        self.assertNotIn("source_agent", view.__dict__)
+        self.assertNotIn("receiver_observed", view.__dict__)
+        self.assertNotIn("target_run_id", view.__dict__)
 
 
 class ProfessionalExecutionPathTests(unittest.TestCase):

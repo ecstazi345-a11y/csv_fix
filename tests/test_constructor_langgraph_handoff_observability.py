@@ -21,6 +21,7 @@ from agents.monthly_plan_constructor.exception_engine import CODE_AMBIGUOUS_SCOP
 from agents.monthly_plan_constructor.handoff_contracts import (
     ConstructorHandoff,
     ConstructorHandoffError,
+    HANDOFF_TYPE,
     SOURCE_AGENT,
     TARGET_ROLE,
     compute_constructor_handoff_id,
@@ -352,6 +353,18 @@ class TestHappyPathObservability(unittest.TestCase):
         detail = _detail_dict(created)
         self.assertEqual(detail.get("source_agent"), SOURCE_AGENT)
         self.assertEqual(detail.get("target_role"), TARGET_ROLE)
+        context = created.handoff_observability
+        self.assertIsNotNone(context)
+        self.assertEqual(context.handoff_type, HANDOFF_TYPE)
+        self.assertEqual(context.target_role_code, TARGET_ROLE)
+        self.assertEqual(created.artifact_type, "package")
+        self.assertIsNotNone(created.artifact_id)
+        self.assertIsNone(
+            _events_of_type(recorder, run_id, EventType.HANDOFF_PERSISTED)[0].handoff_observability
+        )
+        self.assertIsNone(
+            _events_of_type(recorder, run_id, EventType.RUN_COMPLETED)[0].handoff_observability
+        )
 
     def test_no_full_handoff_payload_leakage(self) -> None:
         run_id = "run-10-3e-minimize"

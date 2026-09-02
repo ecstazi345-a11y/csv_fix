@@ -207,6 +207,11 @@ class AgentHandoffView:
     status: HandoffStatus
     created_at: Optional[datetime]
     persisted_at: Optional[datetime]
+    failed_at: Optional[datetime]
+    handoff_type: Optional[str]
+    target_role_code: Optional[str]
+    artifact_type: Optional[str]
+    artifact_id: Optional[str]
     derivation_state: DerivationState
 
 

@@ -21,6 +21,7 @@ from agents.observability.contracts import (
     CONSTRUCTOR_STAGE_CATALOG,
     EventStatus,
     EventType,
+    HandoffObservabilityContext,
     build_observability_event,
 )
 from agents.observability.recorder import ObservabilityRecorder, RecordResult
@@ -235,6 +236,7 @@ class ConstructorRuntimeInstrumentation:
         detail: Optional[Mapping[str, Any]] = None,
         human_decision_request: Optional[Any] = None,
         human_decision_record: Optional[Any] = None,
+        handoff_observability: Optional[HandoffObservabilityContext] = None,
     ) -> RecordResult:
         """
         Build a canonical ObservabilityEvent and record it.
@@ -280,6 +282,7 @@ class ConstructorRuntimeInstrumentation:
             resume_n=key.resume_n,
             human_decision_request=human_decision_request,
             human_decision_record=human_decision_record,
+            handoff_observability=handoff_observability,
             detail=dict(detail or {}),
         )
         return self._recorder.record_event(event)

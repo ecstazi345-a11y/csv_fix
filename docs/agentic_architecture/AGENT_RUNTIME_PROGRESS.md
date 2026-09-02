@@ -13,10 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof**
-- **NEXT:** ConstructorManagedRuntimeLauncher — connect Run Control to real decoupled Constructor runtime execution (`launch(...)` = accept/schedule authorized runtime; **not** proof of RUNNING; actual RUNNING remains runtime-owned via `RUN_ADVANCING`)
-- **Recovery code HEAD:** `041cea0da21cc066ec42b0a6eea8fa4285f9bf00` (Increment 10.5 on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · **10.5 Separate-Process Durability Proof DONE** · Increment 10 overall **NOT COMPLETE**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** (Local Managed Runtime Backend v0.1)
+- **NEXT:** Increment **10.6** AgentControlRoomQueryPort — headless Control Room read model over durable observability store
+- **Recovery code HEAD:** `4d3d683957c1d77cbdc27fab81904b83a98a360b` (ConstructorManagedRuntimeLauncher on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · **10.5 Separate-Process Durability Proof DONE** · **ConstructorManagedRuntimeLauncher DONE** · 10.6 NOT STARTED · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -4399,5 +4399,118 @@ NEXT
 **ConstructorManagedRuntimeLauncher** — connect Run Control to real decoupled Constructor runtime execution. Contract: `launch(...)` = accept/schedule authorized runtime execution; **not** proof of `RUNNING`; **not** wait for whole graph completion. Actual `RUNNING` remains runtime-owned via `RUN_ADVANCING`.
 
 Remaining accepted sequence: ConstructorManagedRuntimeLauncher → 10.6 AgentControlRoomQueryPort → 10.7 Control Room core → 10.8 HITL visualization → 10.9 Handoff/completion visualization → 10.10 full live-run proof
+
+Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**
+
+---
+
+============================================================
+CHECKPOINT — 2026-09-02
+CONSTRUCTOR MANAGED RUNTIME LAUNCHER
+LOCAL MANAGED RUNTIME BACKEND v0.1
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** first real execution-orchestration bridge — Run Control → authorized launch acceptance → decoupled Constructor runtime → LangGraph → runtime-owned `RUN_ADVANCING` → durable operational projection. **10.6 is NOT implemented in this checkpoint.**
+
+------------------------------------------------------------
+BRIDGE CREATED
+------------------------------------------------------------
+
+```
+Run Control
+  → authorized launch acceptance
+  → ConstructorManagedRuntimeLauncher (thread backend v0.1)
+  → run_constructor_langgraph(...)
+  → bind_mission → RUN_ADVANCING
+  → durable projection RUNNING
+```
+
+Execution orchestration — **not** UI behavior.
+
+------------------------------------------------------------
+EXECUTION MODEL LAW
+------------------------------------------------------------
+
+| Item | Value |
+|------|-------|
+| **Model** | **THREAD** — Local Managed Runtime Backend v0.1 |
+| **Worker thread** | Non-daemon background thread |
+| **Replaceable by** | subprocess worker · external worker · queue-backed worker · container worker · on-prem worker |
+| **Without changing** | Run Control semantics · Constructor professional lifecycle · Observability contracts · future Control Room contracts |
+
+------------------------------------------------------------
+IMPORTANT LIMITATION — MEMORY vs EXECUTION
+------------------------------------------------------------
+
+| Concept | Status |
+|---------|--------|
+| **Process-independent MEMORY** | **PROVEN** (Increment 10.5) |
+| **Process-independent EXECUTION** | **NOT YET PROVEN** |
+
+Worker thread lives inside the host Python process. If the host process dies: worker execution dies. Durable operational memory survives; runtime execution itself does not. **Do not blur these two concepts.**
+
+------------------------------------------------------------
+RUN CONTROL DURABLE BOOTSTRAP
+------------------------------------------------------------
+
+Run Control now optionally receives `durable_store: ObservabilityStore | None`.
+
+When configured:
+
+```
+build AgentRun → create_run(agent_run) → first Class A event (RUN_REQUESTED …)
+```
+
+`StoreObservabilityRecorder` still does **not** auto-create runs. Bootstrap failure: fail-closed via existing control-plane failure semantics. Legacy in-memory recorder path: **UNCHANGED**.
+
+------------------------------------------------------------
+LAUNCH ACCEPTANCE · RUNNING TRUTH · AUTHORIZATION
+------------------------------------------------------------
+
+| Law | Detail |
+|-----|--------|
+| **Protocol** | `ManagedRuntimeLauncher.launch(...) -> None` — **UNCHANGED** |
+| **Meaning** | Accepted/scheduled for decoupled execution — **not** RUNNING · **not** COMPLETED · **not** graph finished |
+| **Run Control result** | `STARTING` after successful launcher acceptance |
+| **Launcher** | Does **not** emit `RUN_ADVANCING`; does **not** mutate `AgentRun` to RUNNING |
+| **Runtime owner** | `bind_mission` entry → `RUN_ADVANCING` → durable projection `RUNNING` |
+| **Authorization** | Same Run-Control-issued `AgentExecutionContext` in worker thread — **no re-issue**; `authorization_id` **preserved** |
+
+------------------------------------------------------------
+WORKER OBSERVABILITY · STREAMLIT · FAILURE
+------------------------------------------------------------
+
+- Worker opens **own** `SqliteObservabilityStore` on **same** SQLite file; builds local `StoreObservabilityRecorder`; **no** shared live connection/store object; `close()` in `finally`
+- **Streamlit independence:** no `streamlit` · no `pages/**` · no `st.session_state` · headless execution **PASS**
+- **Scheduling failure:** propagates → `LAUNCH_OUTCOME_UNKNOWN` / control-plane semantics
+- **Unknown worker exception after acceptance:** does **not** fabricate `RUN_FAILED`; last durable truth remains authoritative
+- **Known terminal paths:** runtime instrumentation emits `RUN_FAILED` / `RUN_ABORTED` / `RUN_COMPLETED`
+- **No kill/stop API** — professional human abort remains separate HITL `RUN_ABORTED` semantics
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+Targeted launcher: **7 / 7 PASS** · Run Control: **30 / 30 PASS** · 10.4: **PASS** · 10.5: **PASS** · Operational Truth: **PASS** · 10.3A–E: **PASS** · Architecture drift: **NO** · Final runtime test state: **COMPLETED**
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+CODE: `4d3d683957c1d77cbdc27fab81904b83a98a360b` · message: `feat(agents): add constructor managed runtime launcher` · BRANCH: `wip/increment-10-agent-control-room` · PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES**
+
+FILES (4): `managed_launcher.py` · `run_control/service.py` · `test_constructor_managed_launcher.py` · `test_run_control_service.py`
+
+Frozen unchanged: Constructor lifecycle/professional logic · ObservabilityStore contracts · LangGraph nodes
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**Increment 10.6** AgentControlRoomQueryPort — do **not** start during this checkpoint.
+
+Remaining: 10.6 Query Port → 10.7 Control Room core → 10.8 HITL visualization → 10.9 Handoff/completion visualization → 10.10 full live-run proof
 
 Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**

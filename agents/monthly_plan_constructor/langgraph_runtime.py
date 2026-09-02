@@ -432,14 +432,27 @@ def build_constructor_langgraph(
                 CODE_LIFECYCLE_CONTRACT_BLOCKER,
                 "persist_handoff requires ConstructorHandoffStore",
             )
-        artifact = build_constructor_handoff(
-            lifecycle,
-            security_policy_version=resolved_security_policy_version,
-            orchestration_run_id=orchestration_run_id,
-            created_at=lifecycle.updated_at,
-        )
-        persist_constructor_handoff(store=handoff_store, handoff=artifact)
-        return {"lifecycle": lifecycle}
+        if instrumentation is None:
+            artifact = build_constructor_handoff(
+                lifecycle,
+                security_policy_version=resolved_security_policy_version,
+                orchestration_run_id=orchestration_run_id,
+                created_at=lifecycle.updated_at,
+            )
+            persist_constructor_handoff(store=handoff_store, handoff=artifact)
+            return {"lifecycle": lifecycle}
+        stamp = event_stamp or lifecycle.updated_at
+        return {
+            "lifecycle": _instrumented_persist_handoff(
+                lifecycle,
+                node_name=NODE_PERSIST_HANDOFF,
+                instrumentation=instrumentation,
+                occurred_at=stamp,
+                handoff_store=handoff_store,
+                security_policy_version=resolved_security_policy_version,
+                orchestration_run_id=orchestration_run_id,
+            )
+        }
 
     def route(state: ConstructorGraphState) -> str:
         return _route_by_status(
@@ -1317,3 +1330,164 @@ def _instrumented_revalidate_reality_refresh(
         )
 
     return updated
+
+
+def _safe_persistence_error_detail(exc: BaseException) -> dict[str, str]:
+    detail: dict[str, str] = {"exception_type": type(exc).__name__}
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and code.strip():
+        detail["error_code"] = code.strip()
+    return detail
+
+
+def _emit_handoff_persist_failed(
+    *,
+    lifecycle: ConstructorLifecycleState,
+    handoff_id: str,
+    node_name: str,
+    instrumentation: ConstructorRuntimeInstrumentation,
+    occurred_at: datetime,
+    exc: BaseException,
+    orchestration_run_id: Optional[str],
+) -> None:
+    resume_n = _derive_resume_n(lifecycle)
+    failed_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.HANDOFF_PERSIST_FAILED,
+        stage_id="HANDOFF_PERSISTENCE",
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=resume_n,
+        semantic_occurrence_key=f"handoff-{handoff_id}/persist-failed",
+        artifact_correlation_id=handoff_id,
+    )
+    instrumentation.emit(
+        key=failed_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Handoff persistence failed",
+        status=EventStatus.FAILED,
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        orchestration_run_id=orchestration_run_id,
+        handoff_id=handoff_id,
+        detail=_safe_persistence_error_detail(exc),
+    )
+
+
+def _instrumented_persist_handoff(
+    lifecycle: ConstructorLifecycleState,
+    *,
+    node_name: str,
+    instrumentation: ConstructorRuntimeInstrumentation,
+    occurred_at: datetime,
+    handoff_store: ConstructorHandoffStore,
+    security_policy_version: str,
+    orchestration_run_id: Optional[str],
+) -> ConstructorLifecycleState:
+    artifact = build_constructor_handoff(
+        lifecycle,
+        security_policy_version=security_policy_version,
+        orchestration_run_id=orchestration_run_id,
+        created_at=lifecycle.updated_at,
+    )
+    handoff_id = artifact.handoff_id
+    resume_n = _derive_resume_n(lifecycle)
+    package_id = artifact.candidate_package_reference.package_id
+
+    created_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.HANDOFF_CREATED,
+        stage_id="HANDOFF_PREPARATION",
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=resume_n,
+        semantic_occurrence_key=f"handoff-{handoff_id}",
+        artifact_correlation_id=handoff_id,
+    )
+    instrumentation.emit(
+        key=created_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Handoff created",
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        orchestration_run_id=orchestration_run_id,
+        handoff_id=handoff_id,
+        package_id=package_id,
+        detail={
+            "schema_version": artifact.schema_version,
+            "source_agent": artifact.source_agent,
+            "target_role": artifact.target_role,
+            "candidate_count": str(artifact.candidate_count),
+        },
+    )
+
+    try:
+        persist_result = persist_constructor_handoff(store=handoff_store, handoff=artifact)
+    except Exception as persist_exc:
+        try:
+            _emit_handoff_persist_failed(
+                lifecycle=lifecycle,
+                handoff_id=handoff_id,
+                node_name=node_name,
+                instrumentation=instrumentation,
+                occurred_at=occurred_at,
+                exc=persist_exc,
+                orchestration_run_id=orchestration_run_id,
+            )
+        except Exception as recorder_exc:
+            raise persist_exc from recorder_exc
+        raise persist_exc
+
+    persisted_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.HANDOFF_PERSISTED,
+        stage_id="HANDOFF_PERSISTENCE",
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=resume_n,
+        semantic_occurrence_key=f"handoff-{handoff_id}/persist",
+        artifact_correlation_id=handoff_id,
+    )
+    instrumentation.emit(
+        key=persisted_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Handoff persisted",
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        orchestration_run_id=orchestration_run_id,
+        handoff_id=handoff_id,
+        package_id=package_id,
+        detail={
+            "persistence_status": persist_result.status,
+            "payload_digest": persist_result.payload_digest,
+        },
+    )
+
+    completed_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.RUN_COMPLETED,
+        stage_id="RUN_COMPLETION",
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=resume_n,
+        semantic_occurrence_key="completion",
+        artifact_correlation_id=None,
+    )
+    instrumentation.emit(
+        key=completed_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Constructor run completed",
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        orchestration_run_id=orchestration_run_id,
+        handoff_id=handoff_id,
+        detail={
+            "professional_status": lifecycle.status,
+        },
+    )
+
+    return lifecycle

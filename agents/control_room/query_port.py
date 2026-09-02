@@ -17,6 +17,7 @@ from agents.control_room.derivations import (
     derive_handoff_view,
     derive_human_decision_surface,
     derive_human_wait_view,
+    derive_professional_execution_path,
     derive_stage_view,
 )
 from agents.control_room.dtos import AgentRunDetail, AgentRunListView, AgentRunSnapshot, AgentRunSummary
@@ -138,6 +139,11 @@ class AgentControlRoomQueryPort:
                 events_complete=events_complete,
             ),
             handoff=derive_handoff_view(run, events, events_complete=events_complete),
+            professional_execution_path=derive_professional_execution_path(
+                run,
+                events,
+                events_complete=events_complete,
+            ),
             timeline_events=build_event_timeline(events),
             events_complete=events_complete,
             read_at=read_at,

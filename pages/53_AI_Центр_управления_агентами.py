@@ -11,7 +11,7 @@ from typing import Any, Optional
 import pandas as pd
 import streamlit as st
 
-from agents.control_room.dtos import AgentRunListView, AgentRunSnapshot, DerivationState
+from agents.control_room.dtos import AgentRunListView, AgentRunSnapshot, DerivationState, ProfessionalExecutionStepKind
 from agents.control_room.errors import (
     ControlRoomQueryBlockerError,
     ControlRoomQueryError,
@@ -23,24 +23,37 @@ from agents.control_room.factory import (
     build_agent_control_room_query_port,
 )
 from agents.control_room.presentation import (
+    AUTHORITY_NOT_MODELED_RU,
     CATALOG_INCOMPLETE_FILTER_RU,
     EMPTY_RUNS_INCOMPLETE_CATALOG_RU,
     EMPTY_RUNS_RU,
     EVENTS_COMPLETE_FALSE_RU,
+    EXECUTION_PATH_INCOMPLETE_RU,
+    HUMAN_DECISION_HEADER_RU,
+    POST_DECISION_HEADER_RU,
     RUNS_COMPLETE_FALSE_RU,
     WAITING_FOR_HUMAN_RU,
     all_operational_status_options,
+    artifact_type_ru,
     catalog_filter_values,
+    decision_code_ru,
+    derivation_execution_path_warning,
     derivation_stage_warning,
+    execution_path_summary_rows,
+    execution_step_title,
     format_timestamp_moscow,
     handoff_status_ru,
+    human_decision_reason_text,
     operational_status_ru,
+    post_decision_lines,
+    professional_execution_state_ru,
     run_radio_label,
     short_run_id,
     stage_display_state_ru,
-    stage_history_rows,
+    stage_step_duration,
     status_icon,
     timeline_rows,
+    tool_name_ru,
 )
 from agents.control_room.query_port import AgentControlRoomQueryPort
 from agents.observability.contracts import OperationalStatus
@@ -197,6 +210,85 @@ def _render_run_list(list_view: AgentRunListView) -> Optional[str]:
     return selected_id
 
 
+def _render_human_decision_block(snapshot: AgentRunSnapshot, step_index: int) -> None:
+    path = snapshot.professional_execution_path
+    if step_index >= len(path.steps):
+        return
+    step = path.steps[step_index]
+    if step.step_kind is not ProfessionalExecutionStepKind.HUMAN_DECISION:
+        return
+    surface = step.human_decision
+    if surface is None:
+        return
+
+    st.markdown(f"**{HUMAN_DECISION_HEADER_RU}**")
+    if surface.wait.wait_ordinal is not None:
+        st.write(f"**Ожидание:** № {surface.wait.wait_ordinal}")
+    st.write(f"**Почему остановлена автономность:** {human_decision_reason_text(surface)}")
+
+    if surface.request is not None and surface.request.allowed_decisions:
+        labels = [decision_code_ru(code) for code in surface.request.allowed_decisions]
+        st.write(f"**Допустимые решения:** {', '.join(labels)}")
+        st.write(f"**Основания:** {len(surface.request.evidence_refs)} структурированных ссылок")
+        if surface.request.evidence_refs:
+            with st.expander("Идентификаторы оснований"):
+                for ref in surface.request.evidence_refs:
+                    st.code(ref)
+    elif surface.request is not None:
+        st.write("**Допустимые решения:** —")
+
+    st.caption(AUTHORITY_NOT_MODELED_RU)
+
+    if surface.decision is not None:
+        st.write(f"**Решение:** {decision_code_ru(surface.decision.decision_code)}")
+        st.write(
+            f"**Решение отправил:** {surface.decision.actor_id} "
+            f"({surface.decision.actor_type})"
+        )
+        st.write(f"**Время:** {format_timestamp_moscow(surface.decision.received_at)} МСК")
+
+    post_lines = post_decision_lines(surface)
+    if post_lines:
+        st.markdown(f"**{POST_DECISION_HEADER_RU}**")
+        for line in post_lines:
+            st.write(f"• {line}")
+
+
+def _render_execution_step_detail(snapshot: AgentRunSnapshot, step_index: int) -> None:
+    step = snapshot.professional_execution_path.steps[step_index]
+    st.markdown(f"**{execution_step_title(step)}**")
+    st.write(f"**Состояние:** {professional_execution_state_ru(step.professional_state)}")
+    st.write(f"**Начало:** {format_timestamp_moscow(step.started_at)} МСК")
+    if step.completed_at is not None:
+        st.write(f"**Окончание:** {format_timestamp_moscow(step.completed_at)} МСК")
+    duration = stage_step_duration(step, read_at=snapshot.read_at)
+    if duration != "—":
+        st.write(f"**Длительность:** {duration}")
+    if step.attempt_n > 1:
+        st.write(f"**Попытка:** {step.attempt_n}")
+    if step.resume_n > 0:
+        st.write(f"**Эпизод возобновления:** {step.resume_n}")
+
+    if step.tools:
+        st.write("**Использованные инструменты:**")
+        for tool in step.tools:
+            st.write(f"• {tool_name_ru(tool.tool_name)}")
+
+    if step.artifacts:
+        st.write("**Созданные результаты:**")
+        for artifact in step.artifacts:
+            st.write(f"• {artifact_type_ru(artifact.artifact_type)}")
+            st.caption(f"ID: …{artifact.artifact_id[-4:] if len(artifact.artifact_id) > 4 else artifact.artifact_id}")
+
+    if step.step_kind is ProfessionalExecutionStepKind.HUMAN_DECISION:
+        _render_human_decision_block(snapshot, step_index)
+
+    with st.expander("Технические идентификаторы этапа"):
+        st.code(step.step_id)
+        if step.stage_id:
+            st.code(step.stage_id)
+
+
 def _render_selected_run(snapshot: AgentRunSnapshot) -> None:
     run = snapshot.run
     st.subheader("Выбранный запуск")
@@ -211,7 +303,8 @@ def _render_selected_run(snapshot: AgentRunSnapshot) -> None:
     st.write(f"**Месяц:** {run.month_key}")
     st.write(f"**Миссия:** {run.mission_id}")
     st.write(f"**Запрошен:** {format_timestamp_moscow(run.requested_at)} МСК")
-    st.write(f"**Начат:** {format_timestamp_moscow(run.started_at)} МСК")
+    if run.started_at is not None:
+        st.write(f"**Начат:** {format_timestamp_moscow(run.started_at)} МСК")
     st.write(f"**Обновлён:** {format_timestamp_moscow(run.updated_at)} МСК")
     if run.completed_at is not None:
         st.write(f"**Завершён:** {format_timestamp_moscow(run.completed_at)} МСК")
@@ -219,35 +312,50 @@ def _render_selected_run(snapshot: AgentRunSnapshot) -> None:
 
     with st.expander("Технические идентификаторы"):
         st.code(run.run_id)
+        if run.orchestration_run_id:
+            st.code(f"orchestration: {run.orchestration_run_id}")
 
     handoff = snapshot.handoff
     if run.operational_status == OperationalStatus.COMPLETED.value:
         if handoff.status.value != "NOT_STARTED":
             st.write(f"**Передача:** {handoff_status_ru(handoff.status.value)}")
 
+    path_warning = derivation_execution_path_warning(snapshot.professional_execution_path.derivation_state)
+    if path_warning:
+        st.warning(path_warning)
+
     stage_warning = derivation_stage_warning(snapshot.stage.derivation_state)
     if stage_warning:
         st.warning(stage_warning)
 
+    if not snapshot.professional_execution_path.history_complete:
+        st.info(EXECUTION_PATH_INCOMPLETE_RU)
+    elif not snapshot.events_complete:
+        st.info(EVENTS_COMPLETE_FALSE_RU)
+
+    st.markdown("### Профессиональный маршрут выполнения")
+    exec_path = snapshot.professional_execution_path
+    if exec_path.steps:
+        summary_df = pd.DataFrame(list(execution_path_summary_rows(exec_path, read_at=snapshot.read_at)))
+        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+        for index in range(len(exec_path.steps)):
+            step = exec_path.steps[index]
+            label = f"{index + 1}. {execution_step_title(step)}"
+            with st.expander(label, expanded=step.step_kind is ProfessionalExecutionStepKind.HUMAN_DECISION):
+                _render_execution_step_detail(snapshot, index)
+    else:
+        st.caption("В доступном окне событий профессиональный маршрут не зафиксирован.")
+
     current = snapshot.stage.current_stage
     if snapshot.stage.derivation_state is DerivationState.OK and current is not None:
-        st.markdown("**Текущая стадия**")
+        st.markdown("**Текущая стадия (сводка)**")
         state = current.display_state.value
         st.write(f"{current.stage_id} — {stage_display_state_ru(state)}")
         st.caption(f"Начало: {format_timestamp_moscow(current.started_at)} МСК")
 
-    if snapshot.stage.occurrences:
-        st.markdown("**История стадий**")
-        st.dataframe(
-            pd.DataFrame(list(stage_history_rows(snapshot.stage.occurrences))),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    if not snapshot.events_complete:
-        st.info(EVENTS_COMPLETE_FALSE_RU)
-
-    st.markdown("**Доступное окно событий**")
+    st.markdown("### Доступное окно событий")
+    st.caption("Вторичная служебная лента — не полная история.")
     if snapshot.timeline_events:
         st.dataframe(
             pd.DataFrame(list(timeline_rows(snapshot.timeline_events))),

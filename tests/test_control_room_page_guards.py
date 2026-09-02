@@ -27,6 +27,7 @@ from agents.control_room.dtos import (
     AgentHandoffView,
     AgentHumanDecisionSurfaceView,
     AgentHumanWaitView,
+    AgentProfessionalExecutionPathView,
     AgentRunDetail,
     AgentRunListView,
     AgentRunSnapshot,
@@ -35,13 +36,25 @@ from agents.control_room.dtos import (
     AgentStageView,
     DerivationState,
     HandoffStatus,
+    HumanDecisionConsequenceView,
+    HumanDecisionRecordView,
+    HumanDecisionRequestView,
+    ProfessionalExecutionState,
+    ProfessionalExecutionStepKind,
+    ProfessionalExecutionStepView,
+    RealityRefreshStepView,
     StageDisplayState,
+    WaitClosedBy,
 )
 from agents.control_room.presentation import (
+    AUTHORITY_NOT_MODELED_RU,
     EVENTS_COMPLETE_FALSE_RU,
+    EXECUTION_PATH_INCOMPLETE_RU,
+    HUMAN_DECISION_HEADER_RU,
     RUNS_COMPLETE_FALSE_RU,
     WAITING_FOR_HUMAN_RU,
     operational_status_ru,
+    professional_stage_id_ru,
 )
 from agents.observability.contracts import OperationalStatus
 
@@ -285,6 +298,28 @@ def _snapshot(**overrides: Any) -> AgentRunSnapshot:
             created_at=None,
             persisted_at=None,
             derivation_state=DerivationState.OK,
+        ),
+        "professional_execution_path": AgentProfessionalExecutionPathView(
+            steps=(
+                ProfessionalExecutionStepView(
+                    step_kind=ProfessionalExecutionStepKind.STAGE,
+                    step_id="evt-1",
+                    stage_id="stage-1",
+                    professional_state=ProfessionalExecutionState.RUNNING,
+                    started_at=FIXED_AT,
+                    completed_at=None,
+                    attempt_n=1,
+                    resume_n=0,
+                    derivation_state=DerivationState.OK,
+                    tools=(),
+                    artifacts=(),
+                    human_decision=None,
+                    reality_refresh=None,
+                    handoff_id=None,
+                ),
+            ),
+            derivation_state=DerivationState.OK,
+            history_complete=True,
         ),
         "timeline_events": (
             AgentEventView(

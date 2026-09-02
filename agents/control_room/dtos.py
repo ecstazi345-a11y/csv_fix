@@ -36,6 +36,29 @@ class WaitClosedBy(str, Enum):
     ABORTED = "ABORTED"
 
 
+class ProfessionalExecutionStepKind(str, Enum):
+    STAGE = "STAGE"
+    HUMAN_DECISION = "HUMAN_DECISION"
+    REALITY_REFRESH = "REALITY_REFRESH"
+    HANDOFF_MARKER = "HANDOFF_MARKER"
+
+
+class ProfessionalExecutionState(str, Enum):
+    COMPLETED = "COMPLETED"
+    RUNNING = "RUNNING"
+    WAITING_FOR_HUMAN = "WAITING_FOR_HUMAN"
+    FAILED = "FAILED"
+    INCOMPLETE = "INCOMPLETE"
+    INCONSISTENT = "INCONSISTENT"
+
+
+class ToolExecutionStatus(str, Enum):
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    DENIED = "DENIED"
+    FAILED = "FAILED"
+
+
 @dataclass(frozen=True)
 class AgentRunSummary:
     run_id: str
@@ -188,12 +211,68 @@ class AgentHandoffView:
 
 
 @dataclass(frozen=True)
+class StageToolExecutionView:
+    tool_name: str
+    status: ToolExecutionStatus
+    stage_id: str
+    attempt_n: int
+    resume_n: int
+    started_at: datetime
+    completed_at: Optional[datetime]
+
+
+@dataclass(frozen=True)
+class StageArtifactView:
+    artifact_type: str
+    artifact_id: str
+    stage_id: str
+    resume_n: int
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class RealityRefreshStepView:
+    stage_id: str
+    resume_n: int
+    started_at: datetime
+    completed_at: Optional[datetime]
+    failed_at: Optional[datetime]
+    derivation_state: DerivationState
+
+
+@dataclass(frozen=True)
+class ProfessionalExecutionStepView:
+    step_kind: ProfessionalExecutionStepKind
+    step_id: str
+    stage_id: Optional[str]
+    professional_state: ProfessionalExecutionState
+    started_at: datetime
+    completed_at: Optional[datetime]
+    attempt_n: int
+    resume_n: int
+    derivation_state: DerivationState
+    tools: tuple[StageToolExecutionView, ...]
+    artifacts: tuple[StageArtifactView, ...]
+    human_decision: Optional[AgentHumanDecisionSurfaceView]
+    reality_refresh: Optional[RealityRefreshStepView]
+    handoff_id: Optional[str]
+
+
+@dataclass(frozen=True)
+class AgentProfessionalExecutionPathView:
+    steps: tuple[ProfessionalExecutionStepView, ...]
+    derivation_state: DerivationState
+    history_complete: bool
+
+
+@dataclass(frozen=True)
 class AgentRunSnapshot:
     run: AgentRunDetail
     stage: AgentStageView
     human_wait: AgentHumanWaitView
     human_decision_surface: AgentHumanDecisionSurfaceView
     handoff: AgentHandoffView
+    professional_execution_path: AgentProfessionalExecutionPathView
     timeline_events: tuple[AgentEventView, ...]
     events_complete: bool
     read_at: datetime

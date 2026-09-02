@@ -18,7 +18,10 @@ from typing import Any, Callable, Optional
 from agents.control_room.dtos import (
     DerivationState,
     HandoffStatus,
+    ProfessionalExecutionState,
+    ProfessionalExecutionStepKind,
     StageDisplayState,
+    ToolExecutionStatus,
     WaitClosedBy,
 )
 from agents.control_room.errors import (
@@ -822,6 +825,296 @@ class HandoffDerivationTests(unittest.TestCase):
         )
         view = self.port.get_run_snapshot("run-001").handoff
         self.assertEqual(view.status, HandoffStatus.PERSIST_FAILED)
+
+
+class ProfessionalExecutionPathTests(unittest.TestCase):
+    def _for_each_store(self, test_fn: Callable[[ObservabilityStore, str], None]) -> None:
+        for label, factory in STORE_FACTORIES:
+            with self.subTest(store=label):
+                store = factory()
+                try:
+                    test_fn(store, label)
+                finally:
+                    close = getattr(store, "close", None)
+                    if callable(close):
+                        close()
+
+    def test_stage_steps_in_event_order(self) -> None:
+        def exercise(store: ObservabilityStore, _label: str) -> None:
+            store.create_run(_build_run(operational_status=OperationalStatus.RUNNING, started_at=FIXED_AT))
+            _append(store, _stage_started("s1", stage_id="AUTHORIZATION"))
+            _append(store, _stage_completed("s1-done", stage_id="AUTHORIZATION"))
+            _append(store, _stage_started("s2", stage_id="REALITY_READ"))
+            path = AgentControlRoomQueryPort(store).get_run_snapshot("run-001").professional_execution_path
+            self.assertEqual(len(path.steps), 2)
+            self.assertEqual(path.steps[0].step_kind, ProfessionalExecutionStepKind.STAGE)
+            self.assertEqual(path.steps[0].stage_id, "AUTHORIZATION")
+            self.assertEqual(path.steps[0].professional_state, ProfessionalExecutionState.COMPLETED)
+            self.assertEqual(path.steps[1].stage_id, "REALITY_READ")
+            self.assertEqual(path.steps[1].professional_state, ProfessionalExecutionState.RUNNING)
+
+        self._for_each_store(exercise)
+
+    def test_tools_correlated_to_stage(self) -> None:
+        def exercise(store: ObservabilityStore, _label: str) -> None:
+            store.create_run(_build_run(operational_status=OperationalStatus.RUNNING, started_at=FIXED_AT))
+            _append(store, _stage_started("s1", stage_id="REALITY_READ"))
+            _append(
+                store,
+                {
+                    "event_id": "tool-start",
+                    "event_type": EventType.TOOL_CALL_STARTED,
+                    "family": EventFamily.TOOL,
+                    "stage_id": "REALITY_READ",
+                    "node_name": "load_reality",
+                    "tool_name": "load_constructor_scope",
+                    "title": "Tool started",
+                },
+            )
+            _append(
+                store,
+                {
+                    "event_id": "tool-done",
+                    "event_type": EventType.TOOL_CALL_COMPLETED,
+                    "family": EventFamily.TOOL,
+                    "stage_id": "REALITY_READ",
+                    "node_name": "load_reality",
+                    "tool_name": "load_constructor_scope",
+                    "title": "Tool completed",
+                    "occurred_at": LATER_AT,
+                },
+            )
+            _append(store, _stage_completed("s1-done", stage_id="REALITY_READ"))
+            step = AgentControlRoomQueryPort(store).get_run_snapshot("run-001").professional_execution_path.steps[0]
+            self.assertEqual(len(step.tools), 1)
+            self.assertEqual(step.tools[0].tool_name, "load_constructor_scope")
+            self.assertEqual(step.tools[0].status, ToolExecutionStatus.COMPLETED)
+
+        self._for_each_store(exercise)
+
+    def test_artifacts_correlated_to_stage(self) -> None:
+        def exercise(store: ObservabilityStore, _label: str) -> None:
+            store.create_run(_build_run(operational_status=OperationalStatus.RUNNING, started_at=FIXED_AT))
+            _append(store, _stage_started("s1", stage_id="CANDIDATE_ASSEMBLY"))
+            _append(
+                store,
+                {
+                    "event_id": "art-1",
+                    "event_type": EventType.ARTIFACT_CREATED,
+                    "family": EventFamily.ARTIFACT,
+                    "stage_id": "CANDIDATE_ASSEMBLY",
+                    "node_name": "assemble",
+                    "artifact_type": "package",
+                    "artifact_id": "pkg-001",
+                    "title": "Package created",
+                },
+            )
+            _append(store, _stage_completed("s1-done", stage_id="CANDIDATE_ASSEMBLY"))
+            step = AgentControlRoomQueryPort(store).get_run_snapshot("run-001").professional_execution_path.steps[0]
+            self.assertEqual(len(step.artifacts), 1)
+            self.assertEqual(step.artifacts[0].artifact_type, "package")
+            self.assertEqual(step.artifacts[0].artifact_id, "pkg-001")
+
+        self._for_each_store(exercise)
+
+    def test_human_gate_step_inserted(self) -> None:
+        def exercise(store: ObservabilityStore, _label: str) -> None:
+            store.create_run(
+                _build_run(
+                    operational_status=OperationalStatus.WAITING_FOR_HUMAN,
+                    interrupt_id="intr-001",
+                )
+            )
+            _append(
+                store,
+                {
+                    "event_id": "wait-1",
+                    "event_type": EventType.HUMAN_WAIT_STARTED,
+                    "family": EventFamily.HITL,
+                    "stage_id": "HUMAN_GATE",
+                    "resume_n": 1,
+                    "interrupt_id": "intr-001",
+                    "title": "Wait",
+                    "human_decision_request": _hitl_request(),
+                },
+            )
+            path = AgentControlRoomQueryPort(store).get_run_snapshot("run-001").professional_execution_path
+            hitl_steps = [s for s in path.steps if s.step_kind is ProfessionalExecutionStepKind.HUMAN_DECISION]
+            self.assertEqual(len(hitl_steps), 1)
+            self.assertEqual(hitl_steps[0].stage_id, "HUMAN_GATE")
+            self.assertIsNotNone(hitl_steps[0].human_decision)
+            self.assertEqual(hitl_steps[0].human_decision.request.reason_code, "AMBIGUOUS_SCOPE")
+
+        self._for_each_store(exercise)
+
+    def test_reality_refresh_step_inserted(self) -> None:
+        def exercise(store: ObservabilityStore, _label: str) -> None:
+            store.create_run(_build_run(operational_status=OperationalStatus.RUNNING, resume_n=1))
+            _append(
+                store,
+                {
+                    "event_id": "rr-start",
+                    "event_type": EventType.REALITY_REFRESH_STARTED,
+                    "family": EventFamily.REALITY,
+                    "stage_id": "REALITY_REVALIDATION",
+                    "resume_n": 1,
+                    "title": "Refresh started",
+                },
+            )
+            _append(
+                store,
+                {
+                    "event_id": "rr-done",
+                    "event_type": EventType.REALITY_REFRESH_COMPLETED,
+                    "family": EventFamily.REALITY,
+                    "stage_id": "REALITY_REVALIDATION",
+                    "resume_n": 1,
+                    "title": "Refresh done",
+                    "occurred_at": LATER_AT,
+                },
+            )
+            path = AgentControlRoomQueryPort(store).get_run_snapshot("run-001").professional_execution_path
+            refresh_steps = [s for s in path.steps if s.step_kind is ProfessionalExecutionStepKind.REALITY_REFRESH]
+            self.assertEqual(len(refresh_steps), 1)
+            self.assertEqual(refresh_steps[0].professional_state, ProfessionalExecutionState.COMPLETED)
+            self.assertIsNotNone(refresh_steps[0].reality_refresh.completed_at)
+
+        self._for_each_store(exercise)
+
+    def test_multi_wait_separated_in_path(self) -> None:
+        def exercise(store: ObservabilityStore, _label: str) -> None:
+            store.create_run(_build_run(operational_status=OperationalStatus.WAITING_FOR_HUMAN, resume_n=2))
+            _append(
+                store,
+                {
+                    "event_id": "wait-1",
+                    "event_type": EventType.HUMAN_WAIT_STARTED,
+                    "family": EventFamily.HITL,
+                    "stage_id": "HUMAN_GATE",
+                    "resume_n": 1,
+                    "interrupt_id": "intr-a",
+                    "human_decision_request": _hitl_request(reason_code="REASON_A"),
+                },
+            )
+            _append(
+                store,
+                {
+                    "event_id": "dec-1",
+                    "event_type": EventType.HUMAN_DECISION_RECEIVED,
+                    "family": EventFamily.HITL,
+                    "stage_id": "HUMAN_GATE",
+                    "resume_n": 1,
+                    "interrupt_id": "intr-a",
+                    "decision_id": "dec-a",
+                    "human_decision_record": _hitl_record(decision_code="CLARIFY_SCOPE"),
+                },
+            )
+            _append(
+                store,
+                {
+                    "event_id": "res-1",
+                    "event_type": EventType.RUN_RESUMED,
+                    "family": EventFamily.HITL,
+                    "stage_id": "HUMAN_GATE",
+                    "resume_n": 1,
+                    "decision_id": "dec-a",
+                },
+            )
+            _append(
+                store,
+                {
+                    "event_id": "rr-start",
+                    "event_type": EventType.REALITY_REFRESH_STARTED,
+                    "family": EventFamily.REALITY,
+                    "stage_id": "REALITY_REVALIDATION",
+                    "resume_n": 1,
+                },
+            )
+            _append(
+                store,
+                {
+                    "event_id": "rr-done",
+                    "event_type": EventType.REALITY_REFRESH_COMPLETED,
+                    "family": EventFamily.REALITY,
+                    "stage_id": "REALITY_REVALIDATION",
+                    "resume_n": 1,
+                    "occurred_at": LATER_AT,
+                },
+            )
+            _append(store, _stage_started("work", stage_id="CANDIDATE_ASSEMBLY", resume_n=1))
+            _append(
+                store,
+                {
+                    "event_id": "wait-2",
+                    "event_type": EventType.HUMAN_WAIT_STARTED,
+                    "family": EventFamily.HITL,
+                    "stage_id": "HUMAN_GATE",
+                    "resume_n": 2,
+                    "interrupt_id": "intr-b",
+                    "occurred_at": EVEN_LATER_AT,
+                    "human_decision_request": _hitl_request(reason_code="REASON_B"),
+                },
+            )
+            path = AgentControlRoomQueryPort(store).get_run_snapshot("run-001").professional_execution_path
+            hitl_steps = [s for s in path.steps if s.step_kind is ProfessionalExecutionStepKind.HUMAN_DECISION]
+            self.assertEqual(len(hitl_steps), 2)
+            self.assertEqual(hitl_steps[0].human_decision.request.reason_code, "REASON_A")
+            self.assertEqual(hitl_steps[0].human_decision.decision.decision_code, "CLARIFY_SCOPE")
+            self.assertEqual(hitl_steps[1].human_decision.request.reason_code, "REASON_B")
+            self.assertIsNone(hitl_steps[1].human_decision.decision)
+            self.assertIsNotNone(hitl_steps[0].human_decision.consequence.reality_refresh_completed_at)
+
+        self._for_each_store(exercise)
+
+    def test_incomplete_history_flag(self) -> None:
+        def exercise(store: ObservabilityStore, _label: str) -> None:
+            store.create_run(_build_run())
+            for index in range(3):
+                _append(
+                    store,
+                    {
+                        "event_id": f"evt-{index}",
+                        "event_type": EventType.RUN_REQUESTED if index == 0 else EventType.RUN_ADVANCING,
+                        "family": EventFamily.RUN_CONTROL,
+                        "title": f"event {index}",
+                        "occurred_at": FIXED_AT + timedelta(seconds=index),
+                    },
+                )
+            path = AgentControlRoomQueryPort(store).get_run_snapshot("run-001", event_limit=2).professional_execution_path
+            self.assertFalse(path.history_complete)
+            self.assertEqual(path.derivation_state, DerivationState.INCOMPLETE)
+
+        self._for_each_store(exercise)
+
+    def test_no_detail_fallback_on_path(self) -> None:
+        def exercise(store: ObservabilityStore, _label: str) -> None:
+            store.create_run(
+                _build_run(
+                    operational_status=OperationalStatus.WAITING_FOR_HUMAN,
+                    interrupt_id="intr-001",
+                )
+            )
+            _append(
+                store,
+                {
+                    "event_id": "wait-fake",
+                    "event_type": EventType.HUMAN_WAIT_STARTED,
+                    "family": EventFamily.HITL,
+                    "stage_id": "HUMAN_GATE",
+                    "resume_n": 1,
+                    "interrupt_id": "intr-001",
+                    "detail": {
+                        "reason_code": "FAKE_REASON",
+                        "allowed_decisions": ["FAKE"],
+                    },
+                    "allow_legacy_missing_hitl_subcontracts": True,
+                },
+            )
+            step = AgentControlRoomQueryPort(store).get_run_snapshot("run-001").professional_execution_path.steps[0]
+            self.assertEqual(step.human_decision.request.reason_code, "")
+            self.assertNotIn("FAKE", step.human_decision.request.allowed_decisions)
+
+        self._for_each_store(exercise)
 
 
 class QueryPortValidationTests(unittest.TestCase):

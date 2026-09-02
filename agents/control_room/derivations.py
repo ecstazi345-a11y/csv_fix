@@ -15,6 +15,7 @@ from agents.control_room.dtos import (
     AgentHandoffView,
     AgentHumanDecisionSurfaceView,
     AgentHumanWaitView,
+    AgentProfessionalExecutionPathView,
     AgentRunDetail,
     AgentRunSummary,
     AgentStageOccurrenceView,
@@ -24,7 +25,14 @@ from agents.control_room.dtos import (
     HumanDecisionConsequenceView,
     HumanDecisionRecordView,
     HumanDecisionRequestView,
+    ProfessionalExecutionState,
+    ProfessionalExecutionStepKind,
+    ProfessionalExecutionStepView,
+    RealityRefreshStepView,
+    StageArtifactView,
     StageDisplayState,
+    StageToolExecutionView,
+    ToolExecutionStatus,
     WaitClosedBy,
 )
 from agents.observability.contracts import (
@@ -721,4 +729,562 @@ def derive_human_decision_surface(
         decision=decision,
         consequence=consequence,
         authority_modeled=False,
+    )
+
+
+def _stage_correlation_key(
+    stage_id: str,
+    attempt_n: int,
+    resume_n: int,
+) -> tuple[str, int, int]:
+    return (stage_id, attempt_n, resume_n)
+
+
+def _collect_stage_tools(
+    events: tuple[ObservabilityEvent, ...],
+) -> dict[tuple[str, int, int], tuple[StageToolExecutionView, ...]]:
+    from agents.observability.contracts import EventStatus
+
+    open_tools: dict[tuple[str, str, int, int], tuple[datetime, str]] = {}
+    by_stage: dict[tuple[str, int, int], list[StageToolExecutionView]] = {}
+
+    for event in events:
+        if event.tool_name is None or event.stage_id is None:
+            continue
+        stage_key = _stage_correlation_key(event.stage_id, event.attempt_n, event.resume_n)
+        tool_key = (event.stage_id, event.tool_name, event.attempt_n, event.resume_n)
+
+        if event.event_type is EventType.TOOL_CALL_STARTED:
+            open_tools[tool_key] = (event.occurred_at, event.event_id)
+            continue
+
+        if event.event_type is EventType.TOOL_CALL_COMPLETED:
+            started = open_tools.pop(tool_key, None)
+            if started is None:
+                continue
+            status = (
+                ToolExecutionStatus.COMPLETED
+                if event.status is EventStatus.OK
+                else ToolExecutionStatus.FAILED
+            )
+            view = StageToolExecutionView(
+                tool_name=event.tool_name,
+                status=status,
+                stage_id=event.stage_id,
+                attempt_n=event.attempt_n,
+                resume_n=event.resume_n,
+                started_at=started[0],
+                completed_at=event.occurred_at,
+            )
+            by_stage.setdefault(stage_key, []).append(view)
+            continue
+
+        if event.event_type is EventType.TOOL_CALL_DENIED:
+            started = open_tools.pop(tool_key, None)
+            if started is None:
+                continue
+            view = StageToolExecutionView(
+                tool_name=event.tool_name,
+                status=ToolExecutionStatus.DENIED,
+                stage_id=event.stage_id,
+                attempt_n=event.attempt_n,
+                resume_n=event.resume_n,
+                started_at=started[0],
+                completed_at=event.occurred_at,
+            )
+            by_stage.setdefault(stage_key, []).append(view)
+
+    for tool_key, (started_at, _event_id) in open_tools.items():
+        stage_id, tool_name, attempt_n, resume_n = tool_key
+        stage_key = _stage_correlation_key(stage_id, attempt_n, resume_n)
+        view = StageToolExecutionView(
+            tool_name=tool_name,
+            status=ToolExecutionStatus.RUNNING,
+            stage_id=stage_id,
+            attempt_n=attempt_n,
+            resume_n=resume_n,
+            started_at=started_at,
+            completed_at=None,
+        )
+        by_stage.setdefault(stage_key, []).append(view)
+
+    return {key: tuple(items) for key, items in by_stage.items()}
+
+
+def _collect_stage_artifacts(
+    events: tuple[ObservabilityEvent, ...],
+) -> dict[tuple[str, int, int], tuple[StageArtifactView, ...]]:
+    by_stage: dict[tuple[str, int, int], list[StageArtifactView]] = {}
+    for event in events:
+        if event.event_type is not EventType.ARTIFACT_CREATED:
+            continue
+        if event.artifact_type is None or event.artifact_id is None or event.stage_id is None:
+            continue
+        stage_key = _stage_correlation_key(event.stage_id, event.attempt_n, event.resume_n)
+        view = StageArtifactView(
+            artifact_type=event.artifact_type,
+            artifact_id=event.artifact_id,
+            stage_id=event.stage_id,
+            resume_n=event.resume_n,
+            created_at=event.occurred_at,
+        )
+        by_stage.setdefault(stage_key, []).append(view)
+    return {key: tuple(items) for key, items in by_stage.items()}
+
+
+def _wait_closed_by_ordinal(
+    events: tuple[ObservabilityEvent, ...],
+    *,
+    wait_ordinal: int,
+) -> Optional[WaitClosedBy]:
+    for event in events:
+        if event.resume_n != wait_ordinal:
+            continue
+        if event.event_type is EventType.RUN_RESUMED and event.stage_id == _HITL_WAIT_STAGE:
+            return WaitClosedBy.RESUMED
+        if event.event_type is EventType.RUN_ABORTED and event.stage_id == _HITL_WAIT_STAGE:
+            return WaitClosedBy.ABORTED
+    return None
+
+
+def _derive_human_decision_surface_for_wait(
+    run: AgentRun,
+    events: tuple[ObservabilityEvent, ...],
+    *,
+    wait_ordinal: int,
+    interrupt_id: Optional[str],
+    wait_started_at: datetime,
+    events_complete: bool,
+) -> AgentHumanDecisionSurfaceView:
+    closed_by = _wait_closed_by_ordinal(events, wait_ordinal=wait_ordinal)
+    waiting_for_human = (
+        run.operational_status is OperationalStatus.WAITING_FOR_HUMAN
+        and closed_by is None
+        and run.interrupt_id == interrupt_id
+    )
+    human_wait = AgentHumanWaitView(
+        waiting_for_human=waiting_for_human,
+        interrupt_id=interrupt_id,
+        wait_started_at=wait_started_at,
+        decision_id=None,
+        wait_closed_by=closed_by,
+        wait_ordinal=wait_ordinal,
+        derivation_state=DerivationState.OK,
+    )
+    request = derive_human_decision_request_view(
+        events,
+        wait_ordinal=wait_ordinal,
+        interrupt_id=interrupt_id,
+        events_complete=events_complete,
+    )
+    decision = derive_human_decision_record_view(
+        events,
+        wait_ordinal=wait_ordinal,
+        interrupt_id=interrupt_id,
+        events_complete=events_complete,
+    )
+    consequence = derive_human_decision_consequence_view(
+        events,
+        wait_ordinal=wait_ordinal,
+        decision_id=decision.decision_id if decision is not None else None,
+        events_complete=events_complete,
+    )
+    wait_derivation = DerivationState.OK
+    for part in (request, decision, consequence):
+        if part is not None and hasattr(part, "derivation_state"):
+            wait_derivation = _merge_derivation_state(wait_derivation, part.derivation_state)
+    human_wait = AgentHumanWaitView(
+        waiting_for_human=waiting_for_human,
+        interrupt_id=interrupt_id,
+        wait_started_at=wait_started_at,
+        decision_id=decision.decision_id if decision is not None else None,
+        wait_closed_by=closed_by,
+        wait_ordinal=wait_ordinal,
+        derivation_state=wait_derivation,
+    )
+    return AgentHumanDecisionSurfaceView(
+        wait=human_wait,
+        request=request,
+        decision=decision,
+        consequence=consequence,
+        authority_modeled=False,
+    )
+
+
+def _stage_display_to_professional(state: StageDisplayState) -> ProfessionalExecutionState:
+    if state is StageDisplayState.COMPLETED:
+        return ProfessionalExecutionState.COMPLETED
+    if state is StageDisplayState.FAILED:
+        return ProfessionalExecutionState.FAILED
+    return ProfessionalExecutionState.RUNNING
+
+
+def derive_professional_execution_path(
+    run: AgentRun,
+    events: tuple[ObservabilityEvent, ...],
+    *,
+    events_complete: bool,
+) -> AgentProfessionalExecutionPathView:
+    derivation_state = DerivationState.OK
+    stage_tools = _collect_stage_tools(events)
+    stage_artifacts = _collect_stage_artifacts(events)
+
+    stage_open: dict[tuple[str, str, int, int, str], AgentStageOccurrenceView] = {}
+    steps: list[ProfessionalExecutionStepView] = []
+    refresh_open: dict[tuple[int, str], RealityRefreshStepView] = {}
+    handoff_open: dict[str, int] = {}
+
+    for event in events:
+        if event.event_type is EventType.STAGE_STARTED:
+            key = _stage_occurrence_key(event)
+            if key is None:
+                derivation_state = _merge_derivation_state(
+                    derivation_state,
+                    DerivationState.INCONSISTENT,
+                )
+                continue
+            stage_key = _stage_correlation_key(key[0], key[2], key[3])
+            occurrence = AgentStageOccurrenceView(
+                stage_id=key[0],
+                node_name=key[1],
+                attempt_n=key[2],
+                resume_n=key[3],
+                artifact_id=key[4],
+                display_state=StageDisplayState.RUNNING,
+                started_at=event.occurred_at,
+                completed_at=None,
+                started_event_id=event.event_id,
+                terminal_event_id=None,
+            )
+            stage_open[key] = occurrence
+            tools = stage_tools.get(stage_key, ())
+            artifacts = stage_artifacts.get(stage_key, ())
+            steps.append(
+                ProfessionalExecutionStepView(
+                    step_kind=ProfessionalExecutionStepKind.STAGE,
+                    step_id=event.event_id,
+                    stage_id=key[0],
+                    professional_state=ProfessionalExecutionState.RUNNING,
+                    started_at=event.occurred_at,
+                    completed_at=None,
+                    attempt_n=key[2],
+                    resume_n=key[3],
+                    derivation_state=DerivationState.OK,
+                    tools=tools,
+                    artifacts=artifacts,
+                    human_decision=None,
+                    reality_refresh=None,
+                    handoff_id=None,
+                )
+            )
+            continue
+
+        if event.event_type in _STAGE_TERMINAL:
+            key = _stage_occurrence_key(event)
+            if key is None or key not in stage_open:
+                derivation_state = _merge_derivation_state(
+                    derivation_state,
+                    DerivationState.INCONSISTENT if events_complete else DerivationState.INCOMPLETE,
+                )
+                continue
+            occurrence = stage_open[key]
+            display_state = (
+                StageDisplayState.COMPLETED
+                if event.event_type is EventType.STAGE_COMPLETED
+                else StageDisplayState.FAILED
+            )
+            occurrence = AgentStageOccurrenceView(
+                stage_id=occurrence.stage_id,
+                node_name=occurrence.node_name,
+                attempt_n=occurrence.attempt_n,
+                resume_n=occurrence.resume_n,
+                artifact_id=occurrence.artifact_id,
+                display_state=display_state,
+                started_at=occurrence.started_at,
+                completed_at=event.occurred_at,
+                started_event_id=occurrence.started_event_id,
+                terminal_event_id=event.event_id,
+            )
+            stage_open[key] = occurrence
+            for index, step in enumerate(steps):
+                if (
+                    step.step_kind is ProfessionalExecutionStepKind.STAGE
+                    and step.step_id == occurrence.started_event_id
+                ):
+                    steps[index] = ProfessionalExecutionStepView(
+                        step_kind=step.step_kind,
+                        step_id=step.step_id,
+                        stage_id=step.stage_id,
+                        professional_state=_stage_display_to_professional(display_state),
+                        started_at=step.started_at,
+                        completed_at=event.occurred_at,
+                        attempt_n=step.attempt_n,
+                        resume_n=step.resume_n,
+                        derivation_state=step.derivation_state,
+                        tools=step.tools,
+                        artifacts=step.artifacts,
+                        human_decision=step.human_decision,
+                        reality_refresh=step.reality_refresh,
+                        handoff_id=step.handoff_id,
+                    )
+                    break
+            continue
+
+        if event.event_type is EventType.HUMAN_WAIT_STARTED:
+            if event.stage_id is None:
+                derivation_state = _merge_derivation_state(
+                    derivation_state,
+                    DerivationState.INCONSISTENT,
+                )
+                continue
+            wait_ordinal = event.resume_n
+            surface = _derive_human_decision_surface_for_wait(
+                run,
+                events,
+                wait_ordinal=wait_ordinal,
+                interrupt_id=event.interrupt_id,
+                wait_started_at=event.occurred_at,
+                events_complete=events_complete,
+            )
+            derivation_state = _merge_derivation_state(
+                derivation_state,
+                surface.wait.derivation_state,
+            )
+            if surface.request is not None:
+                derivation_state = _merge_derivation_state(
+                    derivation_state,
+                    surface.request.derivation_state,
+                )
+            if surface.decision is not None:
+                derivation_state = _merge_derivation_state(
+                    derivation_state,
+                    surface.decision.derivation_state,
+                )
+            if surface.consequence is not None:
+                derivation_state = _merge_derivation_state(
+                    derivation_state,
+                    surface.consequence.derivation_state,
+                )
+            prof_state = (
+                ProfessionalExecutionState.WAITING_FOR_HUMAN
+                if surface.wait.waiting_for_human
+                else ProfessionalExecutionState.COMPLETED
+                if surface.wait.wait_closed_by is WaitClosedBy.RESUMED
+                else ProfessionalExecutionState.FAILED
+                if surface.wait.wait_closed_by is WaitClosedBy.ABORTED
+                else ProfessionalExecutionState.RUNNING
+            )
+            if surface.request is not None and surface.request.derivation_state is DerivationState.INCOMPLETE:
+                prof_state = ProfessionalExecutionState.INCOMPLETE
+            steps.append(
+                ProfessionalExecutionStepView(
+                    step_kind=ProfessionalExecutionStepKind.HUMAN_DECISION,
+                    step_id=event.event_id,
+                    stage_id=event.stage_id,
+                    professional_state=prof_state,
+                    started_at=event.occurred_at,
+                    completed_at=surface.consequence.closed_at if surface.consequence else None,
+                    attempt_n=event.attempt_n,
+                    resume_n=wait_ordinal,
+                    derivation_state=surface.wait.derivation_state,
+                    tools=(),
+                    artifacts=(),
+                    human_decision=surface,
+                    reality_refresh=None,
+                    handoff_id=None,
+                )
+            )
+            continue
+
+        if event.event_type is EventType.REALITY_REFRESH_STARTED:
+            if event.stage_id is None:
+                derivation_state = _merge_derivation_state(
+                    derivation_state,
+                    DerivationState.INCONSISTENT,
+                )
+                continue
+            refresh_view = RealityRefreshStepView(
+                stage_id=event.stage_id,
+                resume_n=event.resume_n,
+                started_at=event.occurred_at,
+                completed_at=None,
+                failed_at=None,
+                derivation_state=DerivationState.OK,
+            )
+            refresh_open[(event.resume_n, event.event_id)] = refresh_view
+            steps.append(
+                ProfessionalExecutionStepView(
+                    step_kind=ProfessionalExecutionStepKind.REALITY_REFRESH,
+                    step_id=event.event_id,
+                    stage_id=event.stage_id,
+                    professional_state=ProfessionalExecutionState.RUNNING,
+                    started_at=event.occurred_at,
+                    completed_at=None,
+                    attempt_n=event.attempt_n,
+                    resume_n=event.resume_n,
+                    derivation_state=DerivationState.OK,
+                    tools=(),
+                    artifacts=(),
+                    human_decision=None,
+                    reality_refresh=refresh_view,
+                    handoff_id=None,
+                )
+            )
+            continue
+
+        if event.event_type is EventType.REALITY_REFRESH_COMPLETED:
+            for index, step in enumerate(steps):
+                if (
+                    step.step_kind is ProfessionalExecutionStepKind.REALITY_REFRESH
+                    and step.resume_n == event.resume_n
+                    and step.reality_refresh is not None
+                    and step.reality_refresh.completed_at is None
+                    and step.reality_refresh.failed_at is None
+                ):
+                    from agents.observability.contracts import EventStatus
+
+                    completed_at = event.occurred_at if event.status is EventStatus.OK else None
+                    failed_at = event.occurred_at if event.status is not EventStatus.OK else None
+                    refresh_view = RealityRefreshStepView(
+                        stage_id=step.reality_refresh.stage_id,
+                        resume_n=step.reality_refresh.resume_n,
+                        started_at=step.reality_refresh.started_at,
+                        completed_at=completed_at,
+                        failed_at=failed_at,
+                        derivation_state=DerivationState.OK,
+                    )
+                    prof_state = (
+                        ProfessionalExecutionState.COMPLETED
+                        if completed_at is not None
+                        else ProfessionalExecutionState.FAILED
+                    )
+                    steps[index] = ProfessionalExecutionStepView(
+                        step_kind=step.step_kind,
+                        step_id=step.step_id,
+                        stage_id=step.stage_id,
+                        professional_state=prof_state,
+                        started_at=step.started_at,
+                        completed_at=event.occurred_at,
+                        attempt_n=step.attempt_n,
+                        resume_n=step.resume_n,
+                        derivation_state=step.derivation_state,
+                        tools=step.tools,
+                        artifacts=step.artifacts,
+                        human_decision=step.human_decision,
+                        reality_refresh=refresh_view,
+                        handoff_id=step.handoff_id,
+                    )
+                    break
+            continue
+
+        if event.event_type is EventType.HANDOFF_CREATED and event.handoff_id is not None:
+            handoff_open[event.handoff_id] = len(steps)
+            steps.append(
+                ProfessionalExecutionStepView(
+                    step_kind=ProfessionalExecutionStepKind.HANDOFF_MARKER,
+                    step_id=event.event_id,
+                    stage_id=event.stage_id,
+                    professional_state=ProfessionalExecutionState.RUNNING,
+                    started_at=event.occurred_at,
+                    completed_at=None,
+                    attempt_n=event.attempt_n,
+                    resume_n=event.resume_n,
+                    derivation_state=DerivationState.OK,
+                    tools=(),
+                    artifacts=(),
+                    human_decision=None,
+                    reality_refresh=None,
+                    handoff_id=event.handoff_id,
+                )
+            )
+            continue
+
+        if event.event_type is EventType.HANDOFF_PERSISTED and event.handoff_id is not None:
+            index = handoff_open.get(event.handoff_id)
+            if index is not None:
+                step = steps[index]
+                steps[index] = ProfessionalExecutionStepView(
+                    step_kind=step.step_kind,
+                    step_id=step.step_id,
+                    stage_id=step.stage_id,
+                    professional_state=ProfessionalExecutionState.COMPLETED,
+                    started_at=step.started_at,
+                    completed_at=event.occurred_at,
+                    attempt_n=step.attempt_n,
+                    resume_n=step.resume_n,
+                    derivation_state=step.derivation_state,
+                    tools=step.tools,
+                    artifacts=step.artifacts,
+                    human_decision=step.human_decision,
+                    reality_refresh=step.reality_refresh,
+                    handoff_id=step.handoff_id,
+                )
+            continue
+
+        if event.event_type is EventType.HANDOFF_PERSIST_FAILED and event.handoff_id is not None:
+            index = handoff_open.get(event.handoff_id)
+            if index is not None:
+                step = steps[index]
+                steps[index] = ProfessionalExecutionStepView(
+                    step_kind=step.step_kind,
+                    step_id=step.step_id,
+                    stage_id=step.stage_id,
+                    professional_state=ProfessionalExecutionState.FAILED,
+                    started_at=step.started_at,
+                    completed_at=event.occurred_at,
+                    attempt_n=step.attempt_n,
+                    resume_n=step.resume_n,
+                    derivation_state=step.derivation_state,
+                    tools=step.tools,
+                    artifacts=step.artifacts,
+                    human_decision=step.human_decision,
+                    reality_refresh=step.reality_refresh,
+                    handoff_id=step.handoff_id,
+                )
+
+    if not events_complete:
+        derivation_state = _merge_derivation_state(derivation_state, DerivationState.INCOMPLETE)
+
+    finalized_steps: list[ProfessionalExecutionStepView] = []
+    for step in steps:
+        if step.step_kind is not ProfessionalExecutionStepKind.STAGE:
+            finalized_steps.append(step)
+            continue
+        stage_key = _stage_correlation_key(step.stage_id or "", step.attempt_n, step.resume_n)
+        end_at = step.completed_at
+        filtered_tools = tuple(
+            tool
+            for tool in stage_tools.get(stage_key, ())
+            if tool.started_at >= step.started_at
+            and (end_at is None or (tool.completed_at or tool.started_at) <= end_at)
+        )
+        filtered_artifacts = tuple(
+            artifact
+            for artifact in stage_artifacts.get(stage_key, ())
+            if artifact.created_at >= step.started_at
+            and (end_at is None or artifact.created_at <= end_at)
+        )
+        finalized_steps.append(
+            ProfessionalExecutionStepView(
+                step_kind=step.step_kind,
+                step_id=step.step_id,
+                stage_id=step.stage_id,
+                professional_state=step.professional_state,
+                started_at=step.started_at,
+                completed_at=step.completed_at,
+                attempt_n=step.attempt_n,
+                resume_n=step.resume_n,
+                derivation_state=step.derivation_state,
+                tools=filtered_tools,
+                artifacts=filtered_artifacts,
+                human_decision=step.human_decision,
+                reality_refresh=step.reality_refresh,
+                handoff_id=step.handoff_id,
+            )
+        )
+
+    return AgentProfessionalExecutionPathView(
+        steps=tuple(finalized_steps),
+        derivation_state=derivation_state,
+        history_complete=events_complete,
     )

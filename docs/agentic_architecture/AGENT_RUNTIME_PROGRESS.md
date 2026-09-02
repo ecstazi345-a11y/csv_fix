@@ -13,10 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store**
-- **NEXT:** Increment 10.5 — separate-process / restart durability proof (Process A writes → exits → Process B reads identical event log + projection)
-- **Recovery code HEAD:** `163d7bc9096dd9fe47d7275064ff60d4721b57ca` (Increment 10.4 on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · 10.5 NOT STARTED · Increment 10 overall **NOT COMPLETE**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof**
+- **NEXT:** ConstructorManagedRuntimeLauncher — connect Run Control to real decoupled Constructor runtime execution (`launch(...)` = accept/schedule authorized runtime; **not** proof of RUNNING; actual RUNNING remains runtime-owned via `RUN_ADVANCING`)
+- **Recovery code HEAD:** `041cea0da21cc066ec42b0a6eea8fa4285f9bf00` (Increment 10.5 on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · **10.5 Separate-Process Durability Proof DONE** · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -4268,5 +4268,136 @@ NEXT
 ------------------------------------------------------------
 
 **Increment 10.5** — separate-process / restart durability proof. Do **not** start during this checkpoint.
+
+Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**
+
+---
+
+============================================================
+CHECKPOINT — 2026-09-02
+INCREMENT 10.5
+SEPARATE-PROCESS DURABILITY PROOF
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** prove process-independent operational memory — durable `AgentRun` projection and immutable observability history survive Python process termination and are recoverable by another independent process. **ConstructorManagedRuntimeLauncher is NOT implemented in this checkpoint.**
+
+------------------------------------------------------------
+10.4 vs 10.5
+------------------------------------------------------------
+
+| Increment | Property proved |
+|-----------|-----------------|
+| **10.4** | SQLite **object-reopen** durability within one Python process |
+| **10.5** | **Process-independent** operational memory — Process A may exit; Process B reconstructs identical durable truth |
+
+------------------------------------------------------------
+PROCESS A → PROCESS B PROOF
+------------------------------------------------------------
+
+**Process A** (independent OS-level Python subprocess · `sys.executable` · `shell=False`):
+
+- Opens `SqliteObservabilityStore` on temp SQLite file
+- Creates `AgentRun` · records 7 authoritative events · reaches `COMPLETED` · `projection_version = 7`
+- Closes store · exits 0 · objects destroyed
+
+**Process B** (NEW independent Python subprocess · **different PID**):
+
+- Opens **same** SQLite file
+- **Does NOT** call `create_run`
+- Reconstructs existing `AgentRun` + immutable ordered event log · exits 0
+
+Parent pytest orchestrates subprocesses only; no shared Python memory between A and B.
+
+------------------------------------------------------------
+DURABLE STATE PROVEN
+------------------------------------------------------------
+
+| Field | Value |
+|-------|-------|
+| `run_id` | `run-10-5-dur` |
+| `operational_status` | `COMPLETED` |
+| `projection_version` | **7** |
+| `started_at` | `2026-09-02T14:00:03+00:00` |
+| `completed_at` | `2026-09-02T14:00:06+00:00` |
+| Event count | **7** |
+| Event IDs | Same across processes |
+| Event fingerprints | Same across processes (public `compute_observability_event_fingerprint`) |
+| Event order | Same across processes (`list_events` public API) |
+
+------------------------------------------------------------
+REPLAY-AFTER-RESTART LAW
+------------------------------------------------------------
+
+Process B replays old `RUN_REQUESTED` written by Process A:
+
+| Result | Value |
+|--------|-------|
+| Outcome | `IDEMPOTENT_REPLAY` |
+| `projection_version` after replay | **7** (unchanged) |
+| Event count after replay | **7** (unchanged) |
+
+Replay-before-CAS law survives **full Python-process restart**, not only object reopen.
+
+------------------------------------------------------------
+PROCESS INDEPENDENCE LAW
+------------------------------------------------------------
+
+No Python object/state transferred between Process A and Process B. No shared: `AgentRun` object · `ObservabilityEvent` object · store instance · sqlite connection · in-memory cache.
+
+Only durable filesystem artifacts: SQLite file (+ bounded verification JSON for comparison only — **not** used for `AgentRun` reconstruction).
+
+------------------------------------------------------------
+PARENT REOPEN
+------------------------------------------------------------
+
+After Process A and Process B both exited, parent pytest reopened same SQLite file. `AgentRun` and events remained readable and correct — final integrity confirmation.
+
+------------------------------------------------------------
+SECURITY / EOS-SEC
+------------------------------------------------------------
+
+No product credentials · no network · no Supabase · no `shell=True` · no business datasets · no prompt history · no `AgentExecutionContext` · no secret-bearing state. Synthetic bounded test metadata only.
+
+------------------------------------------------------------
+PRODUCTION SCOPE
+------------------------------------------------------------
+
+10.5 required **NO** production code changes.
+
+| Item | Status |
+|------|--------|
+| File created | `tests/test_observability_process_durability.py` |
+| SQLite schema | UNCHANGED |
+| `ObservabilityStore` | UNCHANGED |
+| Runtime | UNCHANGED |
+| Run Control | UNCHANGED |
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+Targeted 10.5: **1 / 1 PASS** · Combined observability gate: **203 / 203 PASS** (+ 43 subtests) · Operational Truth: **19 / 19 PASS** · 10.4 regression: **PASS** · Observability regression: **PASS** · Run Control regression: **PASS** · 10.3A–E regression: **PASS** · Architecture drift: **NO**
+
+------------------------------------------------------------
+PROGRAM MEANING
+------------------------------------------------------------
+
+**10.4** created durable operational memory. **10.5** proved this memory is independent of Python runtime process lifetime. Required before building a managed decoupled agent runtime.
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+CODE: `041cea0da21cc066ec42b0a6eea8fa4285f9bf00` · message: `test(agents): prove observability durability across processes` · BRANCH: `wip/increment-10-agent-control-room` · PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES**
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**ConstructorManagedRuntimeLauncher** — connect Run Control to real decoupled Constructor runtime execution. Contract: `launch(...)` = accept/schedule authorized runtime execution; **not** proof of `RUNNING`; **not** wait for whole graph completion. Actual `RUNNING` remains runtime-owned via `RUN_ADVANCING`.
+
+Remaining accepted sequence: ConstructorManagedRuntimeLauncher → 10.6 AgentControlRoomQueryPort → 10.7 Control Room core → 10.8 HITL visualization → 10.9 Handoff/completion visualization → 10.10 full live-run proof
 
 Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**

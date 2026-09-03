@@ -12,12 +12,14 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
-- **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** (Local Managed Runtime Backend v0.1) · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 State-of-the-Art HITL Architecture Gate** · **10.8A Structured HITL Read Contract** · **10.8B Professional HITL / Live Agent Execution Visualization** · **10.9 Architecture Preflight** · **10.9A Handoff Observability Contract** · **10.9B Digital Organization Visualization**
-- **NEXT:** Increment **10.10** Full live-run proof + regression + EOS-SEC — do **not** start before this checkpoint is committed
-- **Recovery code HEAD:** `c9b4483f23710c01f1cbb257796d8d1476a38441` (10.9B Digital Organization Visualization on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · **10.5 Separate-Process Durability Proof DONE** · **ConstructorManagedRuntimeLauncher DONE** · **10.6 AgentControlRoomQueryPort DONE** · **10.7 Control Room Core DONE** · **10.8 State-of-the-Art HITL Architecture Gate DONE** · **10.8A Structured HITL Read Contract DONE** · **10.8B Professional HITL / Live Agent Execution Visualization DONE** · **10.9 Architecture Preflight DONE** · **10.9A Handoff Observability Contract DONE** · **10.9B Digital Organization Visualization DONE** · Increment 10 overall **NOT COMPLETE**
-
+- **Progress:** **10 / 10** — **TECHNICAL COMPLETION**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard
+- **NEXT:** Constructor Professional Passport v1.0 → reusable Professional Passport Template → Constructor freeze → Admission Agent architecture gate — do **not** start Admission implementation before Passport + freeze
+- **Recovery code HEAD:** `194bcfd27717f38b120a6651cf6794ce88a1d33a` (10.10 full managed live-run proof + clock/replay release guard on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1–10.9B DONE · **10.10 DONE** · **10.10A DONE** · Increment 10 overall **FUNCTIONALLY COMPLETE**
+- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features
+- **Professional Passport:** **PENDING** · **Admission Agent:** **NOT STARTED**
+- **DURABLE_RESTART:** **ACCEPTABLE_ENVIRONMENT_EXCEPTION** (not PASS / not FAIL / not REGRESSION)
 Historical checkpoints below are append-only and are **not** rewritten.
 
 ---
@@ -6238,3 +6240,516 @@ Managed Run Start
 Remaining: **10.10** Full live-run proof + regression + EOS-SEC + final documentation
 
 Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**
+
+============================================================
+CHECKPOINT — 2026-09-03
+INCREMENT 10.10
+FULL MANAGED LIVE-RUN PROOF
++ CLOCK / REPLAY RELEASE GUARD
+CONSTRUCTOR TECHNICAL COMPLETION:
+10 / 10
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **TECHNICAL COMPLETION 10 / 10**
+
+**Purpose:** final technical progress checkpoint for Constructor Agent v0.1 after Increment 10.10 full managed live-run proof and 10.10A clock/replay release guard. Documentation only. **Professional Passport is NOT created here. Admission Agent is NOT started here.**
+
+------------------------------------------------------------
+FINAL STATUS
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| MONTHLY_PLAN_CONSTRUCTOR | **TECHNICAL COMPLETION 10 / 10** |
+| Increment 10 | **FUNCTIONALLY COMPLETE** |
+| 10.10 Full managed live-run proof | **DONE** |
+| 10.10A Clock / Replay Audit | **DONE** |
+| Clock / Replay Release Guard | **DONE** |
+| Professional Passport | **PENDING** |
+| Admission Agent | **NOT STARTED** |
+| Recovery / proof HEAD | `194bcfd27717f38b120a6651cf6794ce88a1d33a` |
+
+------------------------------------------------------------
+WHAT 10 / 10 MEANS
+------------------------------------------------------------
+
+**10 / 10 does NOT mean:** perfect autonomous AI · full monthly-planning orchestration · Admission Agent complete · all agents implemented · production-scale distributed worker backend · fully autonomous business approval · physical execution complete.
+
+**10 / 10 means:** the professional role **MONTHLY_PLAN_CONSTRUCTOR** has a complete and proven technical digital-employee runtime within its approved **v0.1** scope.
+
+------------------------------------------------------------
+CANONICAL MANAGED EXECUTION PROOF
+------------------------------------------------------------
+
+Proved end-to-end chain:
+
+```
+RunControlService.start
+  → ConstructorManagedRuntimeLauncher
+  → managed runtime execution
+  → professional lifecycle
+  → secure business read
+  → professional stages
+  → business artifact creation
+  → real Human Wait
+  → typed Human Decision
+  → CLARIFY_SCOPE
+  → controlled resume
+  → Reality Refresh
+  → fresh secure read
+  → professional continuation
+  → ConstructorHandoff creation
+  → HANDOFF_CREATED
+  → HANDOFF_PERSISTED
+  → source RUN_COMPLETED
+  → durable SQLite observability
+  → independent Control Room factory reopen
+  → Query Port reconstruction
+  → Professional Execution Path
+  → Human Decision history
+  → Reality Refresh history
+  → Digital Organization
+```
+
+------------------------------------------------------------
+AUTHORITATIVE ENTRY POINT LAW
+------------------------------------------------------------
+
+**Authoritative managed start:** `RunControlService.start` + `ConstructorManagedRuntimeLauncher`.
+
+Direct LangGraph invocation is **not** the final managed start proof boundary.
+
+Streamlit is **not** runtime ownership.
+
+------------------------------------------------------------
+RUN CONTROL LAW
+------------------------------------------------------------
+
+Proven separation:
+
+| Owner | Owns |
+|-------|------|
+| **Run Control** | request · authorization · launch governance · `STARTING` |
+| **Runtime** | `RUN_ADVANCING` / `RUNNING` · professional lifecycle · Human Wait · resume consequence · completion |
+
+No hidden status mutation.
+
+------------------------------------------------------------
+MANAGED LAUNCHER LAW
+------------------------------------------------------------
+
+`ConstructorManagedRuntimeLauncher` is the current **local managed backend v0.1**.
+
+Current execution backend: background **THREAD**.
+
+Successful launch means: **execution scheduled**.
+
+It does **NOT** mean: agent already `RUNNING` · professional work completed.
+
+Process-independent worker execution remains a **future backend evolution**.
+
+------------------------------------------------------------
+PROFESSIONAL RUNTIME PROOF
+------------------------------------------------------------
+
+Constructor performs real structured professional stages — **not** a chatbot response.
+
+Professional execution is represented through: lifecycle state · stages · tools · artifacts · exceptions · Human Gate · revalidation · handoff.
+
+------------------------------------------------------------
+SECURE TOOL PROOF
+------------------------------------------------------------
+
+Real secure read execution was exercised in the canonical run.
+
+Tool observability was correlated with professional execution.
+
+**No** raw tool arguments/results were exposed to Control Room.
+
+------------------------------------------------------------
+BUSINESS ARTIFACT PROOF
+------------------------------------------------------------
+
+Constructor creates formal business artifacts.
+
+Candidate Package remains a structured professional artifact.
+
+Observability / Control Room expose **safe artifact identity only**.
+
+Artifact body is **not** observability truth.
+
+------------------------------------------------------------
+HUMAN WAIT PROOF
+------------------------------------------------------------
+
+The canonical live run produced a **REAL** Human Wait.
+
+It was **not** manually inserted into observability.
+
+The wait contained structured: interrupt identity · reason · allowed decisions · evidence references — and changed operational truth to `WAITING_FOR_HUMAN`.
+
+------------------------------------------------------------
+HUMAN DECISION PROOF
+------------------------------------------------------------
+
+Canonical decision: **CLARIFY_SCOPE**.
+
+A real controlled resume was executed against the active wait/checkpoint.
+
+Decision identity and provenance remained structurally correlated.
+
+------------------------------------------------------------
+REALITY REFRESH PROOF
+------------------------------------------------------------
+
+Proven chain:
+
+```
+Human Decision
+  → RUN_RESUMED
+  → REALITY_REFRESH_STARTED
+  → fresh secure read
+  → REALITY_REFRESH_COMPLETED
+  → professional continuation
+```
+
+Fresh read was actually proven by the deterministic business test double.
+
+------------------------------------------------------------
+HUMAN-IN-THE-LOOP LAW
+------------------------------------------------------------
+
+Human Decision is **not** a decorative approval button.
+
+It is a formal runtime boundary:
+
+```
+agent autonomy stops
+  → structured management decision requested
+  → decision correlated
+  → controlled resume
+  → reality reread
+  → professional consequence
+```
+
+------------------------------------------------------------
+HANDOFF PROOF
+------------------------------------------------------------
+
+Constructor created a real `ConstructorHandoff` and produced typed observability:
+
+`HANDOFF_CREATED` → `HANDOFF_PERSISTED`.
+
+Handoff identity remained deterministic.
+
+------------------------------------------------------------
+COMPLETION LAW
+------------------------------------------------------------
+
+Causal law:
+
+```
+HANDOFF_CREATED
+  < HANDOFF_PERSISTED
+  < RUN_COMPLETED
+```
+
+Source `RUN_COMPLETED` means: Constructor completed its **own** professional responsibility.
+
+It does **NOT** mean: Admission accepted · target run started · ownership transferred · monthly orchestration completed · monthly commitment approved.
+
+------------------------------------------------------------
+DIGITAL ORGANIZATION PROOF
+------------------------------------------------------------
+
+Independent Query Port reconstruction showed the observed professional transfer:
+
+```
+Constructor
+  → Candidate Package
+  → persisted handoff
+  → intended Admission professional role
+```
+
+Receiver remained epistemically **NOT CONFIRMED / UNKNOWN**.
+
+**No** receiver state was fabricated.
+
+------------------------------------------------------------
+CONTROL ROOM PROOF
+------------------------------------------------------------
+
+Control Room read-side was reopened independently after execution.
+
+It reconstructed durable truth through the application factory / Query Port.
+
+Control Room remains **observe-only**. It is **not** the agent runtime.
+
+------------------------------------------------------------
+FIVE-LEVEL OBSERVABILITY MODEL
+------------------------------------------------------------
+
+| Level | Scope | Status |
+|-------|-------|--------|
+| **1** | Digital Organization | **PROVED** |
+| **2** | Professional Agent Execution | **PROVED** |
+| **3** | Professional Stage Detail | **PROVED** |
+| **4** | Human Decision | **PROVED** |
+| **5** | Forensic Audit Trace | **PROVED** |
+
+Constructor now has evidence across the full current Control Room stack.
+
+------------------------------------------------------------
+DURABLE OBSERVABILITY PROOF
+------------------------------------------------------------
+
+| Proof | Result |
+|-------|--------|
+| SQLite durable observability | **PASS** |
+| Object reopen | **PASS** |
+| Independent Query Port reconstruction | **PASS** |
+| Process-independent observability (10.5) | **PASS** |
+
+Do **not** confuse this with LangGraph durable checkpoint backend.
+
+------------------------------------------------------------
+DURABLE RESTART EXCEPTION
+------------------------------------------------------------
+
+**DURABLE_RESTART:** **ACCEPTABLE_ENVIRONMENT_EXCEPTION**
+
+**NOT:** PASS · **NOT:** FAIL · **NOT:** REGRESSION.
+
+**Reason:**
+
+- Docker unavailable
+- disposable PostgreSQL environment unavailable
+- authoritative local start procedure unavailable
+- previous Increment 8 evidence proved PostgreSQL HITL durable restart when environment was available
+- current inability to rerun is infrastructure/environmental, **not** a detected code regression
+
+------------------------------------------------------------
+CLOCK / REPLAY AUDIT (10.10A)
+------------------------------------------------------------
+
+**Classification:** `CLOCK_PATCH_HARMLESS`.
+
+Production-default resume was tested **without** fixed clock and **without** explicit `now=`.
+
+`HUMAN_WAIT_STARTED` replay:
+
+- same `event_id`
+- same `occurred_at`
+- same fingerprint
+- → `IDEMPOTENT_REPLAY`
+- → controlled resume succeeded
+
+------------------------------------------------------------
+CLOCK OWNERSHIP LAW
+------------------------------------------------------------
+
+**CLOCK_OWNER:** `FIRST_OCCURRENCE`
+
+For replay of the same immutable Human Wait fact, `occurred_at` belongs to the **original occurrence**, not to replay execution time.
+
+------------------------------------------------------------
+REPLAY SEMANTICS LAW
+------------------------------------------------------------
+
+**REPLAY_SEMANTICS:** `SAME_IMMUTABLE_FACT`
+
+The same wait ordinal / same semantic occurrence must replay as the same immutable event fact.
+
+The recorder remains fail-closed:
+
+```
+same event_id + different fingerprint → OBSERVABILITY_EVENT_CONFLICT
+```
+
+**No** weakening was introduced. Occurred_at was **not** removed from fingerprint. Event identity was **not** changed. Arbitrary new `now=` on resume rebuild was **not** normalized into success.
+
+------------------------------------------------------------
+RELEASE GUARD
+------------------------------------------------------------
+
+Permanent regression guard:
+
+`test_production_default_real_clock_resume_replays_wait_idempotently`
+
+in:
+
+`tests/test_constructor_full_managed_live_run.py`
+
+Protects the production-default clock/replay invariant.
+
+------------------------------------------------------------
+CANONICAL PROOF TEST
+------------------------------------------------------------
+
+`tests/test_constructor_full_managed_live_run.py` contains:
+
+1. canonical managed end-to-end Constructor proof
+2. production-default clock/replay regression guard
+
+**Proof commit:** `194bcfd27717f38b120a6651cf6794ce88a1d33a`
+
+**Message:** `test(agents): prove constructor full managed live run`
+
+**BRANCH:** `wip/increment-10-agent-control-room` · **PUSH:** SUCCESS · **LOCAL == UPSTREAM:** YES · worktree after proof commit: **CLEAN**
+Production code in 10.10: **unchanged** (`ARCHITECTURE_DRIFT: NO`).
+
+------------------------------------------------------------
+FULL REGRESSION EVIDENCE
+------------------------------------------------------------
+
+| Gate | Result |
+|------|--------|
+| Canonical managed live-run proof | **PASS** (2 / 2 including release guard) |
+| 10.9B | **PASS** |
+| 10.9A | **PASS** |
+| 10.8B | **PASS** |
+| 10.8A | **PASS** |
+| Query Port | **PASS** |
+| Page Guards | **PASS** |
+| Handoff / Completion | **PASS** |
+| Run Control | **PASS** |
+| Managed Launcher | **PASS** |
+| Observability 10.4 | **PASS** |
+| Process durability 10.5 | **PASS** |
+| HITL / LangGraph | **PASS** except environment-dependent durable restart rerun |
+| Constructor standard | **PASS** |
+| EOS-SEC | **PASS** |
+| py_compile | **PASS** |
+
+Release-guard neighbor regression: **105 passed** + **24 subtests**.
+
+------------------------------------------------------------
+EOS-SEC FINAL GATE
+------------------------------------------------------------
+
+**EOS-SEC:** **PASS**
+
+No regression in: least privilege · read/write separation · DATA ≠ INSTRUCTION · MODEL ≠ SECURITY BOUNDARY · no arbitrary SQL · no arbitrary shell · no arbitrary HTTP · no raw LLM → write · no raw LLM → physical actuation · no checkpoint leakage · no artifact body leakage · no secrets in observability · Query Port read-only · Control Room observe-only.
+
+------------------------------------------------------------
+LLM BOUNDARY
+------------------------------------------------------------
+
+**LLM_USED_IN_CANONICAL_PROOF:** **NO**
+
+Intentional and acceptable. Constructor's core professional behavior is deterministic. LLM is **not** required to qualify the role as a digital employee.
+
+------------------------------------------------------------
+PRODUCT DATA LAW
+------------------------------------------------------------
+
+**PRODUCT_DATA_TOUCHED:** **NO**
+
+Canonical proof uses isolated deterministic test dependencies. **No** product Supabase writes.
+
+------------------------------------------------------------
+ARCHITECTURE DRIFT
+------------------------------------------------------------
+
+**ARCHITECTURE_DRIFT:** **NO**
+
+10.10 required **no** production-code change. The proof validated the architecture already implemented.
+
+------------------------------------------------------------
+FINAL CONSTRUCTOR CAPABILITY STACK
+------------------------------------------------------------
+
+| # | Capability | Status |
+|---|------------|--------|
+| [1] | Mission Scope Contract | **DONE** |
+| [2] | Candidate Package Artifact | **DONE** |
+| [3] | Secure Read Tool Adapters | **DONE** |
+| [4] | Labor Norm Resolver | **DONE** |
+| [5] | Exception Engine | **DONE** |
+| [6] | Pure Python Lifecycle | **DONE** |
+| [7] | LangGraph Runtime | **DONE** |
+| [8] | Durable HITL / Resume | **DONE** |
+| [9] | Structured Handoff | **DONE** |
+| [10] | Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof | **DONE** |
+
+**Result:** **10 / 10**.
+
+------------------------------------------------------------
+WHAT IS NOT PART OF 10 / 10
+------------------------------------------------------------
+
+Explicit future items that do **NOT** invalidate Constructor completion:
+
+- production Supabase observability adapter
+- distributed / external worker backend
+- full cross-run multi-agent graph
+- receiver ACK
+- target run correlation
+- ownership transfer
+- handoff authority / RBAC
+- Admission Agent runtime
+- full orchestration completion
+- Physical AI actuation
+
+These belong to later architecture stages.
+
+------------------------------------------------------------
+CONSTRUCTOR FREEZE LAW
+------------------------------------------------------------
+
+Constructor Agent **v0.1** is **TECHNICALLY COMPLETE**.
+
+No new Constructor features should be added opportunistically.
+
+Future Constructor changes require: explicit defect · new approved capability · cross-agent integration requirement · or versioned evolution.
+
+------------------------------------------------------------
+NEXT DOCUMENTATION LAYER
+------------------------------------------------------------
+
+Technical progress journal is no longer sufficient as the primary explanation of Constructor.
+
+**Next:** Constructor Professional Passport **v1.0**.
+
+Its purpose is to describe: who this digital employee is · what professional job it performs · what business problem it solves · what it sees · what it decides · what it cannot decide · skills · tools · permissions · Human Gates · business artifacts · handoff · security · observability · economic value · KPIs · professional boundaries.
+
+------------------------------------------------------------
+REUSABLE PASSPORT TEMPLATE
+------------------------------------------------------------
+
+After Constructor Passport v1.0, a reusable **Professional Passport Template** must be extracted for future agents.
+
+**Do not** create it in this checkpoint.
+
+------------------------------------------------------------
+NEXT DIGITAL EMPLOYEE
+------------------------------------------------------------
+
+Expected next specialized role:
+
+**MONTHLY_PLAN_ADMISSION_AGENT** / Агент допуска месячного плана
+
+**Do NOT** start architecture or implementation yet.
+
+Order:
+
+```
+Constructor Professional Passport v1.0
+  → reusable Professional Passport Template
+  → Constructor freeze checkpoint
+  → Admission architecture gate
+```
+
+------------------------------------------------------------
+FINAL PROGRAM STATUS
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| MONTHLY_PLAN_CONSTRUCTOR | **10 / 10** |
+| INCREMENT 10 | **COMPLETE** |
+| Constructor technical runtime | **COMPLETE** |
+| Professional Passport | **PENDING** |
+| Admission Agent | **NOT STARTED** |
+
+Increment 10: **COMPLETE** · Constructor: **10 / 10**

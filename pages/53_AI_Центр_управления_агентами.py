@@ -11,7 +11,13 @@ from typing import Any, Optional
 import pandas as pd
 import streamlit as st
 
-from agents.control_room.dtos import AgentRunListView, AgentRunSnapshot, DerivationState, ProfessionalExecutionStepKind
+from agents.control_room.dtos import (
+    AgentRunListView,
+    AgentRunSnapshot,
+    DerivationState,
+    HandoffStatus,
+    ProfessionalExecutionStepKind,
+)
 from agents.control_room.errors import (
     ControlRoomQueryBlockerError,
     ControlRoomQueryError,
@@ -25,24 +31,37 @@ from agents.control_room.factory import (
 from agents.control_room.presentation import (
     AUTHORITY_NOT_MODELED_RU,
     CATALOG_INCOMPLETE_FILTER_RU,
+    DIGITAL_ORG_HISTORY_INCOMPLETE_RU,
+    DIGITAL_ORG_SECTION_SUBTITLE_RU,
+    DIGITAL_ORG_SECTION_TITLE_RU,
     EMPTY_RUNS_INCOMPLETE_CATALOG_RU,
     EMPTY_RUNS_RU,
     EVENTS_COMPLETE_FALSE_RU,
     EXECUTION_PATH_INCOMPLETE_RU,
+    HANDOFF_INCONSISTENT_RU,
+    HANDOFF_LEGACY_INCOMPLETE_RU,
+    HANDOFF_NOT_CONFIRMED_INCOMPLETE_RU,
+    HANDOFF_NOT_OBSERVED_RU,
     HUMAN_DECISION_HEADER_RU,
     POST_DECISION_HEADER_RU,
     RUNS_COMPLETE_FALSE_RU,
+    TARGET_ROLE_LABEL_RU,
     WAITING_FOR_HUMAN_RU,
+    agent_role_ru,
     all_operational_status_options,
     artifact_type_ru,
     catalog_filter_values,
     decision_code_ru,
     derivation_execution_path_warning,
     derivation_stage_warning,
+    digital_org_handoff_status_lines,
+    digital_org_receiver_honesty_lines,
+    digital_org_source_completion_line,
     execution_path_summary_rows,
     execution_step_title,
     format_timestamp_moscow,
     handoff_status_ru,
+    handoff_type_ru,
     human_decision_reason_text,
     operational_status_ru,
     post_decision_lines,
@@ -347,6 +366,8 @@ def _render_selected_run(snapshot: AgentRunSnapshot) -> None:
     else:
         st.caption("В доступном окне событий профессиональный маршрут не зафиксирован.")
 
+    _render_digital_organization(snapshot)
+
     current = snapshot.stage.current_stage
     if snapshot.stage.derivation_state is DerivationState.OK and current is not None:
         st.markdown("**Текущая стадия (сводка)**")
@@ -364,6 +385,110 @@ def _render_selected_run(snapshot: AgentRunSnapshot) -> None:
         )
     else:
         st.caption("В доступном окне событий записей нет.")
+
+
+def _render_digital_organization(snapshot: AgentRunSnapshot) -> None:
+    org = snapshot.digital_organization
+    st.markdown(f"### {DIGITAL_ORG_SECTION_TITLE_RU}")
+    st.caption(DIGITAL_ORG_SECTION_SUBTITLE_RU)
+
+    if not org.history_complete:
+        st.info(DIGITAL_ORG_HISTORY_INCOMPLETE_RU)
+
+    if org.derivation_state is DerivationState.INCONSISTENT:
+        st.warning(HANDOFF_INCONSISTENT_RU)
+
+    with st.container(border=True):
+        st.markdown(f"**{agent_role_ru(org.source_agent_code)}**")
+        completion = digital_org_source_completion_line(org)
+        if completion:
+            st.write(f"✓ {completion}")
+        else:
+            st.write(
+                f"**Статус источника:** {status_icon(org.source_operational_status)} "
+                f"{operational_status_ru(org.source_operational_status)}"
+            )
+        if org.source_completed_at is not None:
+            st.caption(f"Завершён: {format_timestamp_moscow(org.source_completed_at)} МСК")
+
+    handoff = org.handoff
+    if handoff is None:
+        if not org.history_complete:
+            st.info(HANDOFF_NOT_CONFIRMED_INCOMPLETE_RU)
+        else:
+            st.info(HANDOFF_NOT_OBSERVED_RU)
+        return
+
+    st.markdown("↓")
+
+    if handoff.artifact_type or handoff.artifact_id:
+        with st.container(border=True):
+            if handoff.artifact_type:
+                st.markdown(f"**{artifact_type_ru(handoff.artifact_type)}**")
+            else:
+                st.markdown("**Бизнес-артефакт**")
+            if handoff.artifact_id:
+                short_id = (
+                    f"…{handoff.artifact_id[-8:]}"
+                    if len(handoff.artifact_id) > 8
+                    else handoff.artifact_id
+                )
+                st.caption(f"ID: {short_id}")
+
+        st.markdown("↓")
+
+    transfer_ok = handoff.status is HandoffStatus.PERSISTED
+    transfer_failed = handoff.status is HandoffStatus.PERSIST_FAILED
+    with st.container(border=True):
+        st.markdown("**Передача**")
+        for line in digital_org_handoff_status_lines(handoff.status):
+            if transfer_failed:
+                st.error(line)
+            elif transfer_ok:
+                st.write(f"✓ {line}")
+            else:
+                st.write(line)
+        if handoff.derivation_state is DerivationState.INCOMPLETE and (
+            handoff.handoff_type is None or handoff.target_role_code is None
+        ):
+            st.info(HANDOFF_LEGACY_INCOMPLETE_RU)
+
+    if handoff.target_role_code and not transfer_failed:
+        st.markdown("↓")
+    elif handoff.target_role_code and transfer_failed:
+        st.caption("Предназначенная роль известна, но долговременная передача не подтверждена.")
+
+    if handoff.target_role_code:
+        with st.container(border=True):
+            st.markdown(f"**{agent_role_ru(handoff.target_role_code)}**")
+            st.caption(TARGET_ROLE_LABEL_RU)
+            if transfer_ok or handoff.status is HandoffStatus.CREATED:
+                for line in digital_org_receiver_honesty_lines():
+                    st.write(f"• {line}")
+            elif transfer_failed:
+                st.write(f"• {digital_org_receiver_honesty_lines()[0]}")
+    elif handoff.derivation_state is DerivationState.INCOMPLETE:
+        st.info(HANDOFF_LEGACY_INCOMPLETE_RU)
+
+    with st.expander("Технические идентификаторы передачи"):
+        if handoff.handoff_id:
+            st.code(handoff.handoff_id)
+        if handoff.handoff_type:
+            st.write(f"Тип: {handoff_type_ru(handoff.handoff_type)}")
+            st.code(handoff.handoff_type)
+        st.code(org.source_run_id)
+        if handoff.target_role_code:
+            st.code(handoff.target_role_code)
+        if handoff.artifact_type:
+            st.write(f"artifact_type: {handoff.artifact_type}")
+        if handoff.artifact_id:
+            st.code(handoff.artifact_id)
+        if handoff.created_at is not None:
+            st.write(f"created_at: {format_timestamp_moscow(handoff.created_at)} МСК")
+        if handoff.persisted_at is not None:
+            st.write(f"persisted_at: {format_timestamp_moscow(handoff.persisted_at)} МСК")
+        if handoff.failed_at is not None:
+            st.write(f"failed_at: {format_timestamp_moscow(handoff.failed_at)} МСК")
 
 
 def main() -> None:

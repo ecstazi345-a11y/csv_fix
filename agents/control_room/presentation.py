@@ -17,6 +17,7 @@ from agents.control_room.dtos import (
     AgentRunSummary,
     AgentStageOccurrenceView,
     DerivationState,
+    DigitalOrganizationExecutionView,
     HandoffStatus,
     ProfessionalExecutionState,
     ProfessionalExecutionStepKind,
@@ -143,6 +144,15 @@ ARTIFACT_TYPE_RU: dict[str, str] = {
     "package": "Пакет кандидатов",
 }
 
+AGENT_ROLE_RU: dict[str, str] = {
+    "MONTHLY_PLAN_CONSTRUCTOR": "Конструктор месячного плана",
+    "MONTHLY_PLAN_ADMISSION_AGENT": "Агент допуска",
+}
+
+HANDOFF_TYPE_RU: dict[str, str] = {
+    "CONSTRUCTOR_TO_ADMISSION": "Передача Конструктор → Агент допуска",
+}
+
 PROFESSIONAL_EXECUTION_STATE_RU: dict[str, str] = {
     ProfessionalExecutionState.COMPLETED.value: "Завершён",
     ProfessionalExecutionState.RUNNING.value: "Выполняется",
@@ -168,6 +178,40 @@ AUTHORITY_NOT_MODELED_RU = (
 HUMAN_DECISION_HEADER_RU = "ТРЕБУЕТСЯ РЕШЕНИЕ ЧЕЛОВЕКА"
 POST_DECISION_HEADER_RU = "ПОСЛЕ РЕШЕНИЯ"
 REALITY_REFRESH_TITLE_RU = "Повторная проверка производственной реальности"
+
+DIGITAL_ORG_SECTION_TITLE_RU = "Цифровая организация"
+DIGITAL_ORG_SECTION_SUBTITLE_RU = "Передача профессионального результата"
+SOURCE_ROLE_COMPLETED_RU = (
+    "Цифровой сотрудник завершил свою профессиональную работу."
+)
+HANDOFF_CREATED_ORG_RU = "Передача сформирована."
+HANDOFF_CREATED_NOT_PERSISTED_RU = (
+    "Долговременное сохранение в доступном наблюдаемом состоянии не подтверждено."
+)
+HANDOFF_PERSISTED_ORG_RU = "Передача сохранена."
+HANDOFF_PERSISTED_SUPPORT_RU = "Долговременное сохранение подтверждено системой."
+HANDOFF_PERSIST_FAILED_ORG_RU = "Передача не сохранена."
+TARGET_ROLE_LABEL_RU = "Предназначенная профессиональная роль"
+RECEIVER_START_NOT_CONFIRMED_RU = (
+    "Запуск получателя в текущем наблюдаемом контуре не подтверждён."
+)
+RECEIVER_ACCEPTANCE_NOT_CONFIRMED_RU = (
+    "Принятие результата получателем в текущем наблюдаемом контуре не подтверждено."
+)
+OWNERSHIP_NOT_PROVEN_RU = (
+    "Переход профессиональной ответственности получателю системой пока не подтверждён."
+)
+HANDOFF_LEGACY_INCOMPLETE_RU = (
+    "Профессиональный контекст передачи недоступен для этой исторической записи."
+)
+HANDOFF_INCONSISTENT_RU = "В истории передачи обнаружено противоречие."
+HANDOFF_NOT_OBSERVED_RU = (
+    "Передача профессионального результата в доступной истории не зафиксирована."
+)
+HANDOFF_NOT_CONFIRMED_INCOMPLETE_RU = (
+    "В доступной части истории передача не подтверждена."
+)
+DIGITAL_ORG_HISTORY_INCOMPLETE_RU = "Показана доступная часть истории выполнения."
 
 
 def operational_status_ru(code: str) -> str:
@@ -486,4 +530,41 @@ def artifact_summary_rows(
             "ID": artifact.artifact_id,
         }
         for artifact in artifacts
+    )
+
+
+def agent_role_ru(code: str) -> str:
+    text = str(code or "").strip()
+    return AGENT_ROLE_RU.get(text, text)
+
+
+def handoff_type_ru(code: str) -> str:
+    text = str(code or "").strip()
+    return HANDOFF_TYPE_RU.get(text, text)
+
+
+def digital_org_handoff_status_lines(status: HandoffStatus | str) -> tuple[str, ...]:
+    value = status.value if isinstance(status, HandoffStatus) else str(status or "").strip()
+    if value == HandoffStatus.CREATED.value:
+        return (HANDOFF_CREATED_ORG_RU, HANDOFF_CREATED_NOT_PERSISTED_RU)
+    if value == HandoffStatus.PERSISTED.value:
+        return (HANDOFF_PERSISTED_ORG_RU, HANDOFF_PERSISTED_SUPPORT_RU)
+    if value == HandoffStatus.PERSIST_FAILED.value:
+        return (HANDOFF_PERSIST_FAILED_ORG_RU,)
+    return (handoff_status_ru(value),)
+
+
+def digital_org_source_completion_line(
+    view: DigitalOrganizationExecutionView,
+) -> Optional[str]:
+    if view.source_operational_status == OperationalStatus.COMPLETED.value:
+        return SOURCE_ROLE_COMPLETED_RU
+    return None
+
+
+def digital_org_receiver_honesty_lines() -> tuple[str, ...]:
+    return (
+        RECEIVER_START_NOT_CONFIRMED_RU,
+        RECEIVER_ACCEPTANCE_NOT_CONFIRMED_RU,
+        OWNERSHIP_NOT_PROVEN_RU,
     )

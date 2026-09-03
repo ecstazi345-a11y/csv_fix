@@ -26,6 +26,7 @@ from agents.control_room.dtos import (
     AgentStageOccurrenceView,
     AgentStageView,
     DerivationState,
+    DigitalOrganizationExecutionView,
     HandoffStatus,
     HumanDecisionConsequenceView,
     HumanDecisionRecordView,
@@ -115,7 +116,10 @@ class _StreamlitStub(ModuleType):
         self.caption_calls.append(body)
 
     def error(self, body: str) -> None:
-        return None
+        self.warning_calls.append(body)
+
+    def container(self, **kwargs: Any) -> Any:
+        return self.expander("container")
 
     def columns(self, spec: Any, **kwargs: Any) -> tuple[Any, ...]:
         return tuple(_ColumnStub() for _ in range(len(spec) if isinstance(spec, list) else spec))
@@ -394,6 +398,15 @@ def _path_snapshot(**overrides: Any) -> AgentRunSnapshot:
             steps=(completed_stage, hitl_step, running_stage),
             derivation_state=DerivationState.OK,
             history_complete=True,
+        ),
+        "digital_organization": DigitalOrganizationExecutionView(
+            source_agent_code="MONTHLY_PLAN_CONSTRUCTOR",
+            source_run_id="run-viz-001",
+            source_operational_status=OperationalStatus.RUNNING.value,
+            source_completed_at=None,
+            handoff=None,
+            history_complete=True,
+            derivation_state=DerivationState.OK,
         ),
         "timeline_events": (),
         "events_complete": True,

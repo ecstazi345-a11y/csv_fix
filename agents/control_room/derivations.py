@@ -21,6 +21,7 @@ from agents.control_room.dtos import (
     AgentStageOccurrenceView,
     AgentStageView,
     DerivationState,
+    DigitalOrganizationExecutionView,
     HandoffStatus,
     HumanDecisionConsequenceView,
     HumanDecisionRecordView,
@@ -1330,4 +1331,36 @@ def derive_professional_execution_path(
         steps=tuple(finalized_steps),
         derivation_state=derivation_state,
         history_complete=events_complete,
+    )
+
+
+def derive_digital_organization_view(
+    run: AgentRunDetail,
+    handoff: AgentHandoffView,
+    *,
+    events_complete: bool,
+) -> DigitalOrganizationExecutionView:
+    """Compose source-side Digital Organization transfer view.
+
+    Reuses AgentHandoffView professional semantics. Does not invent receiver,
+    target run, ownership, authority, or orchestration completion.
+    """
+    derivation_state = handoff.derivation_state
+    if not events_complete:
+        derivation_state = _merge_derivation_state(derivation_state, DerivationState.INCOMPLETE)
+
+    handoff_ref: Optional[AgentHandoffView]
+    if handoff.status is HandoffStatus.NOT_STARTED and handoff.handoff_id is None:
+        handoff_ref = None
+    else:
+        handoff_ref = handoff
+
+    return DigitalOrganizationExecutionView(
+        source_agent_code=run.agent_code,
+        source_run_id=run.run_id,
+        source_operational_status=run.operational_status,
+        source_completed_at=run.completed_at,
+        handoff=handoff_ref,
+        history_complete=events_complete,
+        derivation_state=derivation_state,
     )

@@ -1173,6 +1173,184 @@ class ProfessionalExecutionPathTests(unittest.TestCase):
         self._for_each_store(exercise)
 
 
+class DigitalOrganizationViewTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.store = _memory_store_factory()
+        self.port = AgentControlRoomQueryPort(self.store)
+
+    def test_success_persisted_composition(self) -> None:
+        self.store.create_run(
+            _build_run(
+                operational_status=OperationalStatus.COMPLETED,
+                started_at=FIXED_AT,
+                completed_at=LATER_AT,
+            )
+        )
+        _append(
+            self.store,
+            {
+                "event_id": "ho-create",
+                "event_type": EventType.HANDOFF_CREATED,
+                "family": EventFamily.HANDOFF,
+                "stage_id": "HANDOFF_PREPARATION",
+                "node_name": "persist_handoff",
+                "handoff_id": "handoff-001",
+                "artifact_type": "package",
+                "artifact_id": "pkg-001",
+                "title": "Handoff created",
+                "handoff_observability": _handoff_context(),
+                "detail": {
+                    "target_role": "FAKE_ROLE",
+                    "target_agent": "FAKE_AGENT",
+                    "target_run": "fake-run",
+                    "receiver_accepted": True,
+                    "ownership_transferred": True,
+                },
+            },
+        )
+        _append(
+            self.store,
+            {
+                "event_id": "ho-persist",
+                "event_type": EventType.HANDOFF_PERSISTED,
+                "family": EventFamily.HANDOFF,
+                "stage_id": "HANDOFF_PERSISTENCE",
+                "node_name": "persist_handoff",
+                "handoff_id": "handoff-001",
+                "title": "Handoff persisted",
+                "occurred_at": LATER_AT,
+            },
+        )
+        snapshot = self.port.get_run_snapshot("run-001")
+        org = snapshot.digital_organization
+        self.assertEqual(org.source_agent_code, "MONTHLY_PLAN_CONSTRUCTOR")
+        self.assertEqual(org.source_run_id, "run-001")
+        self.assertEqual(org.source_operational_status, OperationalStatus.COMPLETED.value)
+        self.assertEqual(org.source_completed_at, LATER_AT)
+        self.assertIsNotNone(org.handoff)
+        assert org.handoff is not None
+        self.assertEqual(org.handoff.status, HandoffStatus.PERSISTED)
+        self.assertEqual(org.handoff.target_role_code, "MONTHLY_PLAN_ADMISSION_AGENT")
+        self.assertEqual(org.handoff.artifact_type, "package")
+        self.assertEqual(org.handoff.artifact_id, "pkg-001")
+        self.assertEqual(org.derivation_state, DerivationState.OK)
+        self.assertTrue(org.history_complete)
+        self.assertNotIn("receiver_observed", org.__dict__)
+        self.assertNotIn("target_run_id", org.__dict__)
+        self.assertNotIn("ownership_transferred", org.__dict__)
+        self.assertNotIn("orchestration_completed", org.__dict__)
+
+    def test_created_only(self) -> None:
+        self.store.create_run(_build_run(operational_status=OperationalStatus.RUNNING, started_at=FIXED_AT))
+        _append(
+            self.store,
+            {
+                "event_id": "ho-create",
+                "event_type": EventType.HANDOFF_CREATED,
+                "family": EventFamily.HANDOFF,
+                "stage_id": "HANDOFF_PREPARATION",
+                "node_name": "persist_handoff",
+                "handoff_id": "handoff-001",
+                "artifact_type": "package",
+                "artifact_id": "pkg-001",
+                "title": "Handoff created",
+                "handoff_observability": _handoff_context(),
+            },
+        )
+        org = self.port.get_run_snapshot("run-001").digital_organization
+        assert org.handoff is not None
+        self.assertEqual(org.handoff.status, HandoffStatus.CREATED)
+        self.assertIsNone(org.handoff.persisted_at)
+        self.assertIsNone(org.handoff.failed_at)
+
+    def test_persist_failed(self) -> None:
+        self.store.create_run(
+            _build_run(
+                operational_status=OperationalStatus.FAILED,
+                started_at=FIXED_AT,
+                completed_at=LATER_AT,
+            )
+        )
+        _append(
+            self.store,
+            {
+                "event_id": "ho-create",
+                "event_type": EventType.HANDOFF_CREATED,
+                "family": EventFamily.HANDOFF,
+                "stage_id": "HANDOFF_PREPARATION",
+                "node_name": "persist_handoff",
+                "handoff_id": "handoff-001",
+                "artifact_type": "package",
+                "artifact_id": "pkg-001",
+                "title": "Handoff created",
+                "handoff_observability": _handoff_context(),
+            },
+        )
+        _append(
+            self.store,
+            {
+                "event_id": "ho-fail",
+                "event_type": EventType.HANDOFF_PERSIST_FAILED,
+                "family": EventFamily.HANDOFF,
+                "stage_id": "HANDOFF_PERSISTENCE",
+                "node_name": "persist_handoff",
+                "handoff_id": "handoff-001",
+                "title": "Handoff persist failed",
+                "status": EventStatus.FAILED,
+                "occurred_at": LATER_AT,
+            },
+        )
+        org = self.port.get_run_snapshot("run-001").digital_organization
+        self.assertEqual(org.source_operational_status, OperationalStatus.FAILED.value)
+        assert org.handoff is not None
+        self.assertEqual(org.handoff.status, HandoffStatus.PERSIST_FAILED)
+        self.assertEqual(org.handoff.failed_at, LATER_AT)
+        self.assertEqual(org.handoff.target_role_code, "MONTHLY_PLAN_ADMISSION_AGENT")
+
+    def test_legacy_incomplete_ignores_detail(self) -> None:
+        self.store.create_run(_build_run(operational_status=OperationalStatus.RUNNING, started_at=FIXED_AT))
+        _append(
+            self.store,
+            {
+                "event_id": "ho-legacy",
+                "event_type": EventType.HANDOFF_CREATED,
+                "family": EventFamily.HANDOFF,
+                "stage_id": "HANDOFF_PREPARATION",
+                "node_name": "persist_handoff",
+                "handoff_id": "handoff-legacy",
+                "title": "Legacy",
+                "detail": {
+                    "target_role": "FAKE_ROLE",
+                    "target_agent": "FAKE_AGENT",
+                    "target_run": "fake-run",
+                    "receiver_accepted": True,
+                    "ownership_transferred": True,
+                },
+                "allow_legacy_missing_handoff_subcontract": True,
+            },
+        )
+        org = self.port.get_run_snapshot("run-001").digital_organization
+        assert org.handoff is not None
+        self.assertEqual(org.handoff.status, HandoffStatus.CREATED)
+        self.assertIsNone(org.handoff.target_role_code)
+        self.assertIsNone(org.handoff.handoff_type)
+        self.assertEqual(org.derivation_state, DerivationState.INCOMPLETE)
+
+    def test_no_handoff(self) -> None:
+        self.store.create_run(_build_run(operational_status=OperationalStatus.RUNNING, started_at=FIXED_AT))
+        org = self.port.get_run_snapshot("run-001").digital_organization
+        self.assertIsNone(org.handoff)
+        self.assertEqual(org.source_run_id, "run-001")
+
+    def test_query_port_methods_unchanged(self) -> None:
+        public = {
+            name
+            for name in dir(AgentControlRoomQueryPort)
+            if not name.startswith("_") and callable(getattr(AgentControlRoomQueryPort, name))
+        }
+        self.assertEqual(public, {"get_run", "get_run_snapshot", "list_runs"})
+
+
 class QueryPortValidationTests(unittest.TestCase):
     def test_invalid_limits(self) -> None:
         port = AgentControlRoomQueryPort(_memory_store_factory())

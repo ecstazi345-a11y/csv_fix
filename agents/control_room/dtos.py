@@ -271,6 +271,23 @@ class AgentProfessionalExecutionPathView:
 
 
 @dataclass(frozen=True)
+class DigitalOrganizationExecutionView:
+    """Source-side professional work transfer view for Digital Organization Level 1.
+
+    Does not claim receiver acceptance, target run existence, ownership transfer,
+    handoff authority, or orchestration completion.
+    """
+
+    source_agent_code: str
+    source_run_id: str
+    source_operational_status: str
+    source_completed_at: Optional[datetime]
+    handoff: Optional[AgentHandoffView]
+    history_complete: bool
+    derivation_state: DerivationState
+
+
+@dataclass(frozen=True)
 class AgentRunSnapshot:
     run: AgentRunDetail
     stage: AgentStageView
@@ -278,6 +295,7 @@ class AgentRunSnapshot:
     human_decision_surface: AgentHumanDecisionSurfaceView
     handoff: AgentHandoffView
     professional_execution_path: AgentProfessionalExecutionPathView
+    digital_organization: DigitalOrganizationExecutionView
     timeline_events: tuple[AgentEventView, ...]
     events_complete: bool
     read_at: datetime

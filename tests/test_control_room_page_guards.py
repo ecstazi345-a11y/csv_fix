@@ -35,6 +35,7 @@ from agents.control_room.dtos import (
     AgentStageOccurrenceView,
     AgentStageView,
     DerivationState,
+    DigitalOrganizationExecutionView,
     HandoffStatus,
     HumanDecisionConsequenceView,
     HumanDecisionRecordView,
@@ -147,6 +148,9 @@ class _StreamlitStub(ModuleType):
         self.expander = MagicMock()
         self.expander.return_value.__enter__ = lambda s: s
         self.expander.return_value.__exit__ = lambda s, *a: None
+        self.container = MagicMock()
+        self.container.return_value.__enter__ = lambda s: s
+        self.container.return_value.__exit__ = lambda s, *a: None
 
     def markdown(self, text: str, *args: Any, **kwargs: Any) -> None:
         self.markdown_calls.append(str(text))
@@ -325,6 +329,15 @@ def _snapshot(**overrides: Any) -> AgentRunSnapshot:
             ),
             derivation_state=DerivationState.OK,
             history_complete=True,
+        ),
+        "digital_organization": DigitalOrganizationExecutionView(
+            source_agent_code="MONTHLY_PLAN_CONSTRUCTOR",
+            source_run_id="run-page-001",
+            source_operational_status=OperationalStatus.RUNNING.value,
+            source_completed_at=None,
+            handoff=None,
+            history_complete=True,
+            derivation_state=DerivationState.OK,
         ),
         "timeline_events": (
             AgentEventView(

@@ -13,10 +13,10 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **9 / 10**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** (Local Managed Runtime Backend v0.1) · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 State-of-the-Art HITL Architecture Gate** · **10.8A Structured HITL Read Contract** · **10.8B Professional HITL / Live Agent Execution Visualization** · **10.9 Architecture Preflight** · **10.9A Handoff Observability Contract**
-- **NEXT:** Increment **10.9B** Digital Organization Visualization — do **not** start before this checkpoint is committed
-- **Recovery code HEAD:** `22b7de5f6be39707a4e9d3c7d579648be1edec6f` (10.9A Handoff Observability Contract on `wip/increment-10-agent-control-room`)
-- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · **10.5 Separate-Process Durability Proof DONE** · **ConstructorManagedRuntimeLauncher DONE** · **10.6 AgentControlRoomQueryPort DONE** · **10.7 Control Room Core DONE** · **10.8 State-of-the-Art HITL Architecture Gate DONE** · **10.8A Structured HITL Read Contract DONE** · **10.8B Professional HITL / Live Agent Execution Visualization DONE** · **10.9 Architecture Preflight DONE** · **10.9A Handoff Observability Contract DONE** · Increment 10 overall **NOT COMPLETE**
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A] Runtime Instrumentation Foundation · [10.3B] Core LangGraph Stage Wiring · [10.3C] Tool / Artifact Runtime Instrumentation · [10.3D] HITL / Resume / Reality Refresh Runtime Instrumentation · [10.3E] Handoff / Completion Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** (Local Managed Runtime Backend v0.1) · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 State-of-the-Art HITL Architecture Gate** · **10.8A Structured HITL Read Contract** · **10.8B Professional HITL / Live Agent Execution Visualization** · **10.9 Architecture Preflight** · **10.9A Handoff Observability Contract** · **10.9B Digital Organization Visualization**
+- **NEXT:** Increment **10.10** Full live-run proof + regression + EOS-SEC — do **not** start before this checkpoint is committed
+- **Recovery code HEAD:** `c9b4483f23710c01f1cbb257796d8d1476a38441` (10.9B Digital Organization Visualization on `wip/increment-10-agent-control-room`)
+- **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1 DONE · 10.2 DONE · 10.3A DONE · 10.3B DONE · 10.3C DONE · 10.3D DONE · 10.3E DONE · **10.3A–E Runtime Instrumentation DONE** · **Operational Truth Fix DONE** · **10.4 Durable Observability Store DONE** · **10.5 Separate-Process Durability Proof DONE** · **ConstructorManagedRuntimeLauncher DONE** · **10.6 AgentControlRoomQueryPort DONE** · **10.7 Control Room Core DONE** · **10.8 State-of-the-Art HITL Architecture Gate DONE** · **10.8A Structured HITL Read Contract DONE** · **10.8B Professional HITL / Live Agent Execution Visualization DONE** · **10.9 Architecture Preflight DONE** · **10.9A Handoff Observability Contract DONE** · **10.9B Digital Organization Visualization DONE** · Increment 10 overall **NOT COMPLETE**
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -5818,5 +5818,423 @@ With explicit honesty:
 **Future cross-run law:** full multi-agent chain later requires structural correlation such as `handoff_id` · `orchestration_run_id` · future `target_run` link · future receiver-side evidence. Do **NOT** infer target run from timestamps or agent names.
 
 Remaining: **10.9B** Digital Organization Visualization → **10.10** full live-run proof + regressions + EOS-SEC + final documentation
+
+Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**
+
+---
+
+============================================================
+CHECKPOINT — 2026-09-03
+INCREMENT 10.9B
+DIGITAL ORGANIZATION VISUALIZATION
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** make Control Room LEVEL 1 — Digital Organization — real as an honest operator visualization of professional work transfer between digital employees / professional roles. Observe-only. **10.10 is NOT implemented in this checkpoint.**
+
+------------------------------------------------------------
+PROGRAM SNAPSHOT
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| 10.7 | **DONE** |
+| 10.8 | **DONE** |
+| 10.8A | **DONE** |
+| 10.8B | **DONE** |
+| 10.9 Architecture Preflight | **DONE** |
+| 10.9A Handoff Observability Contract | **DONE** |
+| 10.9B Digital Organization Visualization | **DONE** |
+| Constructor | **9 / 10** |
+| Increment 10 | **NOT COMPLETE** |
+| Recovery HEAD | `c9b4483f23710c01f1cbb257796d8d1476a38441` |
+| NEXT | **10.10** Full live-run proof + regression + EOS-SEC |
+
+------------------------------------------------------------
+PRODUCT MILESTONE
+------------------------------------------------------------
+
+10.9B makes **LEVEL 1** of the Control Room real: **DIGITAL ORGANIZATION.**
+
+The operator can now observe professional work transfer **above** the level of one digital employee.
+
+| Increment | Question answered |
+|-----------|-------------------|
+| **10.8B** | What did one digital employee do? |
+| **10.9B** | Where did its professional result move next? |
+
+------------------------------------------------------------
+OBSERVABLE DIGITAL ORGANIZATION
+------------------------------------------------------------
+
+Accepted **source-side** chain:
+
+```
+SOURCE DIGITAL EMPLOYEE
+  → BUSINESS ARTIFACT
+  → HANDOFF
+  → INTENDED TARGET PROFESSIONAL ROLE
+```
+
+Current Constructor case:
+
+```
+Конструктор месячного плана
+  → Пакет кандидатов
+  → Передача
+  → Агент допуска
+```
+
+This is **observed professional transfer**, not a static architecture diagram.
+
+------------------------------------------------------------
+FIVE-LEVEL CONTROL ROOM MODEL
+------------------------------------------------------------
+
+| Level | Scope | Status |
+|-------|-------|--------|
+| 1 Digital Organization | source-side professional transfer | **10.9B DONE** |
+| 2 Agent Execution | professional path | **10.8B DONE** |
+| 3 Professional Stage Detail | safe stage/tool/artifact | **DONE** within current safe structured truth |
+| 4 Human Decision | observe-only | **DONE** |
+| 5 Audit Trace | secondary forensic layer | **DONE** |
+
+------------------------------------------------------------
+DIGITAL ORGANIZATION TRUTH LAW
+------------------------------------------------------------
+
+**Strong law preserved by 10.9B:**
+
+```
+SOURCE COMPLETED
+  ≠ HANDOFF PERSISTED
+  ≠ RECEIVER ACCEPTED
+  ≠ TARGET RUN STARTED
+  ≠ OWNERSHIP TRANSFERRED
+  ≠ ORCHESTRATION COMPLETED
+```
+
+These remain **separate** truths. Never collapsed.
+
+------------------------------------------------------------
+SOURCE COMPLETION LAW
+------------------------------------------------------------
+
+Source **COMPLETED** means only: the selected source digital employee completed its own professional run.
+
+For Constructor: «Конструктор завершил свою профессиональную работу.»
+
+It does **NOT** mean: Admission accepted · monthly plan approved · whole orchestration complete.
+
+------------------------------------------------------------
+BUSINESS ARTIFACT LAW
+------------------------------------------------------------
+
+Digital Organization visualizes **formal business artifact identity**.
+
+| Field | Example |
+|-------|---------|
+| `artifact_type` | `package` |
+| professional presentation | Пакет кандидатов |
+
+Only safe `artifact_type` · `artifact_id` are exposed.
+
+**No** artifact body · **no** CandidatePackage body · **no** candidate rows/counts.
+
+------------------------------------------------------------
+HANDOFF LAW
+------------------------------------------------------------
+
+Supported lifecycle states: `NOT_STARTED` · `CREATED` · `PERSISTED` · `PERSIST_FAILED`
+
+Plus derivation: `OK` · `INCOMPLETE` · `INCONSISTENT`
+
+**No** receiver-side delivery states exist yet (`DELIVERED` · `RECEIVED` · `ACCEPTED` · `CONSUMED` · `STARTED_BY_TARGET` forbidden).
+
+------------------------------------------------------------
+HANDOFF PERSISTED LAW
+------------------------------------------------------------
+
+`HANDOFF PERSISTED` proves: durable persistence succeeded.
+
+It does **NOT** prove: receiver received · receiver accepted · receiver started · responsibility transferred.
+
+------------------------------------------------------------
+TARGET ROLE LAW
+------------------------------------------------------------
+
+Target shown by 10.9B is: **INTENDED PROFESSIONAL ROLE.**
+
+Current example: `MONTHLY_PLAN_ADMISSION_AGENT` → Агент допуска
+
+It is **NOT**: observed running agent · target run · accepted owner.
+
+------------------------------------------------------------
+RECEIVER UNKNOWN LAW
+------------------------------------------------------------
+
+Absence of receiver evidence is **NOT** proof of receiver absence.
+
+10.9B therefore does **NOT** say: «Получатель не запущен.» · «Получателя нет.»
+
+Instead:
+
+- «Запуск получателя в текущем наблюдаемом контуре не подтверждён.»
+- «Принятие результата получателем не подтверждено.»
+
+**UNKNOWN ≠ FALSE.**
+
+------------------------------------------------------------
+OWNERSHIP LAW
+------------------------------------------------------------
+
+Ownership transfer: **NOT PROVEN.**
+
+10.9B does **NOT** display: «Ответственность передана.» · «Задача перешла во владение.» · «Следующий агент отвечает за результат.»
+
+Future receiver-side evidence must prove actual responsibility transition.
+
+------------------------------------------------------------
+AUTHORITY LAW
+------------------------------------------------------------
+
+| Property | Status |
+|----------|--------|
+| Handoff authority | **NOT MODELED** |
+| Handoff authority enforcement | **NOT IMPLEMENTED** |
+
+No authorization claims are displayed.
+
+------------------------------------------------------------
+QUERY PORT LAW
+------------------------------------------------------------
+
+10.9B remains Query Port only.
+
+Public methods **unchanged:** `list_runs` · `get_run` · `get_run_snapshot`
+
+**No** cross-run query · receiver lookup · target-run lookup · orchestration graph query.
+
+------------------------------------------------------------
+SOURCE-SIDE SCOPE
+------------------------------------------------------------
+
+10.9B is intentionally **SOURCE-SIDE DIGITAL ORGANIZATION LEVEL 1.**
+
+It shows: selected source run · business artifact · handoff · intended target role.
+
+It does **NOT** yet show a full observed multi-agent chain.
+
+------------------------------------------------------------
+NO CROSS-RUN CLAIM
+------------------------------------------------------------
+
+No target run correlation exists today. No source→target run correlation is fabricated.
+
+Full multi-agent execution history requires future structural correlation (`handoff_id` · `orchestration_run_id` · future `target_run` link · receiver-side evidence).
+
+------------------------------------------------------------
+ORGANIZATION TOPOLOGY LAW
+------------------------------------------------------------
+
+10.9B does **NOT** hardcode the entire designed chain:
+
+```
+Constructor → Admission → Constraint → Resource → Economic → Management
+```
+
+as execution truth.
+
+Only **observed transfer** for the selected source run is shown.
+
+Static professional architecture **≠** observed execution topology.
+
+------------------------------------------------------------
+DIGITAL ORGANIZATION READ MODEL
+------------------------------------------------------------
+
+New agent-neutral: `DigitalOrganizationExecutionView`
+
+Composed from:
+
+```
+run truth
+  + AgentHandoffView
+  + bounded completeness / derivation state
+```
+
+Attached to `AgentRunSnapshot.digital_organization` inside `get_run_snapshot()`.
+
+**No** Constructor-specific DTOs.
+
+------------------------------------------------------------
+HANDOFF OBSERVABILITY FOUNDATION
+------------------------------------------------------------
+
+Depends on **10.9A** typed authoritative semantics:
+
+- `handoff_type`
+- `target_role_code`
+
+10.9B does **NOT** parse `event.detail` · handoff_type naming · documentation · known architecture to infer target role.
+
+------------------------------------------------------------
+FAILURE / CREATED / LEGACY / INCONSISTENT / INCOMPLETE
+------------------------------------------------------------
+
+| Condition | Operator truth |
+|-----------|----------------|
+| `HANDOFF_PERSIST_FAILED` | Prominent failure. No successful transfer state after failed persistence. Target role may remain identifiable if typed. |
+| `HANDOFF_CREATED` only | «Передача сформирована.» Persistence unconfirmed. No automatic FAILED or PERSISTED inference. |
+| Legacy without typed context | Lifecycle may remain visible; professional target semantics → **INCOMPLETE**. No detail reconstruction. |
+| `INCONSISTENT` | Warning before visualization. No guessed transition/recipient. |
+| `events_complete=False` | «Показана доступная часть истории выполнения.» Must not imply full orchestration history. |
+
+------------------------------------------------------------
+PAGE HIERARCHY
+------------------------------------------------------------
+
+Control Room right-pane hierarchy:
+
+1. Run Header
+2. Integrity warnings
+3. Professional Execution Path **[10.8B]**
+4. Digital Organization **[10.9B]**
+5. Forensic event window **[secondary]**
+
+Preserves single-agent professional work and adds organizational transfer above it.
+
+------------------------------------------------------------
+RUSSIAN PROFESSIONAL PRESENTATION
+------------------------------------------------------------
+
+Deterministic mappings (no LLM):
+
+| Code | RU label |
+|------|----------|
+| `MONTHLY_PLAN_CONSTRUCTOR` | Конструктор месячного плана |
+| `MONTHLY_PLAN_ADMISSION_AGENT` | Агент допуска |
+| `package` | Пакет кандидатов |
+| `CONSTRUCTOR_TO_ADMISSION` | professional RU handoff label |
+
+------------------------------------------------------------
+SECURITY / EOS-SEC
+------------------------------------------------------------
+
+10.9B does **NOT** expose:
+
+`event.detail` · handoff artifact body · CandidatePackage body · artifact body · candidate IDs · candidate counts · scope body · checkpoint state · authorization context · tool arguments/results · prompts · model output · chain-of-thought
+
+**No** write controls · **no** LLM.
+
+------------------------------------------------------------
+PERFORMANCE LAW
+------------------------------------------------------------
+
+One selected run → **one** `get_run_snapshot()`.
+
+Digital Organization is composed from already-loaded selected-run truth.
+
+**No** N+1 · target lookup · cross-run query · orchestration-wide fetch.
+
+------------------------------------------------------------
+WORLD-CLASS + EXECUTION OS
+------------------------------------------------------------
+
+Leading systems provide: multi-agent topology · handoff tracing · workflow execution · durability · observability.
+
+Execution OS adds stricter professional business semantics:
+
+- source professional responsibility
+- formal business artifact
+- intended professional recipient
+- durable handoff state
+- epistemic distinction between **proven / unknown / absent**
+- future ownership/governance
+
+------------------------------------------------------------
+TEST / RELEASE GATES
+------------------------------------------------------------
+
+| Gate | Result |
+|------|--------|
+| Targeted 10.9B | **19 PASS** (13 visualization + 6 Query Port) |
+| Query Port regression | **PASS** |
+| 10.9A | **PASS** |
+| 10.8B | **PASS** |
+| 10.8A | **PASS** |
+| Handoff / Completion | **PASS** |
+| 10.4 | **PASS** |
+| 10.5 | **PASS** |
+| Run Control | **PASS** |
+| Launcher | **PASS** |
+| EOS-SEC | **PASS** |
+| py_compile | **PASS** |
+| Architecture drift | **NO** |
+
+**DURABLE_RESTART:** **ENVIRONMENT_BLOCKED_NOT_REGRESSION** — do **NOT** write PASS.
+
+------------------------------------------------------------
+COMMITS
+------------------------------------------------------------
+
+CODE: `c9b4483f23710c01f1cbb257796d8d1476a38441` · message: `feat(agents): add digital organization view` · BRANCH: `wip/increment-10-agent-control-room` · PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES** · worktree after code commit: **CLEAN**
+
+FILES (9): `agents/control_room/dtos.py` · `agents/control_room/derivations.py` · `agents/control_room/query_port.py` · `agents/control_room/presentation.py` · `pages/53_AI_Центр_управления_агентами.py` · `tests/test_control_room_digital_organization_visualization.py` · `tests/test_agent_control_room_query_port.py` · `tests/test_control_room_page_guards.py` · `tests/test_control_room_execution_visualization.py`
+
+Observability / Constructor runtime / Run Control / handoff write path: **unchanged**
+
+------------------------------------------------------------
+PRODUCT MEANING
+------------------------------------------------------------
+
+Control Room now answers three different management questions:
+
+| Level | Question |
+|-------|----------|
+| **LEVEL 1** | Where does professional work move between digital roles? |
+| **LEVEL 2** | What is this digital employee doing? |
+| **LEVEL 3+** | What happened inside the work, where did Human Decision occur, and what evidence exists? |
+
+This moves Execution OS from agent monitoring toward an **observable digital organization**.
+
+------------------------------------------------------------
+NEXT — INCREMENT 10.10
+------------------------------------------------------------
+
+**10.10** Full live-run proof + regression + EOS-SEC — do **not** start before this checkpoint is committed.
+
+10.10 is **NOT** primarily a feature-development increment. It is an **end-to-end proof** increment.
+
+**Target proof chain:**
+
+```
+Managed Run Start
+  → mission binding
+  → professional stages
+  → secure tool execution
+  → artifact creation
+  → Human Wait
+  → Human Decision
+  → controlled Resume
+  → Reality Refresh
+  → professional continuation
+  → Handoff Created
+  → Handoff Persisted
+  → Source Run Completed
+  → Professional Execution Path
+  → Digital Organization View
+  → durable observability truth
+  → restart/recovery proof where environment permits
+```
+
+**10.10 must validate:** runtime truth · Run Control truth · Professional Execution Path truth · Human Decision truth · Reality Refresh truth · Handoff truth · Completion truth · Digital Organization truth · durability/replay · EOS-SEC · no detail dependency · no hidden writes · no fabricated receiver/ownership.
+
+**DURABLE_RESTART open item:** currently `ENVIRONMENT_BLOCKED_NOT_REGRESSION` because disposable PostgreSQL/Docker remains unavailable. 10.10 must **re-evaluate** whether this gate can be executed. Do **not** silently waive it.
+
+**Constructor completion law:** Constructor remains **9 / 10** until 10.10 proof and final Increment 10 acceptance. Do **NOT** mark 10 / 10 yet.
+
+Remaining: **10.10** Full live-run proof + regression + EOS-SEC + final documentation
 
 Increment 10: **NOT COMPLETE** · Constructor: **9 / 10**

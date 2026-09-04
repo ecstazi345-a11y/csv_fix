@@ -13,12 +13,12 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **10 / 10** — **TECHNICAL COMPLETION**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation
-- **NEXT:** Increment **11B** Shadow Runtime Composition Root — do **not** start Admission implementation
-- **Recovery code HEAD:** `2abc2f006d808c75681605dc38468b3cdcb21044` (11A real-data Shadow assembler on `wip/increment-11a-real-data-assembler`)
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation · **11B** Shadow Runtime Composition Root
+- **NEXT:** Increment **11C** Persistent Shadow Runtime Stores / Persistent Shadow Runtime Root — do **not** start Admission implementation
+- **Recovery code HEAD:** `f63b9791d8e018f48726e807091c52c9c4f27f2e` (11B Shadow Runtime Composition Root on `wip/increment-11b-shadow-composition`)
 - **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1–10.9B DONE · **10.10 DONE** · **10.10A DONE** · Increment 10 overall **FUNCTIONALLY COMPLETE**
-- **Shadow composition:** **11A DONE** · **11B NOT STARTED**
-- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A is external composition, not a new Constructor profession.
+- **Shadow composition:** **11A DONE** · **11B DONE** · **11C NOT STARTED**
+- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A/11B are external composition, not a new Constructor profession.
 - **Professional Passport:** **DONE**
 - **Constructor Professional Passport v1.0:** `398893197bdd6de9aacfda06de468b0769c520f7`
 - **Reusable Professional Passport Template:** **DONE**
@@ -6873,3 +6873,218 @@ Wire: `RunControlService` → `ConstructorManagedRuntimeLauncher` → `RealDataS
 **NO PRODUCT BUSINESS WRITES.** Do **not** implement 11B in this checkpoint.
 
 Increment 11A: **DONE** · Increment 11B: **NOT STARTED** · Constructor: **10 / 10**
+
+============================================================
+CHECKPOINT — 2026-09-04
+INCREMENT 11B
+SHADOW RUNTIME COMPOSITION ROOT
+STATUS:
+DONE
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** record the external Shadow Runtime Composition Root that wires existing managed start + real-data adapter + Constructor runtime without changing Constructor v0.1 profession or core contracts. Documentation only. **11C is NOT implemented here.**
+
+CODE COMMIT: `f63b9791d8e018f48726e807091c52c9c4f27f2e`<br>
+CODE MESSAGE: `feat(agents): add constructor shadow runtime composition`<br>
+BRANCH: `wip/increment-11b-shadow-composition`<br>
+PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES**
+
+------------------------------------------------------------
+STAGE / ЭТАП
+------------------------------------------------------------
+
+Increment **11B** — Shadow Runtime Composition Root
+
+------------------------------------------------------------
+WHAT WAS DONE / ЧТО СДЕЛАНО
+------------------------------------------------------------
+
+Created:
+
+- `agents/monthly_plan_constructor/shadow_composition.py`
+- `tests/test_monthly_plan_constructor_shadow_composition.py`
+
+Created an external composition root connecting:
+
+`RunControlService` → `ConstructorManagedRuntimeLauncher` → `RealDataShadowAdapter` → existing Constructor runtime
+
+Public surface: frozen `ConstructorShadowComposition` + `build_constructor_shadow_composition(...)`.
+
+No Constructor professional logic changed. Existing production files were **not** modified.
+
+------------------------------------------------------------
+WHAT THIS GIVES THE SYSTEM / ЧТО ЭТО ДАЁТ СИСТЕМЕ
+------------------------------------------------------------
+
+Execution OS now has an explicit composition root for assembling a real-data Constructor Shadow runtime.
+
+The completed Constructor can now be wired to:
+
+- real authoritative scope data
+- managed runtime
+- Run Control
+- observability
+- HITL / checkpointer factories
+- handoff store factory
+
+without contaminating the Constructor core.
+
+Constructing the composition does **not** start a Shadow run. `start()` is optional, one-shot, and delegates only to `RunControlService.start`.
+
+------------------------------------------------------------
+CORE ARCHITECTURE LAWS / АРХИТЕКТУРНЫЕ ЗАКОНЫ
+------------------------------------------------------------
+
+- **ONE COMPOSITION = ONE SHADOW RUN.**
+- One `RealDataShadowAdapter` per composition.
+- The **same** adapter instance is used as `scope_reader` and `CandidateAssembler`.
+- `RunControlService` remains owner of run reservation, `AgentExecutionContext` issuance, and the read-only authorization boundary.
+- Composition does **not** mint `AgentExecutionContext`.
+- No product writers.
+- No benchmark / manual September plan reads.
+- No direct Supabase client in composition.
+- No LLM.
+- No Streamlit.
+- No Constructor business-logic duplication.
+- No quantity-arithmetic duplication.
+- No LangGraph professional-logic duplication.
+
+------------------------------------------------------------
+SHADOW ISOLATION LAW
+------------------------------------------------------------
+
+Human September plan remains **OUTSIDE** the Constructor Shadow execution path.
+
+Human plan is benchmark only **after** the Constructor candidate package is frozen.
+
+11B composition does **not** read:
+
+- `monthly_plan_lines_v2`
+- `execute_constructor_plan_lines_read`
+- `load_constructor_month_plan_lines`
+
+This preserves **blind Shadow Mode**.
+
+------------------------------------------------------------
+STORE / PERSISTENCE BOUNDARY
+------------------------------------------------------------
+
+11B does **not** define the canonical persistent Shadow store policy.
+
+It accepts explicit dependencies:
+
+- `observability_db_path`
+- `checkpointer_factory`
+- `hitl_store_factory`
+- `handoff_store_factory`
+
+**11C owns:**
+
+- canonical Shadow runtime root
+- persistent store locations
+- persistent checkpointer
+- persistent HITL store
+- persistent handoff store
+- Control Room observability path policy
+- restart-safe local Shadow infrastructure
+
+Those are **not** implemented in 11B.
+
+------------------------------------------------------------
+OBSERVABILITY CONSISTENCY
+------------------------------------------------------------
+
+The same explicit `observability_db_path` is used by Run Control durable observability and `ConstructorManagedRuntimeLauncher`.
+
+Control Plane and Runtime Plane therefore target the same observability database path.
+
+This is **wiring consistency**, not yet canonical production persistence policy.
+
+------------------------------------------------------------
+STORE FACTORY TIMING
+------------------------------------------------------------
+
+`checkpointer_factory`, `hitl_store_factory`, and `handoff_store_factory` are stored during composition creation.
+
+They are invoked by the existing managed launcher inside runtime worker execution.
+
+11B does **not** eagerly create these runtime state objects.
+
+------------------------------------------------------------
+ACCEPTED MINOR FINDINGS
+------------------------------------------------------------
+
+Final review: **READY_TO_COMMIT_11B** · Critical **0** · Major **0** · Minor **3 accepted**.
+
+**MINOR 1 — Observability SQLite open at composition build**
+
+Factory constructs `SqliteObservabilityStore` using the explicit caller-supplied path. This may create/open the SQLite file and bootstrap the empty observability schema during composition construction.
+
+This is **not** a Constructor run, a Shadow execution, a product write, a Supabase write, or a canonical persistence policy. Canonical path/store policy remains 11C.
+
+**MINOR 2 — One-shot consumption semantics**
+
+`ConstructorShadowComposition` is one-shot. The one-shot flag is consumed **before** `RunControlService.start` returns.
+
+If first start fails, the same composition is not reused. Retry requires a **new** composition.
+
+Accepted as fail-closed one-composition-one-run isolation. Concurrent double-start guard: **PASS**.
+
+**MINOR 3 — Registry validation**
+
+`registry=None` uses existing `InMemoryRunControlRegistry`. Injected registry is passed through to existing Run Control semantics. 11B does not invent a new registry validation layer.
+
+------------------------------------------------------------
+TEST / REVIEW EVIDENCE
+------------------------------------------------------------
+
+TARGETED Shadow Composition: **11 / 11 PASS**<br>
+Final combined gate: **74 PASS**<br>
+py_compile: **PASS**<br>
+EOS-SEC: **PASS**<br>
+Architecture drift: **NO**<br>
+Existing production files modified: **NONE**<br>
+Product data: **UNCHANGED**<br>
+Supabase: **UNCHANGED**
+
+------------------------------------------------------------
+PROGRAM POSITION
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| Constructor professional / runtime implementation | **10 / 10 DONE** |
+| Professional Passport | **DONE** |
+| 11A Real-Data Candidate Assembler | **DONE** |
+| 11B Shadow Runtime Composition Root | **DONE** |
+| 11C Persistent Shadow Runtime Stores | **NOT STARTED** |
+| Real September Shadow run | **NOT STARTED** |
+| Human benchmark comparison | **NOT STARTED** |
+| Admission Agent | **NOT STARTED** |
+
+------------------------------------------------------------
+NOT DONE YET
+------------------------------------------------------------
+
+- no persistent Shadow runtime-store policy
+- no canonical Shadow runtime root
+- no managed real-data September run
+- no production HITL operator path
+- no human-vs-agent comparison
+- no real September Candidate Package proof
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**Increment 11C — Persistent Shadow Runtime Stores**
+
+Purpose: prepare a durable, explicit, safe runtime location for the first real Shadow pilot:
+
+observability · checkpointing · HITL state · handoff state · Control Room read path
+
+**NO PRODUCT BUSINESS WRITES.** Do **not** mix manual benchmark data into Constructor execution. Do **not** implement 11C in this checkpoint.
+
+Increment 11A: **DONE** · Increment 11B: **DONE** · Increment 11C: **NOT STARTED** · Constructor: **10 / 10**

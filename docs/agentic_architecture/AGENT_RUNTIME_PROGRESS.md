@@ -13,12 +13,17 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **10 / 10** — **TECHNICAL COMPLETION**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard
-- **NEXT:** Constructor Professional Passport v1.0 → reusable Professional Passport Template → Constructor freeze → Admission Agent architecture gate — do **not** start Admission implementation before Passport + freeze
-- **Recovery code HEAD:** `194bcfd27717f38b120a6651cf6794ce88a1d33a` (10.10 full managed live-run proof + clock/replay release guard on `wip/increment-10-agent-control-room`)
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation
+- **NEXT:** Increment **11B** Shadow Runtime Composition Root — do **not** start Admission implementation
+- **Recovery code HEAD:** `2abc2f006d808c75681605dc38468b3cdcb21044` (11A real-data Shadow assembler on `wip/increment-11a-real-data-assembler`)
 - **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1–10.9B DONE · **10.10 DONE** · **10.10A DONE** · Increment 10 overall **FUNCTIONALLY COMPLETE**
-- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features
-- **Professional Passport:** **PENDING** · **Admission Agent:** **NOT STARTED**
+- **Shadow composition:** **11A DONE** · **11B NOT STARTED**
+- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A is external composition, not a new Constructor profession.
+- **Professional Passport:** **DONE**
+- **Constructor Professional Passport v1.0:** `398893197bdd6de9aacfda06de468b0769c520f7`
+- **Reusable Professional Passport Template:** **DONE**
+- **Template commit:** `34ce628430b9234624486ec32fdc7ed19a88e3c3`
+- **Admission Agent:** **NOT STARTED**
 - **DURABLE_RESTART:** **ACCEPTABLE_ENVIRONMENT_EXCEPTION** (not PASS / not FAIL / not REGRESSION)
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -6753,3 +6758,118 @@ FINAL PROGRAM STATUS
 | Admission Agent | **NOT STARTED** |
 
 Increment 10: **COMPLETE** · Constructor: **10 / 10**
+
+============================================================
+CHECKPOINT — 2026-09-04
+INCREMENT 11A
+REAL-DATA CANDIDATE ASSEMBLER
+/ QUANTITY PRESERVATION
+STATUS:
+DONE
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** record the external real-data Shadow adapter that preserves physical quantity without changing Constructor v0.1 profession or core contracts. Documentation only. **11B is NOT implemented here.**
+
+CODE COMMIT: `2abc2f006d808c75681605dc38468b3cdcb21044`<br>
+CODE MESSAGE: `feat(agents): add constructor real-data shadow assembler`<br>
+BRANCH: `wip/increment-11a-real-data-assembler`
+
+------------------------------------------------------------
+WHAT WAS DONE
+------------------------------------------------------------
+
+- External real-data Shadow adapter created: `RealDataShadowAdapter`.
+- One adapter instance = one run/composition. No global mutable cache. No cross-run snapshot sharing.
+- Quantity-bearing scope is captured through trusted executor boundaries (`execute_constructor_scope_read` + `execute_constructor_adjustments_read`).
+- Quantity is preserved outside identity-only `ConstructorRealityRow`.
+- Existing `build_constructor_proposal` remains the deterministic remainder source of truth. No new quantity formula.
+- The existing `CandidateAssembler` port now receives real physical quantity via this adapter.
+- Constructor core was not modified.
+
+------------------------------------------------------------
+QUANTITY LAW
+------------------------------------------------------------
+
+**Candidate Available Physical Quantity** = `available_to_add_qty`.
+
+`available_to_add_qty` ≠ resource-feasible quantity ≠ approved commitment quantity.
+
+Blind Shadow Phase A: `already_planned_qty = 0` because September human monthly-plan lines are **benchmark data** and must not contaminate the independent Constructor run.
+
+This is **experiment isolation**, not normal production planning semantics.
+
+------------------------------------------------------------
+SECURITY / EOS-SEC
+------------------------------------------------------------
+
+- Reads only through trusted executor boundaries.
+- `AgentExecutionContext` and tool allowlists preserved.
+- No direct Supabase client in the adapter.
+- No product writes. No human benchmark read. No LLM.
+- Fail closed: missing snapshot · snapshot/reality mismatch.
+- Failed refresh does not become authoritative truth.
+- `monthly_scope_manual_adjustments` still uses existing **TRANSITIONAL_PRIVILEGED_READ** through the existing trusted path until RLS/security release. **11A did not broaden that privilege.**
+
+------------------------------------------------------------
+REALITY REFRESH
+------------------------------------------------------------
+
+A successful new secure read may replace the run-scoped snapshot.
+
+A failed refresh does **not** replace the prior valid snapshot.
+
+Assembly must match the current `ConstructorRealityRead` identity, or fail closed.
+
+------------------------------------------------------------
+TEST EVIDENCE
+------------------------------------------------------------
+
+TARGETED + NEIGHBOR: **111 / 111 PASS**<br>
+py_compile: **PASS**
+
+Coverage: real quantity preservation · `available_to_add_qty` · `not_required` applied once · human month plan not read · `already_planned_qty = 0` · unresolved labor preserves candidate · snapshot matching guard · no snapshot → fail closed · run isolation · reality refresh · failed refresh safety · no product write path.
+
+------------------------------------------------------------
+ARCHITECTURE BOUNDARY
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| MONTHLY_PLAN_CONSTRUCTOR | **10 / 10** |
+| Constructor profession changed | **NO** |
+| Constructor core changed | **NO** |
+| Mission Scope changed | **NO** |
+| CandidatePackage schema changed | **NO** |
+| Lifecycle changed | **NO** |
+| LangGraph changed | **NO** |
+| Managed Launcher changed | **NO** |
+| Supabase schema changed | **NO** |
+| Product data changed | **NO** |
+
+11A belongs to the **REAL-DATA SHADOW COMPOSITION LAYER**, not Constructor professional logic.
+
+------------------------------------------------------------
+NOT DONE YET
+------------------------------------------------------------
+
+- no Shadow Runtime Composition Root
+- no managed real-data September run
+- no persistent Shadow observability store
+- no persistent Shadow checkpoint store
+- no production HITL operator path
+- no human-vs-agent comparison
+- no real September Candidate Package proof
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**Increment 11B — Shadow Runtime Composition Root**
+
+Wire: `RunControlService` → `ConstructorManagedRuntimeLauncher` → `RealDataShadowAdapter` → existing Constructor runtime → isolated Shadow runtime stores.
+
+**NO PRODUCT BUSINESS WRITES.** Do **not** implement 11B in this checkpoint.
+
+Increment 11A: **DONE** · Increment 11B: **NOT STARTED** · Constructor: **10 / 10**

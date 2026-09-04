@@ -13,16 +13,17 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **10 / 10** — **TECHNICAL COMPLETION**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation · **11B** Shadow Runtime Composition Root
-- **NEXT:** Increment **11C** Persistent Shadow Runtime Stores / Persistent Shadow Runtime Root — do **not** start Admission implementation
-- **Recovery code HEAD:** `f63b9791d8e018f48726e807091c52c9c4f27f2e` (11B Shadow Runtime Composition Root on `wip/increment-11b-shadow-composition`)
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation · **11B** Shadow Runtime Composition Root · **11C.1** Shadow Runtime Root + SQLite Dependency Gate
+- **NEXT:** Increment **11C.2** — Durable SQLite Checkpointer — do **not** start Admission implementation
+- **Recovery code HEAD:** `5aa54a1daf06091af2c6c264b58ed2ad88aaeea1` (11C.1 constructor shadow runtime path contract on `wip/increment-11c-persistent-shadow-stores`)
 - **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1–10.9B DONE · **10.10 DONE** · **10.10A DONE** · Increment 10 overall **FUNCTIONALLY COMPLETE**
-- **Shadow composition:** **11A DONE** · **11B DONE** · **11C NOT STARTED**
-- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A/11B are external composition, not a new Constructor profession.
+- **Shadow composition:** **11A DONE** · **11B DONE** · **11C IN PROGRESS** · **11C.1 DONE** · **11C.2 NOT STARTED**
+- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A/11B/11C.1 are external composition / runtime infrastructure, not a new Constructor profession.
 - **Professional Passport:** **DONE**
 - **Constructor Professional Passport v1.0:** `398893197bdd6de9aacfda06de468b0769c520f7`
 - **Reusable Professional Passport Template:** **DONE**
 - **Template commit:** `34ce628430b9234624486ec32fdc7ed19a88e3c3`
+- **Real September Shadow run:** **NOT STARTED**
 - **Admission Agent:** **NOT STARTED**
 - **DURABLE_RESTART:** **ACCEPTABLE_ENVIRONMENT_EXCEPTION** (not PASS / not FAIL / not REGRESSION)
 Historical checkpoints below are append-only and are **not** rewritten.
@@ -7088,3 +7089,242 @@ observability · checkpointing · HITL state · handoff state · Control Room re
 **NO PRODUCT BUSINESS WRITES.** Do **not** mix manual benchmark data into Constructor execution. Do **not** implement 11C in this checkpoint.
 
 Increment 11A: **DONE** · Increment 11B: **DONE** · Increment 11C: **NOT STARTED** · Constructor: **10 / 10**
+
+============================================================
+CHECKPOINT — 2026-09-04
+INCREMENT 11C.1
+SHADOW RUNTIME ROOT + SQLITE DEPENDENCY GATE
+STATUS: DONE
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** record the Shadow runtime path contract, Git exclusion policy, and SQLite LangGraph checkpoint dependency gate. Documentation only. **11C.2 is NOT implemented here.**
+
+CODE COMMIT: `5aa54a1daf06091af2c6c264b58ed2ad88aaeea1`<br>
+CODE MESSAGE: `feat(agents): add constructor shadow runtime path contract`<br>
+BRANCH: `wip/increment-11c-persistent-shadow-stores`<br>
+PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES**
+
+------------------------------------------------------------
+STAGE / ЭТАП
+------------------------------------------------------------
+
+Increment **11C.1** — Shadow Runtime Root + SQLite Dependency Gate
+
+11C overall: **IN PROGRESS** · 11C.1: **DONE** · 11C.2: **NOT STARTED**
+
+------------------------------------------------------------
+WHAT WAS DONE / ЧТО СДЕЛАНО
+------------------------------------------------------------
+
+Created:
+
+- `agents/monthly_plan_constructor/shadow_runtime_stores.py`
+- `tests/test_monthly_plan_constructor_shadow_runtime_stores.py`
+
+Modified:
+
+- `.gitignore`
+- `requirements.txt`
+
+Added dependency:
+
+- `langgraph-checkpoint-sqlite==3.1.1`
+
+Canonical runtime path contract:
+
+`<repository_root>/.runtime/shadow/constructor/`
+
+Planned files (not created in 11C.1):
+
+- `observability.sqlite`
+- `checkpoints.sqlite`
+- `hitl.sqlite`
+- `handoff.sqlite`
+
+------------------------------------------------------------
+ARCHITECTURE PURPOSE
+------------------------------------------------------------
+
+11C.1 establishes only:
+
+- deterministic Shadow runtime location
+- Git exclusion policy
+- SQLite LangGraph checkpoint dependency
+- typed runtime path contract
+
+11C.1 does **not** yet implement:
+
+- durable checkpoint persistence
+- persistent HITL store
+- persistent handoff store
+- runtime bootstrap
+- resume operator
+- real Shadow run
+
+------------------------------------------------------------
+MEMORY SEPARATION LAW
+------------------------------------------------------------
+
+**ORGANIZATIONAL / BUSINESS MEMORY** ≠ **AGENT RUNTIME MEMORY** ≠ **OBSERVABILITY / AUDIT MEMORY** ≠ **EXECUTION OWNERSHIP**
+
+11C.1 concerns **AGENT RUNTIME INFRASTRUCTURE** only.
+
+Supabase/PostgreSQL remains the authoritative business / organizational state layer.
+
+Local SQLite for the first Shadow pilot is isolated agent runtime infrastructure.
+
+SQLite does **not** replace Supabase.
+
+------------------------------------------------------------
+PATH CONTRACT LAW
+------------------------------------------------------------
+
+`repository_root` is explicit.
+
+No:
+
+- cwd fallback
+- environment fallback
+- home fallback
+- temp fallback
+
+Resolution is:
+
+- absolute
+- deterministic
+- pure
+
+Path resolution creates:
+
+- 0 directories
+- 0 files
+- 0 SQLite connections
+- 0 schemas
+
+Real `C:\csv_fix\.runtime` was **NOT** created during 11C.1.
+
+------------------------------------------------------------
+GIT SAFETY LAW
+------------------------------------------------------------
+
+`.gitignore` now excludes `.runtime/` only.
+
+Only the canonical runtime root is excluded.
+
+No broad `*.db` or `*.sqlite` patterns were introduced.
+
+Runtime state must never be committed to Git.
+
+------------------------------------------------------------
+SQLITE DEPENDENCY GATE
+------------------------------------------------------------
+
+`langgraph-checkpoint-sqlite`: **3.1.1**
+
+Existing versions remained:
+
+- langgraph: **1.2.11**
+- langgraph-checkpoint-postgres: **3.1.2**
+- langgraph-checkpoint: **4.2.0**
+
+Dependency conflict: **NO**
+
+Local venv transitive installs (not top-level requirements):
+
+- `aiosqlite==0.22.1`
+- `sqlite-vec==0.1.9`
+
+These were **NOT** added as top-level requirements.
+
+------------------------------------------------------------
+11C.2 SAFETY REQUIREMENT
+------------------------------------------------------------
+
+Key API finding: `SqliteSaver` supports `SqliteSaver(conn, *, serde=None)`.
+
+11C.2 must construct the saver with `build_constructor_jsonplus_serializer()` and preserve:
+
+- `pickle_fallback=False`
+- explicit Constructor msgpack allowlist
+- `AgentExecutionContext` **NOT** persisted
+
+Do **not** use a factory path that silently loses the Constructor serializer.
+
+`SqliteSaver` setup / schema initialization belongs to **explicit runtime bootstrap**, not Constructor professional graph execution.
+
+------------------------------------------------------------
+PRODUCT DATABASE ISOLATION
+------------------------------------------------------------
+
+11C.1 used **NO** product database.
+
+- NO Supabase writes
+- NO product migration
+- NO product schema change
+- NO human September benchmark read
+
+For the first Shadow pilot:
+
+- business truth remains in Supabase
+- runtime state will live in isolated local SQLite files
+
+------------------------------------------------------------
+TEST / REVIEW EVIDENCE
+------------------------------------------------------------
+
+Targeted + neighbor tests: **38 / 38 PASS**<br>
+py_compile: **PASS**<br>
+EOS-SEC: **PASS**<br>
+Architecture drift: **NO**<br>
+Real runtime root created: **NO**<br>
+Real SQLite files created: **NO**<br>
+Constructor core modified: **NO**<br>
+Run Control modified: **NO**<br>
+Observability modified: **NO**<br>
+Control Room modified: **NO**<br>
+Security modified: **NO**<br>
+Product data changed: **NO**<br>
+Supabase changed: **NO**
+
+------------------------------------------------------------
+GIT EVIDENCE
+------------------------------------------------------------
+
+CODE COMMIT: `5aa54a1daf06091af2c6c264b58ed2ad88aaeea1`<br>
+MESSAGE: `feat(agents): add constructor shadow runtime path contract`<br>
+PUSH: **SUCCESS**<br>
+LOCAL == UPSTREAM: **YES**
+
+------------------------------------------------------------
+PROGRAM POSITION
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| Constructor professional / runtime implementation | **10 / 10 DONE** |
+| Professional Passport | **DONE** |
+| 11A Real-Data Candidate Assembler | **DONE** |
+| 11B Shadow Runtime Composition Root | **DONE** |
+| 11C Persistent Shadow Runtime Stores | **IN PROGRESS** |
+| 11C.1 Runtime Root + Dependency Gate | **DONE** |
+| 11C.2 Durable SQLite Checkpointer | **NOT STARTED** |
+| 11C.3 Persistent HITL Store | **NOT STARTED** |
+| 11C.4 Persistent Handoff Store | **NOT STARTED** |
+| 11C.5 Integrated Reopen / Restart Proof | **NOT STARTED** |
+| 11D Resume / Operator Path | **NOT STARTED** |
+| Real September Shadow run | **NOT STARTED** |
+| Admission Agent | **NOT STARTED** |
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**Increment 11C.2 — Durable SQLite Checkpointer**
+
+Purpose: make Constructor LangGraph execution state survive object/process reopening using SQLite, while preserving the existing safe Constructor serializer.
+
+**NO PRODUCT BUSINESS WRITES.** Do **not** implement 11C.2 in this checkpoint.
+
+Increment 11A: **DONE** · Increment 11B: **DONE** · Increment 11C.1: **DONE** · Increment 11C.2: **NOT STARTED** · Constructor: **10 / 10**

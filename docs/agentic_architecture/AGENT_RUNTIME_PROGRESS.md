@@ -13,12 +13,12 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **10 / 10** — **TECHNICAL COMPLETION**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation · **11B** Shadow Runtime Composition Root · **11C.1** Shadow Runtime Root + SQLite Dependency Gate
-- **NEXT:** Increment **11C.2** — Durable SQLite Checkpointer — do **not** start Admission implementation
-- **Recovery code HEAD:** `5aa54a1daf06091af2c6c264b58ed2ad88aaeea1` (11C.1 constructor shadow runtime path contract on `wip/increment-11c-persistent-shadow-stores`)
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation · **11B** Shadow Runtime Composition Root · **11C.1** Shadow Runtime Root + SQLite Dependency Gate · **11C.2** Durable SQLite Checkpointer
+- **NEXT:** Increment **11C.3** — Persistent HITL Store — do **not** start Admission implementation
+- **Recovery code HEAD:** `43b29bcf51738fe54225412daae09979b6a9dcbe` (11C.2 durable shadow sqlite checkpointer on `wip/increment-11c-persistent-shadow-stores`)
 - **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1–10.9B DONE · **10.10 DONE** · **10.10A DONE** · Increment 10 overall **FUNCTIONALLY COMPLETE**
-- **Shadow composition:** **11A DONE** · **11B DONE** · **11C IN PROGRESS** · **11C.1 DONE** · **11C.2 NOT STARTED**
-- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A/11B/11C.1 are external composition / runtime infrastructure, not a new Constructor profession.
+- **Shadow composition:** **11A DONE** · **11B DONE** · **11C IN PROGRESS** · **11C.1 DONE** · **11C.2 DONE** · **11C.3 NOT STARTED**
+- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A/11B/11C.1/11C.2 are external composition / runtime infrastructure, not a new Constructor profession.
 - **Professional Passport:** **DONE**
 - **Constructor Professional Passport v1.0:** `398893197bdd6de9aacfda06de468b0769c520f7`
 - **Reusable Professional Passport Template:** **DONE**
@@ -7328,3 +7328,272 @@ Purpose: make Constructor LangGraph execution state survive object/process reope
 **NO PRODUCT BUSINESS WRITES.** Do **not** implement 11C.2 in this checkpoint.
 
 Increment 11A: **DONE** · Increment 11B: **DONE** · Increment 11C.1: **DONE** · Increment 11C.2: **NOT STARTED** · Constructor: **10 / 10**
+
+============================================================
+CHECKPOINT — 2026-09-04
+INCREMENT 11C.2
+DURABLE SQLITE CHECKPOINTER
+STATUS: DONE
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** record the durable SQLite LangGraph checkpointer for Constructor Shadow runtime memory. Documentation only. **11C.3 is NOT implemented here.**
+
+CODE COMMIT: `43b29bcf51738fe54225412daae09979b6a9dcbe`<br>
+CODE MESSAGE: `feat(agents): add durable shadow sqlite checkpointer`<br>
+BRANCH: `wip/increment-11c-persistent-shadow-stores`<br>
+PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES**
+
+------------------------------------------------------------
+STAGE / ЭТАП
+------------------------------------------------------------
+
+Increment **11C.2** — Durable SQLite Checkpointer
+
+11C overall: **IN PROGRESS** · 11C.1: **DONE** · 11C.2: **DONE** · 11C.3: **NOT STARTED**
+
+------------------------------------------------------------
+WHAT WAS IMPLEMENTED / ЧТО СДЕЛАНО
+------------------------------------------------------------
+
+Created:
+
+- `agents/monthly_plan_constructor/shadow_checkpoint_store.py`
+- `tests/test_monthly_plan_constructor_shadow_checkpoint_store.py`
+
+Implementation provides:
+
+- explicit Shadow SQLite checkpoint bootstrap
+- explicit connection ownership
+- durable `checkpoints.sqlite`
+- safe Constructor serializer injection
+- explicit `SqliteSaver.setup()`
+- deterministic close semantics
+- independent connection/saver reopen
+
+------------------------------------------------------------
+ARCHITECTURE MEANING
+------------------------------------------------------------
+
+11C.2 proves:
+
+Constructor LangGraph checkpoint state survives closing one SQLite connection/checkpointer object and reopening a **NEW** connection/checkpointer against the same `checkpoints.sqlite`.
+
+This is **AGENT RUNTIME MEMORY**.
+
+It is **NOT**:
+
+- BUSINESS / ORGANIZATIONAL MEMORY
+- OBSERVABILITY / AUDIT MEMORY
+- EXECUTION OWNERSHIP
+
+Persistent checkpoint state does **NOT** mean a persistent worker exists.
+
+------------------------------------------------------------
+BUSINESS MEMORY LAW
+------------------------------------------------------------
+
+Supabase/PostgreSQL remains the authoritative business / organizational state layer.
+
+SQLite checkpoints do **NOT** replace Supabase.
+
+No product data was migrated into runtime SQLite.
+
+------------------------------------------------------------
+SAFE SERIALIZER LAW
+------------------------------------------------------------
+
+`SqliteSaver` is constructed with `build_constructor_jsonplus_serializer()`.
+
+- `pickle_fallback`: **FALSE**
+- `CONSTRUCTOR_MSGPACK_ALLOWLIST`: **UNCHANGED**
+- `AgentExecutionContext`: **NOT** checkpoint-persisted
+
+No:
+
+- arbitrary pickle restoration
+- secret persistence
+- DB connection persistence
+- tool-client persistence
+- live runtime-object persistence
+
+`SqliteSaver.from_conn_string(...)` is **NOT** used for the Constructor production path because it does not inject the required Constructor serializer.
+
+------------------------------------------------------------
+BOOTSTRAP LAW
+------------------------------------------------------------
+
+Bootstrap owns:
+
+- runtime directory creation
+- `checkpoints.sqlite` creation/open
+- `sqlite3.Connection`
+- Constructor serializer
+- `SqliteSaver` construction
+- explicit `saver.setup()`
+- connection close
+
+Constructor professional graph execution does **NOT** own filesystem/schema initialization.
+
+Path resolution remains pure.
+
+------------------------------------------------------------
+CONNECTION OWNERSHIP
+------------------------------------------------------------
+
+`ConstructorShadowCheckpointStore` owns:
+
+- `db_path`
+- `sqlite3.Connection`
+- `SqliteSaver` / checkpointer
+
+`close()`: deterministic and idempotent.
+
+Access after close: fail closed.
+
+Important final review fix: if `SqliteSaver` construction or `setup()` fails after `sqlite3.connect()` succeeds, the connection is closed and the original exception is re-raised.
+
+Regression test added.
+
+------------------------------------------------------------
+FILE CREATION BOUNDARY
+------------------------------------------------------------
+
+11C.2 explicit bootstrap may create:
+
+`<repository_root>/.runtime/shadow/constructor/`
+
+and `checkpoints.sqlite` **ONLY**.
+
+11C.2 does **NOT** create:
+
+- `hitl.sqlite`
+- `handoff.sqlite`
+- `observability.sqlite`
+
+Real repository runtime root `C:\csv_fix\.runtime` was **NOT** created during tests.
+
+Tests use `tmp_path`.
+
+------------------------------------------------------------
+REOPEN PROOF
+------------------------------------------------------------
+
+Independent reopen: **PASS**
+
+Phase A:
+
+- temp repository root
+- `checkpoints.sqlite`
+- real LangGraph checkpoint persistence
+- `thread_id == run_id`
+- close first store/connection
+
+Phase B:
+
+- NEW `sqlite3.Connection`
+- NEW `SqliteSaver`
+- same Constructor serializer
+- same `checkpoints.sqlite`
+- same `thread_id` / `run_id`
+- prior checkpoint recovered
+
+Wrong `thread_id` does not retrieve another run's state.
+
+Repeated bootstrap preserves prior checkpoint state.
+
+------------------------------------------------------------
+IDENTITY LAW
+------------------------------------------------------------
+
+`run_id` == LangGraph `thread_id`
+
+Checkpoint identity remains LangGraph-owned.
+
+Do **NOT** conflate:
+
+- `run_id`
+- `thread_id`
+- `checkpoint_id`
+- `interrupt_id`
+- `handoff_id`
+
+------------------------------------------------------------
+BOUNDARIES
+------------------------------------------------------------
+
+11C.2 does **NOT** implement:
+
+- Persistent HITL Store
+- Persistent Handoff Store
+- Observability persistence changes
+- Control Room changes
+- Resume / operator authority
+- Persistent worker
+- Execution ownership
+- Real Shadow run
+
+11C.3 remains **NOT STARTED**.
+
+------------------------------------------------------------
+TEST / REVIEW EVIDENCE
+------------------------------------------------------------
+
+TARGETED: **13 / 13 PASS**<br>
+NEIGHBOR: **51 / 51 PASS**<br>
+DURABLE_SERIALIZER: **16 / 16 PASS**<br>
+POSTGRES_RESTART: **ENVIRONMENT_BLOCKED_NOT_REGRESSION**<br>
+py_compile: **PASS**<br>
+EOS-SEC: **PASS**<br>
+Architecture drift: **NO**<br>
+BOOTSTRAP_FAILURE_CLEANUP: **PASS**<br>
+REOPEN_NEW_CONNECTION: **PASS**<br>
+REPEATED_BOOTSTRAP_PRESERVES_STATE: **PASS**<br>
+PICKLE_FALLBACK: **FALSE**<br>
+ALLOWLIST_CHANGED: **NO**<br>
+REAL_RUNTIME_ROOT_CREATED: **NO**<br>
+PRODUCT_DATA_CHANGED: **NO**<br>
+SUPABASE_CHANGED: **NO**<br>
+REAL_SHADOW_RUN: **NOT STARTED**
+
+------------------------------------------------------------
+GIT EVIDENCE
+------------------------------------------------------------
+
+CODE COMMIT: `43b29bcf51738fe54225412daae09979b6a9dcbe`<br>
+MESSAGE: `feat(agents): add durable shadow sqlite checkpointer`<br>
+PUSH: **SUCCESS**<br>
+LOCAL == UPSTREAM: **YES**
+
+------------------------------------------------------------
+PROGRAM POSITION
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| Constructor professional / runtime implementation | **10 / 10 DONE** |
+| Professional Passport | **DONE** |
+| 11A Real-Data Candidate Assembler | **DONE** |
+| 11B Shadow Runtime Composition Root | **DONE** |
+| 11C Persistent Shadow Runtime Stores | **IN PROGRESS** |
+| 11C.1 Runtime Root + Dependency Gate | **DONE** |
+| 11C.2 Durable SQLite Checkpointer | **DONE** |
+| 11C.3 Persistent HITL Store | **NOT STARTED** |
+| 11C.4 Persistent Handoff Store | **NOT STARTED** |
+| 11C.5 Integrated Reopen / Restart Proof | **NOT STARTED** |
+| 11D Resume / Operator Path | **NOT STARTED** |
+| Real September Shadow run | **NOT STARTED** |
+| Admission Agent | **NOT STARTED** |
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**Increment 11C.3 — Persistent HITL Store**
+
+Purpose: persist Execution OS Human Wait / Human Decision state independently from process memory, without confusing LangGraph checkpoint state with the authoritative HITL business/audit contract.
+
+**NO PRODUCT BUSINESS WRITES.** Do **not** implement 11C.3 in this checkpoint.
+
+Increment 11A: **DONE** · Increment 11B: **DONE** · Increment 11C.1: **DONE** · Increment 11C.2: **DONE** · Increment 11C.3: **NOT STARTED** · Constructor: **10 / 10**

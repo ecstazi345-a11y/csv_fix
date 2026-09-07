@@ -48,6 +48,7 @@ from agents.monthly_plan_constructor.hitl_resume import (
     apply_constructor_resume_command,
     build_decision_request_from_lifecycle,
     revalidate_constructor_resume_reality,
+    validate_constructor_resume_command,
 )
 from agents.monthly_plan_constructor.lifecycle import (
     CODE_LIFECYCLE_CONTRACT_BLOCKER,
@@ -389,26 +390,20 @@ def build_constructor_langgraph(
             if hitl_store is not None:
                 hitl_store.upsert_open_request(request)
             resume_payload = interrupt(request)
-            resume = coerce_resume_command(resume_payload)
-            cfg = get_config()
-            configurable = cfg.get("configurable") or {}
-            thread_id = str(configurable.get("thread_id") or "").strip()
-            if thread_id != lifecycle.run_id:
-                raise HitlContractError(
-                    CODE_HITL_CONTRACT_BLOCKER,
-                    "thread_id must equal run_id",
-                )
-            runtime_ckpt = configurable.get("checkpoint_id")
-            resolved = resolve_current_checkpoint_id(
-                checkpointer,
-                thread_id=thread_id,
-                checkpoint_id=str(runtime_ckpt) if runtime_ckpt else None,
-            )
-            require_durable_resume_checkpoint(
-                expected_checkpoint_id=resume.expected_checkpoint_id,
-                current_checkpoint_id=resolved,
+            resume, resolved = _resolve_and_validate_operator_resume(
+                lifecycle,
+                resume_payload,
                 context=context,
+                project_code=project_code,
+                month_key=month_key,
+                checkpointer=checkpointer,
+                now=now,
             )
+            if hitl_store is not None:
+                hitl_store.record_answer(
+                    interrupt_id=request.interrupt_id,
+                    command=resume,
+                )
             updated = apply_constructor_resume_command(
                 lifecycle,
                 resume,
@@ -417,12 +412,8 @@ def build_constructor_langgraph(
                 month_key=month_key,
                 checkpoint_id=resolved,
                 now=now,
+                require_expected_checkpoint=True,
             )
-            if hitl_store is not None:
-                hitl_store.record_answer(
-                    interrupt_id=request.interrupt_id,
-                    command=resume,
-                )
             return {"lifecycle": updated}
         stamp = event_stamp or lifecycle.updated_at
         return {
@@ -1239,6 +1230,56 @@ def _hitl_wait_ordinal(lifecycle: ConstructorLifecycleState) -> int:
     return max(1, ordinal)
 
 
+def _resolve_and_validate_operator_resume(
+    lifecycle: ConstructorLifecycleState,
+    resume_payload: Any,
+    *,
+    context: AgentExecutionContext,
+    project_code: Any,
+    month_key: Any,
+    checkpointer: Any,
+    now: Optional[datetime],
+) -> tuple[ConstructorResumeCommand, Optional[str]]:
+    """
+    Fail-closed operator resume binding.
+
+    Live AgentExecutionContext is resume execution authorization.
+    Operator actor fields are structured attribution, not authenticated identity.
+    Persisted authorization_id_ref is not a token.
+    """
+    resume = coerce_resume_command(resume_payload)
+    cfg = get_config()
+    configurable = cfg.get("configurable") or {}
+    thread_id = str(configurable.get("thread_id") or "").strip()
+    if thread_id != lifecycle.run_id:
+        raise HitlContractError(
+            CODE_HITL_CONTRACT_BLOCKER,
+            "thread_id must equal run_id",
+        )
+    runtime_ckpt = configurable.get("checkpoint_id")
+    resolved = resolve_current_checkpoint_id(
+        checkpointer,
+        thread_id=thread_id,
+        checkpoint_id=str(runtime_ckpt) if runtime_ckpt else None,
+    )
+    require_durable_resume_checkpoint(
+        expected_checkpoint_id=resume.expected_checkpoint_id,
+        current_checkpoint_id=resolved,
+        context=context,
+    )
+    validate_constructor_resume_command(
+        lifecycle,
+        resume,
+        context=context,
+        project_code=project_code,
+        month_key=month_key,
+        checkpoint_id=resolved,
+        now=now,
+        require_expected_checkpoint=True,
+    )
+    return resume, resolved
+
+
 def _instrumented_human_wait(
     lifecycle: ConstructorLifecycleState,
     *,
@@ -1286,26 +1327,20 @@ def _instrumented_human_wait(
     )
 
     resume_payload = interrupt(request)
-    resume = coerce_resume_command(resume_payload)
-    cfg = get_config()
-    configurable = cfg.get("configurable") or {}
-    thread_id = str(configurable.get("thread_id") or "").strip()
-    if thread_id != lifecycle.run_id:
-        raise HitlContractError(
-            CODE_HITL_CONTRACT_BLOCKER,
-            "thread_id must equal run_id",
-        )
-    runtime_ckpt = configurable.get("checkpoint_id")
-    resolved = resolve_current_checkpoint_id(
-        checkpointer,
-        thread_id=thread_id,
-        checkpoint_id=str(runtime_ckpt) if runtime_ckpt else None,
-    )
-    require_durable_resume_checkpoint(
-        expected_checkpoint_id=resume.expected_checkpoint_id,
-        current_checkpoint_id=resolved,
+    resume, resolved = _resolve_and_validate_operator_resume(
+        lifecycle,
+        resume_payload,
         context=context,
+        project_code=project_code,
+        month_key=month_key,
+        checkpointer=checkpointer,
+        now=now,
     )
+    if hitl_store is not None:
+        hitl_store.record_answer(
+            interrupt_id=request.interrupt_id,
+            command=resume,
+        )
 
     decision_key = ConstructorRuntimeEventKey(
         run_id=lifecycle.run_id,
@@ -1348,6 +1383,7 @@ def _instrumented_human_wait(
         month_key=month_key,
         checkpoint_id=resolved,
         now=now,
+        require_expected_checkpoint=True,
     )
 
     if resume.decision == DECISION_ABORT_RUN:
@@ -1391,11 +1427,6 @@ def _instrumented_human_wait(
             },
         )
 
-    if hitl_store is not None:
-        hitl_store.record_answer(
-            interrupt_id=request.interrupt_id,
-            command=resume,
-        )
     return updated
 
 

@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from agents.monthly_plan_constructor.hitl_contracts import (
+    ACTOR_TYPE_HUMAN,
+    ACTOR_TYPE_LOCAL_APPLICATION,
     CODE_HITL_CONTRACT_BLOCKER,
     CODE_RUN_ABORTED_BY_HUMAN,
     DECISION_ABORT_RUN,
@@ -48,7 +50,20 @@ from agents.monthly_plan_constructor.secure_read_tools import (
     SecureReadError,
     read_constructor_reality,
 )
-from security.agent_execution_context import AgentExecutionContext
+from security.agent_execution_context import (
+    ACTOR_ID_EXECUTION_OS_LOCAL_HOST,
+    AgentExecutionContext,
+)
+
+# Structured operator attribution only. NOT authenticated human identity.
+# HUMAN_IDENTITY_AUTHENTICATION: NOT IMPLEMENTED
+# ENTERPRISE_IAM: NOT IMPLEMENTED
+RESERVED_OPERATOR_ACTOR_IDS = frozenset(
+    {
+        ACTOR_ID_EXECUTION_OS_LOCAL_HOST,
+        ACTOR_TYPE_LOCAL_APPLICATION,
+    }
+)
 
 SOURCE_HITL_RESUME = "HITL_RESUME"
 SOURCE_SECURE_READ = "SECURE_READ"
@@ -184,6 +199,140 @@ def _validate_authorization(
         )
 
 
+def validate_human_operator_declaration(command: ConstructorResumeCommand) -> None:
+    """
+    Validate declared human-operator fields on ConstructorResumeCommand.
+
+    This is structured operator attribution, not cryptographic identity.
+    HUMAN_IDENTITY_AUTHENTICATION is NOT IMPLEMENTED.
+    ENTERPRISE_IAM is NOT IMPLEMENTED.
+    """
+    if command.actor_type != ACTOR_TYPE_HUMAN:
+        raise HitlContractError(
+            CODE_HITL_CONTRACT_BLOCKER,
+            "resume operator actor_type must be HUMAN",
+        )
+    actor_id = str(command.actor_id or "").strip()
+    if not actor_id:
+        raise HitlContractError(
+            CODE_HITL_CONTRACT_BLOCKER,
+            "resume operator actor_id is required",
+        )
+    if actor_id in RESERVED_OPERATOR_ACTOR_IDS:
+        raise HitlContractError(
+            CODE_HITL_CONTRACT_BLOCKER,
+            "resume operator actor_id is a reserved application/host identity",
+        )
+
+
+def validate_constructor_resume_command(
+    state: ConstructorLifecycleState,
+    command: Any,
+    *,
+    context: AgentExecutionContext,
+    project_code: Any,
+    month_key: Any,
+    checkpoint_id: Optional[str] = None,
+    now: Optional[datetime] = None,
+    require_expected_checkpoint: bool = False,
+) -> ConstructorResumeCommand:
+    """
+    Fail-closed resume validation. Does not mutate lifecycle and does not persist.
+
+    Live AgentExecutionContext is resume execution authorization.
+    Persisted authorization_id_ref is provenance only and is not a token.
+    """
+    if state is None or not isinstance(state, ConstructorLifecycleState):
+        raise LifecycleError(
+            CODE_LIFECYCLE_CONTRACT_BLOCKER,
+            "ConstructorLifecycleState is required",
+        )
+    if state.status != STATUS_WAITING_FOR_HUMAN:
+        raise LifecycleError(
+            CODE_LIFECYCLE_CONTRACT_BLOCKER,
+            f"resume requires WAITING_FOR_HUMAN, got {state.status}",
+        )
+
+    resume = coerce_resume_command(command)
+    stamp = _require_aware_utc(now or _utc_now(), "now")
+    validate_human_operator_declaration(resume)
+
+    if resume.run_id != state.run_id:
+        raise HitlContractError(CODE_HITL_CONTRACT_BLOCKER, "run_id mismatch")
+    if resume.mission_id != state.mission_id:
+        raise HitlContractError(CODE_HITL_CONTRACT_BLOCKER, "mission_id mismatch")
+
+    expected_request = build_decision_request_from_lifecycle(state, created_at=stamp)
+    if resume.interrupt_id != expected_request.interrupt_id:
+        raise HitlContractError(CODE_HITL_CONTRACT_BLOCKER, "interrupt_id mismatch")
+    if expected_request.wait_ordinal < 1:
+        raise HitlContractError(CODE_HITL_CONTRACT_BLOCKER, "wait_ordinal is invalid")
+
+    if require_expected_checkpoint:
+        expected = str(resume.expected_checkpoint_id or "").strip()
+        if not expected:
+            raise HitlContractError(
+                CODE_HITL_CONTRACT_BLOCKER,
+                "expected_checkpoint_id is required for durable resume",
+            )
+        current = str(checkpoint_id or "").strip()
+        if not current:
+            raise HitlContractError(
+                CODE_HITL_CONTRACT_BLOCKER,
+                "current checkpoint_id could not be resolved",
+            )
+        if expected != current:
+            raise HitlContractError(
+                CODE_HITL_CONTRACT_BLOCKER,
+                "expected_checkpoint_id mismatch",
+            )
+    elif resume.expected_checkpoint_id is not None:
+        if checkpoint_id is None:
+            raise HitlContractError(
+                CODE_HITL_CONTRACT_BLOCKER,
+                "expected_checkpoint_id provided but checkpoint_id unavailable",
+            )
+        if resume.expected_checkpoint_id != checkpoint_id:
+            raise HitlContractError(
+                CODE_HITL_CONTRACT_BLOCKER,
+                "expected_checkpoint_id mismatch",
+            )
+
+    reason = (state.error_code or "").strip().upper()
+    allowed = allowed_decisions_for_reason(reason)
+    if resume.decision not in allowed:
+        raise HitlContractError(
+            CODE_HITL_CONTRACT_BLOCKER,
+            f"decision {resume.decision} not allowed for reason {reason}",
+        )
+
+    if state.scope is not None:
+        auth_project = state.scope.project_code
+    else:
+        if project_code is None:
+            raise HitlContractError(
+                CODE_HITL_CONTRACT_BLOCKER,
+                "project_code required for authorization revalidation",
+            )
+        auth_project = str(project_code).strip()
+    _validate_authorization(state, context, project_code=auth_project)
+
+    if resume.decision == DECISION_ABORT_RUN:
+        return resume
+    if resume.decision != DECISION_CLARIFY_SCOPE:
+        raise HitlContractError(
+            CODE_HITL_CONTRACT_BLOCKER,
+            f"unsupported decision {resume.decision}",
+        )
+    _apply_clarify_scope(
+        state,
+        resume,
+        project_code=project_code,
+        month_key=month_key,
+    )
+    return resume
+
+
 def _resolve_baseline_project_month(
     state: ConstructorLifecycleState,
     *,
@@ -283,67 +432,28 @@ def apply_constructor_resume_command(
     month_key: Any,
     checkpoint_id: Optional[str] = None,
     now: Optional[datetime] = None,
+    require_expected_checkpoint: bool = False,
 ) -> ConstructorLifecycleState:
     """
-    Apply validated human resume command.
+    Apply a previously validated resume command.
 
+    Live AgentExecutionContext is resume execution authorization.
+    Operator actor_id is structured attribution, not authenticated identity.
+    Caller (LangGraph durable path) must persist the accepted answer before apply.
     Returns REVALIDATING_REALITY (clarify) or FAILED (abort).
     Does not perform secure read / package / labor.
     """
-    if state is None or not isinstance(state, ConstructorLifecycleState):
-        raise LifecycleError(
-            CODE_LIFECYCLE_CONTRACT_BLOCKER,
-            "ConstructorLifecycleState is required",
-        )
-    if state.status != STATUS_WAITING_FOR_HUMAN:
-        raise LifecycleError(
-            CODE_LIFECYCLE_CONTRACT_BLOCKER,
-            f"resume requires WAITING_FOR_HUMAN, got {state.status}",
-        )
-
-    resume = coerce_resume_command(command)
+    resume = validate_constructor_resume_command(
+        state,
+        command,
+        context=context,
+        project_code=project_code,
+        month_key=month_key,
+        checkpoint_id=checkpoint_id,
+        now=now,
+        require_expected_checkpoint=require_expected_checkpoint,
+    )
     stamp = _require_aware_utc(now or _utc_now(), "now")
-
-    if resume.run_id != state.run_id:
-        raise HitlContractError(CODE_HITL_CONTRACT_BLOCKER, "run_id mismatch")
-    if resume.mission_id != state.mission_id:
-        raise HitlContractError(CODE_HITL_CONTRACT_BLOCKER, "mission_id mismatch")
-
-    expected_request = build_decision_request_from_lifecycle(state, created_at=stamp)
-    if resume.interrupt_id != expected_request.interrupt_id:
-        raise HitlContractError(CODE_HITL_CONTRACT_BLOCKER, "interrupt_id mismatch")
-
-    if resume.expected_checkpoint_id is not None:
-        if checkpoint_id is None:
-            raise HitlContractError(
-                CODE_HITL_CONTRACT_BLOCKER,
-                "expected_checkpoint_id provided but checkpoint_id unavailable",
-            )
-        if resume.expected_checkpoint_id != checkpoint_id:
-            raise HitlContractError(
-                CODE_HITL_CONTRACT_BLOCKER,
-                "expected_checkpoint_id mismatch",
-            )
-
-    reason = (state.error_code or "").strip().upper()
-    allowed = allowed_decisions_for_reason(reason)
-    if resume.decision not in allowed:
-        raise HitlContractError(
-            CODE_HITL_CONTRACT_BLOCKER,
-            f"decision {resume.decision} not allowed for reason {reason}",
-        )
-
-    # Authorization project baseline: scope if present else trusted project_code.
-    if state.scope is not None:
-        auth_project = state.scope.project_code
-    else:
-        if project_code is None:
-            raise HitlContractError(
-                CODE_HITL_CONTRACT_BLOCKER,
-                "project_code required for authorization revalidation",
-            )
-        auth_project = str(project_code).strip()
-    _validate_authorization(state, context, project_code=auth_project)
 
     applying = _append_transition(
         state,

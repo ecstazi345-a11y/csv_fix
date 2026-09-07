@@ -13,12 +13,12 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **10 / 10** — **TECHNICAL COMPLETION**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation · **11B** Shadow Runtime Composition Root · **11C.1** Shadow Runtime Root + SQLite Dependency Gate · **11C.2** Durable SQLite Checkpointer
-- **NEXT:** Increment **11C.3** — Persistent HITL Store — do **not** start Admission implementation
-- **Recovery code HEAD:** `43b29bcf51738fe54225412daae09979b6a9dcbe` (11C.2 durable shadow sqlite checkpointer on `wip/increment-11c-persistent-shadow-stores`)
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation · **11B** Shadow Runtime Composition Root · **11C.1** Shadow Runtime Root + SQLite Dependency Gate · **11C.2** Durable SQLite Checkpointer · **11C.3** Persistent HITL Store
+- **NEXT:** Increment **11C.4** — Persistent Handoff Store — do **not** start Admission implementation
+- **Recovery code HEAD:** `4de43331ce52cfe140d8be3cc3842c5ee0832615` (11C.3 persistent shadow HITL store on `wip/increment-11c-persistent-shadow-stores`)
 - **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1–10.9B DONE · **10.10 DONE** · **10.10A DONE** · Increment 10 overall **FUNCTIONALLY COMPLETE**
-- **Shadow composition:** **11A DONE** · **11B DONE** · **11C IN PROGRESS** · **11C.1 DONE** · **11C.2 DONE** · **11C.3 NOT STARTED**
-- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A/11B/11C.1/11C.2 are external composition / runtime infrastructure, not a new Constructor profession.
+- **Shadow composition:** **11A DONE** · **11B DONE** · **11C IN PROGRESS** · **11C.1 DONE** · **11C.2 DONE** · **11C.3 DONE** · **11C.4 NOT STARTED**
+- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A/11B/11C.1/11C.2/11C.3 are external composition / runtime infrastructure, not a new Constructor profession.
 - **Professional Passport:** **DONE**
 - **Constructor Professional Passport v1.0:** `398893197bdd6de9aacfda06de468b0769c520f7`
 - **Reusable Professional Passport Template:** **DONE**
@@ -7597,3 +7597,405 @@ Purpose: persist Execution OS Human Wait / Human Decision state independently fr
 **NO PRODUCT BUSINESS WRITES.** Do **not** implement 11C.3 in this checkpoint.
 
 Increment 11A: **DONE** · Increment 11B: **DONE** · Increment 11C.1: **DONE** · Increment 11C.2: **DONE** · Increment 11C.3: **NOT STARTED** · Constructor: **10 / 10**
+
+============================================================
+CHECKPOINT — 2026-09-07
+INCREMENT 11C.3
+PERSISTENT HITL STORE
+STATUS: DONE
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** record the persistent SQLite HITL store for Constructor Shadow Human Wait / Human Decision state. Documentation only. **11C.4 is NOT implemented here.**
+
+CODE COMMIT: `4de43331ce52cfe140d8be3cc3842c5ee0832615`<br>
+CODE MESSAGE: `feat(agents): add persistent shadow hitl store`<br>
+BRANCH: `wip/increment-11c-persistent-shadow-stores`<br>
+PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES**
+
+------------------------------------------------------------
+STAGE / ЭТАП
+------------------------------------------------------------
+
+Increment **11C.3** — Persistent HITL Store
+
+11C overall: **IN PROGRESS** · 11C.1: **DONE** · 11C.2: **DONE** · 11C.3: **DONE** · 11C.4: **NOT STARTED**
+
+------------------------------------------------------------
+WHAT WAS IMPLEMENTED / ЧТО СДЕЛАНО
+------------------------------------------------------------
+
+Created:
+
+- `agents/monthly_plan_constructor/shadow_hitl_store.py`
+- `tests/test_monthly_plan_constructor_shadow_hitl_store.py`
+
+Implementation provides:
+
+- persistent Shadow HITL store
+- existing `ConstructorHitlStore` Protocol implementation
+- explicit `hitl.sqlite` bootstrap
+- explicit SQLite connection ownership
+- deterministic request persistence
+- deterministic answer persistence
+- reopen through **NEW** connection/store
+- replay/idempotency protection
+- cross-run / identity mismatch fail-closed behavior
+- deterministic close semantics
+
+------------------------------------------------------------
+ARCHITECTURE MEANING
+------------------------------------------------------------
+
+11C.3 proves durability of **STRUCTURED HUMAN WAIT / HUMAN DECISION STATE**.
+
+This is **HITL DECISION MEMORY**.
+
+It is **NOT**:
+
+- BUSINESS / ORGANIZATIONAL MEMORY
+- LANGGRAPH CHECKPOINT MEMORY
+- OBSERVABILITY / AUDIT MEMORY
+- EXECUTION OWNERSHIP / AUTHORITY
+
+Canonical law:
+
+**REQUEST STORED** ≠ **ANSWER STORED** ≠ **ANSWER AUTHORIZED FOR RESUME** ≠ **RUN RESUMED**
+
+------------------------------------------------------------
+MEMORY LAYERS
+------------------------------------------------------------
+
+Durable layers remain separate. One does **NOT** replace another.
+
+- **Supabase/PostgreSQL** = authoritative business / organizational state
+- **checkpoints.sqlite** = Constructor LangGraph runtime checkpoint state
+- **hitl.sqlite** = structured Human Wait / Human Decision state
+- **observability** = audit / execution history
+
+------------------------------------------------------------
+EXISTING HITL CONTRACT
+------------------------------------------------------------
+
+11C.3 reuses the existing `ConstructorHitlStore` write API. The Protocol was **NOT** modified.
+
+- `upsert_open_request(request)`
+- `record_answer(interrupt_id=..., command=...)`
+
+Concrete SQLite reads exist only on `ConstructorShadowHitlStore` for persistence / reopen proof.
+
+------------------------------------------------------------
+HITL IDENTITY LAW
+------------------------------------------------------------
+
+Authoritative Human Wait identity: `interrupt_id`.
+
+- same real wait replay: **idempotent**
+- same wait replay may have a different `created_at`: first persisted request remains authoritative
+- multiple real waits in the same run: **distinct**
+- `wait_ordinal`: 1, 2, ...
+- `UNIQUE(run_id, wait_ordinal)`: protects collision
+
+Authoritative answer identity: `decision_id`.
+
+Answer binding requires `interrupt_id`, `run_id`, and `mission_id` to match the persisted request.
+
+------------------------------------------------------------
+REQUEST IMMUTABILITY
+------------------------------------------------------------
+
+HITL request rows remain immutable.
+
+Answer existence is represented by a **separate answer row**.
+
+Request status is **NOT** rewritten to `ANSWERED` as an authoritative workflow mutation.
+
+No `CANCELLED` workflow was introduced.
+
+Same-wait replay does not overwrite the first request.
+
+Conflicting replay fails closed.
+
+------------------------------------------------------------
+ANSWER IDEMPOTENCY
+------------------------------------------------------------
+
+- no existing answer: **insert**
+- identical answer replay: **idempotent no-op**
+- conflicting `decision_id`: **fail closed**
+- same `decision_id` with conflicting payload: **fail closed**
+- different answer for an already answered interrupt: **fail closed**
+- original persisted answer: **preserved**
+
+No silent overwrite.
+
+------------------------------------------------------------
+JSON / SECURITY LAW
+------------------------------------------------------------
+
+Persistence format: deterministic JSON.
+
+No:
+
+- pickle
+- JsonPlusSerializer
+- repr fallback
+- arbitrary class reconstruction
+
+JSON settings use safe deterministic behavior equivalent to `ensure_ascii=False`, `sort_keys=True`, `allow_nan=False`.
+
+Reconstruction uses existing trusted builders:
+
+- `build_human_decision_request(...)`
+- `build_resume_command(...)`
+
+`AgentExecutionContext`: **NOT** persisted<br>
+Secrets: **NOT** persisted<br>
+DB / tool clients: **NOT** persisted<br>
+`authorization_id_ref`: string reference only
+
+------------------------------------------------------------
+TIMESTAMP LAW
+------------------------------------------------------------
+
+- `created_at` comes from the Human Decision Request
+- `submitted_at` comes from the Resume Command
+
+The store does **NOT** invent authoritative professional timestamps using `datetime.now()`, local machine time, or an LLM.
+
+Timestamps remain aware UTC.
+
+------------------------------------------------------------
+SQLITE / BOOTSTRAP LAW
+------------------------------------------------------------
+
+11C.3 owns **only**:
+
+`<repository_root>/.runtime/shadow/constructor/hitl.sqlite`
+
+Bootstrap:
+
+- resolves the canonical path
+- creates the runtime directory explicitly
+- opens `hitl.sqlite`
+- uses `sqlite3.connect(..., check_same_thread=False)`
+- enables `PRAGMA foreign_keys = ON`
+- creates schema
+- returns owned `ConstructorShadowHitlStore`
+
+Path resolution / import remains pure.
+
+------------------------------------------------------------
+CONNECTION OWNERSHIP
+------------------------------------------------------------
+
+`ConstructorShadowHitlStore` owns:
+
+- `db_path`
+- `sqlite3.Connection`
+
+`close()`: deterministic and idempotent.
+
+Read / write after close: fail closed.
+
+If bootstrap / schema creation fails after `sqlite3.connect()`, the connection is closed and the original exception is re-raised.
+
+No `__del__` correctness dependency.
+
+------------------------------------------------------------
+SCHEMA
+------------------------------------------------------------
+
+Conceptual durable schema:
+
+`hitl_open_requests`
+
+- `interrupt_id` PK
+- `run_id`
+- `mission_id`
+- `wait_ordinal`
+- `status`
+- `reason_code`
+- `created_at`
+- `payload_json`
+- `UNIQUE(run_id, wait_ordinal)`
+
+`hitl_answers`
+
+- `decision_id` PK
+- `interrupt_id` UNIQUE
+- `run_id`
+- `mission_id`
+- `decision`
+- `submitted_at`
+- `payload_json`
+- FK to request `interrupt_id`
+
+------------------------------------------------------------
+REOPEN PROOF
+------------------------------------------------------------
+
+Store A: persist request → close<br>
+Store B: **NEW** connection / **NEW** store → recover request → persist answer → close<br>
+Store C: **NEW** connection / **NEW** store → recover request → recover answer
+
+Reopen: **PASS**<br>
+Same-wait replay: **PASS**<br>
+First request preserved: **PASS**<br>
+Multi-wait: **PASS**<br>
+Original answer survives conflicting replay: **PASS**
+
+------------------------------------------------------------
+TRANSACTION / ATOMICITY LAW
+------------------------------------------------------------
+
+`upsert_open_request`: one SQLite transaction<br>
+`record_answer`: one SQLite transaction
+
+Rollback on failure preserves durable pre-call state.
+
+**CROSS_STORE_ATOMICITY: NOT CLAIMED**
+
+No atomicity is claimed across `hitl.sqlite`, `checkpoints.sqlite`, `observability.sqlite`, or `handoff.sqlite`.
+
+Integrated crash consistency remains for 11C.5.
+
+------------------------------------------------------------
+LIVE RUNTIME ORDERING TRUTH
+------------------------------------------------------------
+
+Current live runtime remains **unchanged**.
+
+`record_answer` is still called **AFTER** resume application in the live runtime path.
+
+Therefore:
+
+- **PERSISTENT_HITL_STORE:** **PROVEN**
+- **LIVE_PRE_RESUME_ANSWER_DURABILITY:** **NOT IMPLEMENTED**
+
+**ANSWER STORED** does **NOT** mean **RESUME AUTHORIZED**.
+
+------------------------------------------------------------
+AUTHORITY BOUNDARY
+------------------------------------------------------------
+
+11C.3 does **NOT** implement:
+
+- resume authority
+- operator resume
+- RBAC authority
+- decision authorization
+- persistent worker
+- execution lease
+- kill / recovery authority
+
+`expected_checkpoint_id` is persisted as part of the existing command contract.
+
+Stale-decision enforcement remains outside 11C.3.
+
+------------------------------------------------------------
+FILE CREATION BOUNDARY
+------------------------------------------------------------
+
+11C.3 may create only `hitl.sqlite` in its runtime root.
+
+It does **NOT** create:
+
+- `checkpoints.sqlite`
+- `handoff.sqlite`
+- `observability.sqlite`
+
+Real repository runtime root `C:\csv_fix\.runtime` was **NOT** created during tests.
+
+Tests use `tmp_path`.
+
+------------------------------------------------------------
+BOUNDARIES
+------------------------------------------------------------
+
+11C.3 did **NOT** modify:
+
+- LangGraph runtime
+- checkpoint store
+- observability
+- Control Room
+- Query Port
+- handoff
+- Supabase
+- product data
+- security layer
+- Professional Passport
+
+11C.4: **NOT STARTED**<br>
+11C.5: **NOT STARTED**<br>
+11D: **NOT STARTED**<br>
+Real Shadow: **NOT STARTED**
+
+------------------------------------------------------------
+TEST / REVIEW EVIDENCE
+------------------------------------------------------------
+
+TARGETED: **18 / 18 PASS**<br>
+HITL_NEIGHBOR: **63 / 63 PASS**<br>
+DURABLE_NEIGHBOR: **39 / 39 PASS**<br>
+POSTGRES_RESTART: **ENVIRONMENT_BLOCKED_NOT_REGRESSION**<br>
+py_compile: **PASS**<br>
+EOS-SEC: **PASS**<br>
+Architecture drift: **NO**<br>
+REQUEST_REOPEN: **PASS**<br>
+ANSWER_REOPEN: **PASS**<br>
+SAME_WAIT_REPLAY: **PASS**<br>
+FIRST_REQUEST_PRESERVED: **PASS**<br>
+MULTI_WAIT: **PASS**<br>
+CONFLICTING_ANSWER: **FAIL_CLOSED**<br>
+ORIGINAL_ANSWER_PRESERVED: **PASS**<br>
+REAL_RUNTIME_ROOT_CREATED: **NO**<br>
+PRODUCT_DATA_CHANGED: **NO**<br>
+SUPABASE_CHANGED: **NO**<br>
+REAL_SHADOW_RUN: **NOT STARTED**
+
+------------------------------------------------------------
+GIT EVIDENCE
+------------------------------------------------------------
+
+CODE COMMIT: `4de43331ce52cfe140d8be3cc3842c5ee0832615`<br>
+MESSAGE: `feat(agents): add persistent shadow hitl store`<br>
+PUSH: **SUCCESS**<br>
+LOCAL == UPSTREAM: **YES**
+
+------------------------------------------------------------
+PROGRAM POSITION
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| Constructor professional / runtime implementation | **10 / 10 DONE** |
+| Professional Passport | **DONE** |
+| 11A Real-Data Candidate Assembler | **DONE** |
+| 11B Shadow Runtime Composition Root | **DONE** |
+| 11C Persistent Shadow Runtime Stores | **IN PROGRESS** |
+| 11C.1 Runtime Root + Dependency Gate | **DONE** |
+| 11C.2 Durable SQLite Checkpointer | **DONE** |
+| 11C.3 Persistent HITL Store | **DONE** |
+| 11C.4 Persistent Handoff Store | **NOT STARTED** |
+| 11C.5 Integrated Reopen / Restart Proof | **NOT STARTED** |
+| 11D Resume / Operator Path | **NOT STARTED** |
+| Real September Shadow run | **NOT STARTED** |
+| Admission Agent | **NOT STARTED** |
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**Increment 11C.4 — Persistent Handoff Store**
+
+Purpose: persist Constructor handoff state independently from process memory while preserving existing laws:
+
+**CREATED** ≠ **PERSISTED** ≠ **RECEIVER_ACCEPTED**
+
+Source completion ≠ orchestration completion.
+
+**NO PRODUCT BUSINESS WRITES.** Do **not** implement 11C.4 in this checkpoint.
+
+Increment 11A: **DONE** · Increment 11B: **DONE** · Increment 11C.1: **DONE** · Increment 11C.2: **DONE** · Increment 11C.3: **DONE** · Increment 11C.4: **NOT STARTED** · Constructor: **10 / 10**

@@ -13,12 +13,15 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **10 / 10** — **TECHNICAL COMPLETION**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation · **11B** Shadow Runtime Composition Root · **11C.1** Shadow Runtime Root + SQLite Dependency Gate · **11C.2** Durable SQLite Checkpointer · **11C.3** Persistent HITL Store · **11C.4** Persistent Handoff Store · **11C.5** Integrated Reopen / Restart Proof
-- **NEXT:** Increment **11D** — Resume / Operator Path — do **not** start Admission implementation
-- **Recovery code HEAD:** `3a1e0fffe5e20417f1befa937a6effeaab51a1b2` (11C.5 integrated reopen / restart proof on `wip/increment-11c-persistent-shadow-stores`)
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation · **11B** Shadow Runtime Composition Root · **11C.1** Shadow Runtime Root + SQLite Dependency Gate · **11C.2** Durable SQLite Checkpointer · **11C.3** Persistent HITL Store · **11C.4** Persistent Handoff Store · **11C.5** Integrated Reopen / Restart Proof · **11D** Bounded Operator / Resume Path
+- **NEXT:** Constructor Shadow Preparation / Real September Shadow — architectural expansion **FROZEN UNTIL SHADOW RESULTS**. Do **not** start Admission implementation
+- **Operator resume HEAD:** `cb8a1b6fb779b1f723b4db1034c61c5105cfde5b` (11D bounded operator / resume path on `wip/increment-11c-persistent-shadow-stores`)
+- **Recovery code HEAD:** `3a1e0fffe5e20417f1befa937a6effeaab51a1b2` (11C.5 integrated reopen / restart proof; 11D does not replace it)
 - **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1–10.9B DONE · **10.10 DONE** · **10.10A DONE** · Increment 10 overall **FUNCTIONALLY COMPLETE**
-- **Shadow composition:** **11A DONE** · **11B DONE** · **11C DONE** · **11C.1 DONE** · **11C.2 DONE** · **11C.3 DONE** · **11C.4 DONE** · **11C.5 DONE** · **11D NOT STARTED**
-- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A/11B/11C.1/11C.2/11C.3/11C.4/11C.5 are external composition / runtime infrastructure, not a new Constructor profession.
+- **Shadow composition:** **11A DONE** · **11B DONE** · **11C DONE** · **11C.1 DONE** · **11C.2 DONE** · **11C.3 DONE** · **11C.4 DONE** · **11C.5 DONE** · **11D DONE**
+- **Constructor Runtime v0.1:** **READY_FOR_SHADOW**
+- **Agent Runtime program:** **v0.1 READY FOR SHADOW VALIDATION** — not platform-wide production completion
+- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A/11B/11C.1/11C.2/11C.3/11C.4/11C.5/11D are external composition / runtime infrastructure, not a new Constructor profession. Architectural expansion is **FROZEN UNTIL SHADOW RESULTS**.
 - **Professional Passport:** **DONE**
 - **Constructor Professional Passport v1.0:** `398893197bdd6de9aacfda06de468b0769c520f7`
 - **Reusable Professional Passport Template:** **DONE**
@@ -8608,3 +8611,355 @@ Keep 11D minimal and bounded.
 **NO PRODUCT BUSINESS WRITES.** Do **not** implement 11D in this checkpoint.
 
 Increment 11A: **DONE** · Increment 11B: **DONE** · Increment 11C.1: **DONE** · Increment 11C.2: **DONE** · Increment 11C.3: **DONE** · Increment 11C.4: **DONE** · Increment 11C.5: **DONE** · Increment 11D: **NOT STARTED** · Constructor: **10 / 10**
+
+============================================================
+CHECKPOINT — 2026-09-07
+INCREMENT 11D
+BOUNDED OPERATOR / RESUME PATH
+STATUS: DONE
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** record the bounded operator-controlled HITL resume path. Documentation only. **Real Shadow is NOT started here.**
+
+CODE COMMIT: `cb8a1b6fb779b1f723b4db1034c61c5105cfde5b`<br>
+CODE MESSAGE: `feat(agents): add bounded operator resume path`<br>
+BRANCH: `wip/increment-11c-persistent-shadow-stores`<br>
+PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES**
+
+------------------------------------------------------------
+STAGE / ЭТАП
+------------------------------------------------------------
+
+Increment **11D** — Bounded Operator / Resume Path
+
+11C.1: **DONE** · 11C.2: **DONE** · 11C.3: **DONE** · 11C.4: **DONE** · 11C.5: **DONE** · 11D: **DONE**
+
+Constructor professional implementation: **10 / 10**<br>
+Constructor Runtime v0.1: **READY_FOR_SHADOW**<br>
+Agent Runtime program: **v0.1 READY FOR SHADOW VALIDATION**
+
+This is **not** platform-wide production completion.
+
+------------------------------------------------------------
+WHAT WAS IMPLEMENTED / ЧТО СДЕЛАНО
+------------------------------------------------------------
+
+Modified:
+
+- `agents/monthly_plan_constructor/hitl_resume.py`
+- `agents/monthly_plan_constructor/langgraph_runtime.py`
+
+Created:
+
+- `tests/test_monthly_plan_constructor_operator_resume.py`
+
+No IAM. No operator registry. No Control Room write UI. No Digital Work Board. No scheduler. No worker restart. No Recovery Coordinator. No new HITL decisions. No new event catalog. No product writes.
+
+11D is a **bounded Runtime v0.1 operator resume path**.
+
+------------------------------------------------------------
+PROVEN CLAIMS
+------------------------------------------------------------
+
+- **EXPLICIT_OPERATOR_RESUME:** **PROVEN**
+- **RESUME_EXECUTION_AUTHORIZATION:** **PROVEN**
+- **HUMAN_OPERATOR_DECLARATION:** **VALIDATED**
+- **LIVE_CONTEXT_REQUIRED:** **YES**
+- **PERSISTED_AUTHORIZATION_REF_USED_AS_TOKEN:** **NO**
+- **PERSIST_BEFORE_APPLY:** **PROVEN**
+- **CHECKPOINT_BOUND_RESUME:** **PROVEN**
+- **INTERRUPT_BOUND_RESUME:** **PROVEN**
+- **STALE_DECISION_REJECTED:** **PROVEN**
+- **IDENTICAL_RETRY:** **SAFE**
+- **CONFLICTING_REPLAY:** **FAIL_CLOSED**
+- **DOUBLE_EXECUTION:** **BLOCKED**
+- **REALITY_REFRESH_AFTER_RESUME:** **PROVEN**
+- **REALITY_REFRESH_FAILURE:** **FAIL_CLOSED_OR_REWAIT**
+- **ABORT_PATH:** **PASS**
+- **FRESH_PROCESS_OPERATOR_RESUME:** **PROVEN**
+- **AUDITABLE_CONSEQUENCE:** **PROVEN**
+- **MODEL_AUTHORITY:** **NONE**
+
+------------------------------------------------------------
+AUTHORITY LAW
+------------------------------------------------------------
+
+Human Decision ≠ Execution Authorization<br>
+`actor_id` ≠ authenticated enterprise identity<br>
+`authorization_id_ref` ≠ live authorization token<br>
+Persisted HITL answer ≠ permission to execute<br>
+Live `AgentExecutionContext` = bounded current resume execution authorization
+
+**HUMAN_OPERATOR_DECLARATION:** validated structured attribution only.<br>
+**HUMAN_IDENTITY_AUTHENTICATION:** **NOT IMPLEMENTED**<br>
+**ENTERPRISE_IAM:** **NOT IMPLEMENTED**
+
+`actor_id` does **not** authenticate a human person. Current architecture has no enterprise identity provider, IAM, or RBAC.
+
+Resume execution authorization is the existing live `AgentExecutionContext`. It must be live, not expired, read-only as required by current tool policy, bound to the correct project and run, and valid under existing authorization validation.
+
+ConstructorResumeCommand must declare `actor_type = HUMAN` and a non-empty bounded `actor_id` that is not a reserved application/host identity (`EXECUTION_OS_LOCAL_HOST`, `LOCAL_APPLICATION`). That is attribution, not cryptographic identity.
+
+Persisted `authorization_id_ref` remains **METADATA / PROVENANCE ONLY**. Reissued live authorization is allowed. The persisted reference is **not** compared as a token that authorizes the new resume.
+
+------------------------------------------------------------
+WRITE ORDER
+------------------------------------------------------------
+
+Final controlled resume order:
+
+1. read pending Human Decision Request
+2. validate structured `ConstructorResumeCommand`
+3. validate live execution authorization
+4. validate HUMAN operator declaration
+5. validate run / mission / interrupt
+6. validate exact `expected_checkpoint_id`
+7. persist accepted HITL answer (`record_answer`)
+8. apply controlled resume
+9. Reality Refresh
+10. professional continuation
+11. observability / audit
+
+Decision persistence now occurs **BEFORE** professional apply.
+
+`LIVE_PRE_RESUME_ANSWER_DURABILITY` is therefore implemented on this bounded path.
+
+------------------------------------------------------------
+CHECKPOINT / INTERRUPT BINDING
+------------------------------------------------------------
+
+Operator resume requires `expected_checkpoint_id` and exact equality with the current durable checkpoint.
+
+Decision reviewed against checkpoint X may resume checkpoint X only.
+
+If actual checkpoint ≠ `expected_checkpoint_id`: **FAIL CLOSED**. No fallback to latest. No silent command rebinding.
+
+Resume binds to the exact current pending wait:
+
+- `run_id`
+- `mission_id`
+- `interrupt_id`
+- current `WAITING_FOR_HUMAN` lifecycle
+- wait identity / wait ordinal as existing contracts require
+
+Same real wait replay → same `interrupt_id`.<br>
+New real wait → wait ordinal increments → new `interrupt_id`.
+
+Wrong / stale interrupt: **FAIL CLOSED**.
+
+------------------------------------------------------------
+DECISION ALLOWLIST
+------------------------------------------------------------
+
+No new decision types.
+
+Existing structured decisions only:
+
+- `CLARIFY_SCOPE`
+- `ABORT_RUN`
+
+Structured parameter validation is preserved. Arbitrary dict payload does **not** become executable instruction.
+
+**DATA ≠ INSTRUCTION.** Decision ≠ authorization.
+
+------------------------------------------------------------
+CRASH / RETRY LAW
+------------------------------------------------------------
+
+**CROSS_STORE_ATOMICITY:** **NOT CLAIMED**
+
+Accepted windows:
+
+- validated → crash before `record_answer` → durable truth is WAIT + no answer; retry allowed
+- answer persisted → crash before apply → durable truth is WAIT + accepted answer; **same exact command only** may retry
+- apply begins → execution advances → the new checkpoint is authority for future stale-command rejection
+- audit event failure → no automatic repair invented
+- Reality Refresh failure → existing professional fail-closed / WAIT / FAILED mapping remains authoritative
+
+Identical answer replay: **IDEMPOTENT**<br>
+Conflicting answer for the same interrupt: **FAIL CLOSED**<br>
+Old command after checkpoint advances: must **not** execute professional work again (**DOUBLE_EXECUTION: BLOCKED**)
+
+------------------------------------------------------------
+REALITY REFRESH LAW
+------------------------------------------------------------
+
+`CLARIFY_SCOPE` resume does **not** continue from stale reality.
+
+After an accepted Human Decision:
+
+- stale artifacts remain cleared as existing code requires
+- state enters revalidation
+- existing `revalidate_constructor_resume_reality` performs a fresh secure read
+- professional continuation is based on refreshed reality
+
+If refreshed reality is ambiguous: a new legitimate WAIT is permitted.<br>
+If refresh / security / domain failure: existing fail-closed behavior is preserved.
+
+**ABORT_RUN** keeps existing abort/failure semantics. It does not reinterpret abort as clarify. No Reality Refresh if current design skips it. No handoff fabrication.
+
+------------------------------------------------------------
+FRESH PROCESS LAW
+------------------------------------------------------------
+
+11C.5 proved: Process B can reconstruct durable WAIT state.
+
+11D now proves: fresh Process B does **NOT** continue automatically.
+
+Process A:
+
+- legitimate WAIT
+- checkpoint + HITL + observability durable
+- close / process exits
+
+Process B:
+
+- new Python interpreter
+- reopens WAIT state
+- receives an explicit operator command
+- receives a **NEW** live `AgentExecutionContext` through the existing trusted issuer
+- validates bounded resume authorization and operator declaration
+- validates checkpoint / interrupt
+- persists the accepted answer
+- controlled resume
+- Reality Refresh
+- continuation / audit
+
+Process B does **not** deserialize the old `AgentExecutionContext`. No context persistence. No secret persistence. No authority rehydration from a HITL row. A new `authorization_id` differing from the historical reference is expected.
+
+Therefore:
+
+- **FRESH_PROCESS_OPERATOR_RESUME:** **PROVEN**
+- **AUTOMATIC_PROCESS_RECOVERY:** **NOT IMPLEMENTED**
+- **AUTOMATIC_EXECUTION_CONTINUATION_AFTER_PROCESS_DEATH:** remains **NOT PROVEN**
+
+------------------------------------------------------------
+EXPLICITLY NOT IMPLEMENTED
+------------------------------------------------------------
+
+- **HUMAN_IDENTITY_AUTHENTICATION:** **NOT IMPLEMENTED**
+- **ENTERPRISE_IAM:** **NOT IMPLEMENTED**
+- **CONTROL_ROOM_WRITE_UI:** **NOT IMPLEMENTED**
+- **DIGITAL_WORK_BOARD:** **NOT IMPLEMENTED**
+- **AUTOMATIC_PROCESS_RECOVERY:** **NOT IMPLEMENTED**
+- **PRODUCTION_RECOVERY_COORDINATOR:** **NOT IMPLEMENTED**
+- **RECEIVER_ACK:** **NOT IMPLEMENTED**
+- **TARGET_RUN:** **NOT IMPLEMENTED**
+- **OWNERSHIP_TRANSFER:** **NOT IMPLEMENTED**
+- **CROSS_STORE_ATOMICITY:** **NOT CLAIMED**
+
+Control Room Page 53 remains observe-only. Start reservation remains separate. No persistent Run Control reservation. No scheduler. No worker restart.
+
+------------------------------------------------------------
+MEMORY / AUTHORITY LAW
+------------------------------------------------------------
+
+BUSINESS / PRODUCTION REALITY ≠ RUNTIME CHECKPOINT MEMORY ≠ HITL DECISION MEMORY ≠ HANDOFF TRANSFER MEMORY ≠ OBSERVABILITY / AUDIT MEMORY ≠ EXECUTION OWNERSHIP
+
+Observability is **audit / evidence only**. It is not resume authority, IAM, a business repair engine, or Run Control authority.
+
+MODEL IS NOT SECURITY BOUNDARY.<br>
+DATA ≠ INSTRUCTION.
+
+------------------------------------------------------------
+BOUNDARIES
+------------------------------------------------------------
+
+11D did **NOT** modify:
+
+- Control Room write UI / `pages/53_AI_Центр_управления_агентами.py`
+- Run Control
+- Managed Launcher
+- Digital Work Board
+- ConstructorShadowComposition
+- candidate package / mission scope / secure-read / lifecycle profession modules
+- durable checkpoint store module
+- HITL contracts module
+- shadow HITL / checkpoint / handoff store modules
+- observability event catalog
+- Supabase
+- product data
+- Professional Passport
+- IAM / users / roles / JWT / OAuth / SSO / RBAC
+
+Real repository runtime root `C:\csv_fix\.runtime` was **NOT** created.
+
+Fresh-process tests use `tmp_path` only.
+
+------------------------------------------------------------
+TEST / REVIEW EVIDENCE
+------------------------------------------------------------
+
+TARGETED: **16 / 16 PASS**<br>
+HITL REGRESSION: **65 / 65 PASS**<br>
+RUNTIME / REALITY REGRESSION: **120 / 120 PASS**<br>
+RESTART REGRESSION: **8 / 8 PASS**<br>
+py_compile: **PASS**<br>
+EOS-SEC: **PASS**<br>
+Architecture drift: **NO**<br>
+REAL_RUNTIME_ROOT: **ABSENT**<br>
+PRODUCT_DATA_CHANGED: **NO**<br>
+SUPABASE_CHANGED: **NO**<br>
+REAL_SHADOW_RUN: **NOT STARTED**
+
+------------------------------------------------------------
+GIT EVIDENCE
+------------------------------------------------------------
+
+CODE COMMIT: `cb8a1b6fb779b1f723b4db1034c61c5105cfde5b`<br>
+MESSAGE: `feat(agents): add bounded operator resume path`<br>
+PUSH: **SUCCESS**<br>
+LOCAL == UPSTREAM: **YES**
+
+------------------------------------------------------------
+PROGRAM POSITION
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| Constructor professional / runtime implementation | **10 / 10 DONE** |
+| Professional Passport | **DONE** |
+| 11A Real-Data Candidate Assembler | **DONE** |
+| 11B Shadow Runtime Composition Root | **DONE** |
+| 11C Persistent Shadow Runtime Stores | **DONE** |
+| 11C.1 Runtime Root + Dependency Gate | **DONE** |
+| 11C.2 Durable SQLite Checkpointer | **DONE** |
+| 11C.3 Persistent HITL Store | **DONE** |
+| 11C.4 Persistent Handoff Store | **DONE** |
+| 11C.5 Integrated Reopen / Restart Proof | **DONE** |
+| 11D Bounded Operator / Resume Path | **DONE** |
+| Constructor Runtime v0.1 | **READY_FOR_SHADOW** |
+| Agent Runtime program | **v0.1 READY FOR SHADOW VALIDATION** |
+| Real September Shadow run | **NOT STARTED** |
+| Admission Agent | **NOT STARTED** |
+
+------------------------------------------------------------
+FREEZE DECISION
+------------------------------------------------------------
+
+**CONSTRUCTOR_RUNTIME_V0_1:** **READY_FOR_SHADOW**
+
+**ARCHITECTURAL EXPANSION:** **FROZEN UNTIL SHADOW RESULTS**
+
+Meaning: no new runtime layers, no IAM, no Control Room write redesign, no Digital Work Board, no automatic process scheduler/recovery, no receiver ACK, no target run, no ownership transfer, no Admission implementation until Shadow reveals a real blocking requirement.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**Constructor Shadow Preparation / Real September Shadow**
+
+The primary question is now professional, not architectural:
+
+Can Constructor independently form the correct monthly candidate package from real authoritative production reality with acceptable accuracy, completeness, explainability, and manual-review cost?
+
+Shadow remains **blind**:
+
+- the human manual list **MUST NOT** be input or hint
+- it is benchmark only **AFTER** the agent package is frozen
+
+**NO PRODUCT BUSINESS WRITES** in this documentation checkpoint.
+
+Increment 11A: **DONE** · Increment 11B: **DONE** · Increment 11C.1: **DONE** · Increment 11C.2: **DONE** · Increment 11C.3: **DONE** · Increment 11C.4: **DONE** · Increment 11C.5: **DONE** · Increment 11D: **DONE** · Constructor Runtime v0.1: **READY_FOR_SHADOW** · Constructor: **10 / 10**

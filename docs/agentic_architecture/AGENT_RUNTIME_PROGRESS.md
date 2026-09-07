@@ -13,12 +13,12 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **10 / 10** — **TECHNICAL COMPLETION**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation · **11B** Shadow Runtime Composition Root · **11C.1** Shadow Runtime Root + SQLite Dependency Gate · **11C.2** Durable SQLite Checkpointer · **11C.3** Persistent HITL Store · **11C.4** Persistent Handoff Store
-- **NEXT:** Increment **11C.5** — Integrated Reopen / Restart Proof — do **not** start Admission implementation
-- **Recovery code HEAD:** `8092ab3d0468844bb21a7f108b7ddd23bd43599b` (11C.4 persistent shadow handoff store on `wip/increment-11c-persistent-shadow-stores`)
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation · **11B** Shadow Runtime Composition Root · **11C.1** Shadow Runtime Root + SQLite Dependency Gate · **11C.2** Durable SQLite Checkpointer · **11C.3** Persistent HITL Store · **11C.4** Persistent Handoff Store · **11C.5** Integrated Reopen / Restart Proof
+- **NEXT:** Increment **11D** — Resume / Operator Path — do **not** start Admission implementation
+- **Recovery code HEAD:** `3a1e0fffe5e20417f1befa937a6effeaab51a1b2` (11C.5 integrated reopen / restart proof on `wip/increment-11c-persistent-shadow-stores`)
 - **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1–10.9B DONE · **10.10 DONE** · **10.10A DONE** · Increment 10 overall **FUNCTIONALLY COMPLETE**
-- **Shadow composition:** **11A DONE** · **11B DONE** · **11C IN PROGRESS** · **11C.1 DONE** · **11C.2 DONE** · **11C.3 DONE** · **11C.4 DONE** · **11C.5 NOT STARTED**
-- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A/11B/11C.1/11C.2/11C.3/11C.4 are external composition / runtime infrastructure, not a new Constructor profession.
+- **Shadow composition:** **11A DONE** · **11B DONE** · **11C DONE** · **11C.1 DONE** · **11C.2 DONE** · **11C.3 DONE** · **11C.4 DONE** · **11C.5 DONE** · **11D NOT STARTED**
+- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A/11B/11C.1/11C.2/11C.3/11C.4/11C.5 are external composition / runtime infrastructure, not a new Constructor profession.
 - **Professional Passport:** **DONE**
 - **Constructor Professional Passport v1.0:** `398893197bdd6de9aacfda06de468b0769c520f7`
 - **Reusable Professional Passport Template:** **DONE**
@@ -8336,3 +8336,275 @@ WITHOUT fabricating authority, receiver acceptance, target run, ownership transf
 **NO PRODUCT BUSINESS WRITES.** Do **not** implement 11C.5 in this checkpoint.
 
 Increment 11A: **DONE** · Increment 11B: **DONE** · Increment 11C.1: **DONE** · Increment 11C.2: **DONE** · Increment 11C.3: **DONE** · Increment 11C.4: **DONE** · Increment 11C.5: **NOT STARTED** · Constructor: **10 / 10**
+
+============================================================
+CHECKPOINT — 2026-09-07
+INCREMENT 11C.5
+INTEGRATED REOPEN / RESTART PROOF
+STATUS: DONE
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** record the test-only integrated reopen / restart proof that Constructor durable operational state can survive process loss and be reconstructed from already-existing durable surfaces. Documentation only. **11D is NOT implemented here.**
+
+CODE / TEST COMMIT: `3a1e0fffe5e20417f1befa937a6effeaab51a1b2`<br>
+CODE MESSAGE: `test(agents): prove constructor process restart recovery`<br>
+BRANCH: `wip/increment-11c-persistent-shadow-stores`<br>
+PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES**
+
+------------------------------------------------------------
+STAGE / ЭТАП
+------------------------------------------------------------
+
+Increment **11C.5** — Integrated Reopen / Restart Proof
+
+11C overall: **DONE** · 11C.1: **DONE** · 11C.2: **DONE** · 11C.3: **DONE** · 11C.4: **DONE** · 11C.5: **DONE** · 11D: **NOT STARTED**
+
+------------------------------------------------------------
+WHAT WAS IMPLEMENTED / ЧТО СДЕЛАНО
+------------------------------------------------------------
+
+Created:
+
+- `tests/test_monthly_plan_constructor_shadow_restart.py`
+
+No production module was added. No Recovery Coordinator. No recovery service. No multi-store manager.
+
+11C.5 is a **TEST-ONLY INTEGRATION PROOF**.
+
+Process A:
+
+- uses an isolated `tmp_path` repository root
+- bootstraps existing durable stores
+- executes Constructor through existing `run_constructor_langgraph(...)`
+- persists legitimate WAIT or COMPLETE lifecycle state
+- closes stores
+- exits the Python process completely
+
+Process B:
+
+- is a brand-new Python interpreter (`sys.executable` + `subprocess.run(..., shell=False)`)
+- receives only the isolated root and deterministic fixture identities
+- creates new connections / store / runtime objects
+- reconstructs persisted Constructor state
+- performs no professional continuation
+- performs no resume
+- performs no write repair
+- emits no fabricated authority
+- exits
+
+Parent pytest asserts Process A / Process B results. PIDs differ. Process A exits before Process B starts.
+
+------------------------------------------------------------
+PROVEN CLAIMS
+------------------------------------------------------------
+
+- **ACTUAL_PROCESS_BOUNDARY:** **PROVEN**
+- **PROCESS_INDEPENDENT_STATE_RECONSTRUCTION:** **PROVEN**
+- **INTEGRATED_DURABLE_STATE_REOPEN:** **PROVEN**
+- **WAITING_FOR_HUMAN_RECOVERY:** **PASS**
+- **COMPLETED_HANDOFF_RECOVERY:** **PASS**
+
+Process B receives **no** live Python objects from Process A.
+
+Durable surfaces involved:
+
+- `checkpoints.sqlite`
+- `hitl.sqlite`
+- `handoff.sqlite`
+- `observability.sqlite`
+
+------------------------------------------------------------
+LEGAL LIFECYCLE
+------------------------------------------------------------
+
+11C.5 did **not** fabricate an impossible all-stores-non-empty state.
+
+**WAITING_FOR_HUMAN:**
+
+- checkpoint: **YES**
+- HITL open request: **YES**
+- observability: **YES** (`WAITING_FOR_HUMAN` / `HUMAN_WAIT_STARTED`)
+- handoff: **NO**
+
+**COMPLETED / READY_FOR_HANDOFF** (no-wait path):
+
+- checkpoint: **YES** (lifecycle remains `READY_FOR_HANDOFF`)
+- handoff: **YES**
+- observability: **YES** (`HANDOFF_PERSISTED` then `RUN_COMPLETED`)
+- HITL: **ABSENT**
+
+`READY_FOR_HANDOFF` lifecycle state and `RUN_COMPLETED` observability state may coexist. `RUN_COMPLETED` means Constructor source professional work completed after durable handoff persistence. It does **not** mean Admission accepted, target execution, orchestration completion, or monthly plan approval.
+
+------------------------------------------------------------
+EXPLICITLY NOT PROVEN / NOT IMPLEMENTED
+------------------------------------------------------------
+
+- **AUTOMATIC_EXECUTION_CONTINUATION_AFTER_PROCESS_DEATH:** **NOT PROVEN**
+- **PROCESS_INDEPENDENT_EXECUTION:** **NOT PROVEN**
+- **PRODUCTION_RECOVERY_COORDINATOR:** **NOT IMPLEMENTED**
+- **PRODUCTION_CROSS_STORE_RECOVERY_POLICY:** **NOT IMPLEMENTED**
+- **RESUME_AUTHORITY:** **NOT IMPLEMENTED**
+- **RECEIVER_ACK:** **NOT IMPLEMENTED**
+- **TARGET_RUN:** **NOT IMPLEMENTED**
+- **OWNERSHIP_TRANSFER:** **NOT IMPLEMENTED**
+- **CROSS_STORE_ATOMICITY:** **NOT CLAIMED**
+- **RUN_CONTROL_RESERVATION_REHYDRATED:** **NO**
+
+Managed launcher remains **THREAD**. Persistent memory does **not** imply a persistent worker.
+
+Persisted memory ≠ live authority.<br>
+State reconstruction ≠ execution continuation.<br>
+Recovery inconsistency **detectability** in this test harness ≠ production recovery **enforcement**.
+
+------------------------------------------------------------
+MEMORY / AUTHORITY LAW
+------------------------------------------------------------
+
+BUSINESS / PRODUCTION REALITY ≠ RUNTIME CHECKPOINT MEMORY ≠ HITL DECISION MEMORY ≠ HANDOFF TRANSFER MEMORY ≠ OBSERVABILITY / AUDIT MEMORY ≠ EXECUTION OWNERSHIP
+
+Process B may reconstruct durable state. It must **not** reconstruct privileges.
+
+Persisted `authorization_id_ref` is memory only, not a current authorization token.<br>
+Persisted pending HITL request ≠ permission to resume.<br>
+Persisted handoff ≠ permission for a receiver to act.<br>
+`target_role` remains **INTENDED TARGET ROLE ONLY** (`MONTHLY_PLAN_ADMISSION_AGENT`).
+
+------------------------------------------------------------
+SECURITY
+------------------------------------------------------------
+
+EOS-SEC: **PASS**
+
+- `shell=False`
+- `tmp_path` runtime only
+- no pickle
+- no secrets persisted
+- no product DB
+- no Supabase writes
+- no authority rehydration
+- no real Shadow run
+- MODEL IS NOT SECURITY BOUNDARY
+- DATA ≠ INSTRUCTION
+
+Process B uses the existing 11C.2 safe checkpoint wrapper, structured HITL reconstruction, existing handoff digest / column validation, and the existing 10.4/10.5 observability store. It does **not** reimplement those stores.
+
+------------------------------------------------------------
+FILE CREATION BOUNDARY
+------------------------------------------------------------
+
+11C.5 created **only** the test file.
+
+It did **not** create:
+
+- `shadow_recovery.py`
+- Recovery Coordinator
+- identity sidecar / fifth recovery store
+- production contracts
+- migrations
+
+Real repository runtime root `C:\csv_fix\.runtime` was **NOT** created.
+
+Tests use `tmp_path` and `resolve_constructor_shadow_runtime_paths(...)`.
+
+------------------------------------------------------------
+BOUNDARIES
+------------------------------------------------------------
+
+11C.5 did **NOT** modify:
+
+- LangGraph runtime
+- HITL store / contracts / resume
+- checkpoint store
+- handoff store
+- observability
+- ConstructorShadowComposition
+- ManagedLauncher
+- Run Control
+- Control Room
+- Query Port
+- Supabase
+- product data
+- security layer
+- Professional Passport
+
+11D: **NOT STARTED**<br>
+Real Shadow: **NOT STARTED**
+
+Constructor professional implementation remains **10 / 10**. That is **not** completion of the entire Agent Runtime program.
+
+------------------------------------------------------------
+TEST / REVIEW EVIDENCE
+------------------------------------------------------------
+
+TARGETED: **8 / 8 PASS**<br>
+CHECKPOINT REGRESSION: **30 / 30 PASS**<br>
+HITL REGRESSION: **65 / 65 PASS**<br>
+HANDOFF REGRESSION: **113 / 113 PASS**<br>
+OBSERVABILITY PROCESS DURABILITY: **32 / 32 PASS**<br>
+RUNTIME CONTROL: **115 / 115 PASS**<br>
+py_compile: **PASS**<br>
+EOS-SEC: **PASS**<br>
+Architecture drift: **NO**<br>
+REAL_RUNTIME_ROOT_CREATED: **NO**<br>
+PRODUCT_DATA_CHANGED: **NO**<br>
+SUPABASE_CHANGED: **NO**<br>
+REAL_SHADOW_RUN: **NOT STARTED**
+
+A pre-existing managed-launcher thread-exception warning on the intentional worker-failure test remains **NON_BLOCKING_NOT_REGRESSION**. 11C.5 did not introduce it and added no warning filter.
+
+------------------------------------------------------------
+GIT EVIDENCE
+------------------------------------------------------------
+
+CODE COMMIT: `3a1e0fffe5e20417f1befa937a6effeaab51a1b2`<br>
+MESSAGE: `test(agents): prove constructor process restart recovery`<br>
+PUSH: **SUCCESS**<br>
+LOCAL == UPSTREAM: **YES**
+
+------------------------------------------------------------
+PROGRAM POSITION
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| Constructor professional / runtime implementation | **10 / 10 DONE** |
+| Professional Passport | **DONE** |
+| 11A Real-Data Candidate Assembler | **DONE** |
+| 11B Shadow Runtime Composition Root | **DONE** |
+| 11C Persistent Shadow Runtime Stores | **DONE** |
+| 11C.1 Runtime Root + Dependency Gate | **DONE** |
+| 11C.2 Durable SQLite Checkpointer | **DONE** |
+| 11C.3 Persistent HITL Store | **DONE** |
+| 11C.4 Persistent Handoff Store | **DONE** |
+| 11C.5 Integrated Reopen / Restart Proof | **DONE** |
+| 11D Resume / Operator Path | **NOT STARTED** |
+| Real September Shadow run | **NOT STARTED** |
+| Admission Agent | **NOT STARTED** |
+| Agent Runtime program | **NOT COMPLETE** |
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**Increment 11D — Resume / Operator Path**
+
+Purpose: prove the bounded lawful transition:
+
+`WAITING_FOR_HUMAN` → persisted Human Decision → authority / decision validity check → expected checkpoint identity verification → controlled resume → Reality Refresh → professional execution continues → observability / audit records the consequence.
+
+11D must **NOT** become:
+
+- full enterprise IAM
+- full RBAC platform
+- Digital Work Board
+- cluster recovery system
+- automatic worker restart
+- Control Room redesign
+
+Keep 11D minimal and bounded.
+
+**NO PRODUCT BUSINESS WRITES.** Do **not** implement 11D in this checkpoint.
+
+Increment 11A: **DONE** · Increment 11B: **DONE** · Increment 11C.1: **DONE** · Increment 11C.2: **DONE** · Increment 11C.3: **DONE** · Increment 11C.4: **DONE** · Increment 11C.5: **DONE** · Increment 11D: **NOT STARTED** · Constructor: **10 / 10**

@@ -13,12 +13,12 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
 - **Progress:** **10 / 10** — **TECHNICAL COMPLETION**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation · **11B** Shadow Runtime Composition Root · **11C.1** Shadow Runtime Root + SQLite Dependency Gate · **11C.2** Durable SQLite Checkpointer · **11C.3** Persistent HITL Store
-- **NEXT:** Increment **11C.4** — Persistent Handoff Store — do **not** start Admission implementation
-- **Recovery code HEAD:** `4de43331ce52cfe140d8be3cc3842c5ee0832615` (11C.3 persistent shadow HITL store on `wip/increment-11c-persistent-shadow-stores`)
+- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation · **11B** Shadow Runtime Composition Root · **11C.1** Shadow Runtime Root + SQLite Dependency Gate · **11C.2** Durable SQLite Checkpointer · **11C.3** Persistent HITL Store · **11C.4** Persistent Handoff Store
+- **NEXT:** Increment **11C.5** — Integrated Reopen / Restart Proof — do **not** start Admission implementation
+- **Recovery code HEAD:** `8092ab3d0468844bb21a7f108b7ddd23bd43599b` (11C.4 persistent shadow handoff store on `wip/increment-11c-persistent-shadow-stores`)
 - **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1–10.9B DONE · **10.10 DONE** · **10.10A DONE** · Increment 10 overall **FUNCTIONALLY COMPLETE**
-- **Shadow composition:** **11A DONE** · **11B DONE** · **11C IN PROGRESS** · **11C.1 DONE** · **11C.2 DONE** · **11C.3 DONE** · **11C.4 NOT STARTED**
-- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A/11B/11C.1/11C.2/11C.3 are external composition / runtime infrastructure, not a new Constructor profession.
+- **Shadow composition:** **11A DONE** · **11B DONE** · **11C IN PROGRESS** · **11C.1 DONE** · **11C.2 DONE** · **11C.3 DONE** · **11C.4 DONE** · **11C.5 NOT STARTED**
+- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A/11B/11C.1/11C.2/11C.3/11C.4 are external composition / runtime infrastructure, not a new Constructor profession.
 - **Professional Passport:** **DONE**
 - **Constructor Professional Passport v1.0:** `398893197bdd6de9aacfda06de468b0769c520f7`
 - **Reusable Professional Passport Template:** **DONE**
@@ -7999,3 +7999,340 @@ Source completion ≠ orchestration completion.
 **NO PRODUCT BUSINESS WRITES.** Do **not** implement 11C.4 in this checkpoint.
 
 Increment 11A: **DONE** · Increment 11B: **DONE** · Increment 11C.1: **DONE** · Increment 11C.2: **DONE** · Increment 11C.3: **DONE** · Increment 11C.4: **NOT STARTED** · Constructor: **10 / 10**
+
+============================================================
+CHECKPOINT — 2026-09-07
+INCREMENT 11C.4
+PERSISTENT HANDOFF STORE
+STATUS: DONE
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **DONE**
+
+**Purpose:** record the persistent SQLite Constructor Shadow Handoff Store for durable `ConstructorHandoff` transfer state. Documentation only. **11C.5 is NOT implemented here.**
+
+CODE COMMIT: `8092ab3d0468844bb21a7f108b7ddd23bd43599b`<br>
+CODE MESSAGE: `feat(agents): add persistent shadow handoff store`<br>
+BRANCH: `wip/increment-11c-persistent-shadow-stores`<br>
+PUSH: **SUCCESS** · LOCAL == UPSTREAM: **YES**
+
+------------------------------------------------------------
+STAGE / ЭТАП
+------------------------------------------------------------
+
+Increment **11C.4** — Persistent Constructor Shadow Handoff Store
+
+11C overall: **IN PROGRESS** · 11C.1: **DONE** · 11C.2: **DONE** · 11C.3: **DONE** · 11C.4: **DONE** · 11C.5: **NOT STARTED**
+
+------------------------------------------------------------
+WHAT WAS IMPLEMENTED / ЧТО СДЕЛАНО
+------------------------------------------------------------
+
+Created:
+
+- `agents/monthly_plan_constructor/shadow_handoff_store.py`
+- `tests/test_monthly_plan_constructor_shadow_handoff_store.py`
+
+Implementation provides:
+
+- persistent Shadow handoff store (`ConstructorShadowHandoffStore`)
+- existing `ConstructorHandoffStore` Protocol implementation
+- exact store API: `get(handoff_id)` and `put_if_absent(handoff)`
+- existing application helper unchanged: `persist_constructor_handoff(...)`
+- explicit `handoff.sqlite` bootstrap via existing Shadow runtime path contract
+- explicit SQLite connection ownership
+- reopen through **NEW** connection/store
+- identical-replay idempotency and conflicting-replay fail-closed behavior
+- deterministic close semantics
+- no import side effects
+
+Bootstrap creates only the canonical runtime directory and `handoff.sqlite`.
+
+------------------------------------------------------------
+ARCHITECTURE MEANING
+------------------------------------------------------------
+
+11C.4 proves durability of **STRUCTURED CONSTRUCTOR HANDOFF TRANSFER STATE**.
+
+This is **HANDOFF MEMORY**.
+
+It is **NOT**:
+
+- BUSINESS / ORGANIZATIONAL MEMORY
+- LANGGRAPH CHECKPOINT MEMORY
+- HITL DECISION MEMORY
+- OBSERVABILITY / AUDIT MEMORY
+- EXECUTION OWNERSHIP / AUTHORITY
+
+Canonical law:
+
+**HANDOFF CREATED** ≠ **HANDOFF PERSISTED** ≠ **RECEIVER ACCEPTED** ≠ **OWNERSHIP TRANSFERRED**
+
+**SOURCE AGENT COMPLETED** ≠ **TARGET AGENT STARTED** ≠ **ORCHESTRATION COMPLETED**
+
+------------------------------------------------------------
+PERSISTENCE LAW
+------------------------------------------------------------
+
+Constructor handoff survives:
+
+Store A: persist → close<br>
+Store B: **NEW** sqlite3 connection / **NEW** store → recover<br>
+Store C: **NEW** sqlite3 connection / **NEW** store → recover again
+
+**PERSISTENT_HANDOFF_STORE:** **PROVEN**<br>
+**PROCESS-INDEPENDENT_HANDOFF_MEMORY:** **PROVEN**<br>
+**INTEGRATED_PROCESS_RESTART:** **NOT YET PROVEN** (11C.5)
+
+------------------------------------------------------------
+MEMORY LAYERS
+------------------------------------------------------------
+
+Durable layers remain separate. One does **NOT** replace another.
+
+- **Supabase/PostgreSQL** = authoritative business / organizational / production reality
+- **checkpoints.sqlite** = Constructor LangGraph runtime checkpoint state
+- **hitl.sqlite** = structured Human Wait / Human Decision state
+- **handoff.sqlite** = structured durable handoff transfer state
+- **observability.sqlite** = audit / execution history
+
+**CROSS_STORE_ATOMICITY: NOT CLAIMED**
+
+------------------------------------------------------------
+EXISTING HANDOFF CONTRACT
+------------------------------------------------------------
+
+11C.4 reuses the existing `ConstructorHandoffStore` write/read API. The Protocol was **NOT** modified.
+
+- `get(handoff_id)`
+- `put_if_absent(handoff)`
+
+Application helper `persist_constructor_handoff(...)` remains unchanged.
+
+Durable rows store the existing `ConstructorHandoff` contract, including `CandidatePackageReference`.
+
+`handoff.sqlite` is **transfer memory**. It is **NOT** a duplicate CandidatePackage business database. Full `CandidatePackage.candidates` are **NOT** copied into `handoff.sqlite`.
+
+------------------------------------------------------------
+IDENTITY / IMMUTABILITY / REPLAY
+------------------------------------------------------------
+
+Authoritative identity: deterministic `handoff_id`.
+
+Existing `compute_constructor_handoff_payload_digest(...)` remains the immutability fingerprint.
+
+- identical replay: **IDEMPOTENT**
+- same `handoff_id` + different immutable payload: **FAIL CLOSED**
+- conflict code: `HANDOFF_IMMUTABILITY_CONFLICT`
+- original first durable handoff: **preserved**
+
+`created_at` is part of immutable payload meaning.
+
+Same `handoff_id` + changed `created_at` = **CONFLICT**.
+
+This is intentionally stricter than HITL same-wait `created_at` replay.
+
+------------------------------------------------------------
+TARGET ROLE LAW
+------------------------------------------------------------
+
+`target_role` = **INTENDED TARGET ROLE ONLY**.
+
+Current Constructor flow: `MONTHLY_PLAN_ADMISSION_AGENT`.
+
+This does **NOT** prove:
+
+- receiver exists
+- receiver accepted
+- receiver started
+- target run exists
+- ownership transferred
+
+------------------------------------------------------------
+SOURCE COMPLETION LAW
+------------------------------------------------------------
+
+Current live runtime remains **unchanged**:
+
+`HANDOFF_CREATED` → durable persist → `HANDOFF_PERSISTED` → `RUN_COMPLETED`
+
+`RUN_COMPLETED` means Constructor completed its own professional work after successful durable handoff persistence.
+
+It does **NOT** mean Admission accepted, Admission executed, ownership transferred, orchestration completed, or monthly plan approved.
+
+Isolated store proof does **NOT** itself prove those live events.
+
+- **PERSISTENT_HANDOFF_STORE:** **PROVEN**
+- **LIVE_HANDOFF_WIRING_CHANGED:** **NO**
+- **RUN_COMPLETION_SEMANTICS:** **UNCHANGED**
+
+------------------------------------------------------------
+AUTHORITY BOUNDARY
+------------------------------------------------------------
+
+11C.4 does **NOT** implement:
+
+- receiver ACK
+- target run
+- receiver authority
+- ownership transfer
+- work claiming
+- lease
+- Admission activation
+- Digital Work Board
+- orchestration completion
+- resume authority
+- operator authority
+
+Persistent state does **NOT** itself create authority.
+
+A durable handoff record may later become an input to organizational work creation. 11C.4 does **NOT** create a work queue, assignment, claim/lease, or receiver acceptance.
+
+------------------------------------------------------------
+SQLITE / BOOTSTRAP / CONNECTION
+------------------------------------------------------------
+
+11C.4 owns **only**:
+
+`<repository_root>/.runtime/shadow/constructor/handoff.sqlite`
+
+Bootstrap:
+
+- resolves the canonical path
+- creates the runtime directory explicitly
+- opens `handoff.sqlite`
+- uses `sqlite3.connect(..., check_same_thread=False)`
+- enables `PRAGMA foreign_keys = ON`
+- creates schema
+- returns owned `ConstructorShadowHandoffStore`
+
+Path resolution / import remains pure.
+
+`ConstructorShadowHandoffStore` owns `db_path` and `sqlite3.Connection`. `close()` is deterministic and idempotent. Access after close fails closed. If schema/bootstrap fails after `connect()`, the connection is closed and the original exception is re-raised.
+
+Each `put_if_absent` is one SQLite transaction. Rollback on failure preserves prior durable state.
+
+------------------------------------------------------------
+JSON / SECURITY LAW
+------------------------------------------------------------
+
+Persistence format: deterministic JSON (`ensure_ascii=False`, `sort_keys=True`, `allow_nan=False`).
+
+No pickle. No JsonPlusSerializer. No arbitrary class reconstruction. No `AgentExecutionContext` persistence. No secrets. No model access to raw SQL. No model-controlled runtime path.
+
+Durable read recomputes `compute_constructor_handoff_payload_digest(...)` and compares it to stored `payload_digest`. First-class columns must match reconstructed payload. Malformed / corrupt / mismatched durable state fails closed. Silent overwrite is blocked.
+
+EOS-SEC: **PASS**
+
+------------------------------------------------------------
+FILE CREATION BOUNDARY
+------------------------------------------------------------
+
+11C.4 may create only `handoff.sqlite` in its runtime root.
+
+It does **NOT** create:
+
+- `checkpoints.sqlite`
+- `hitl.sqlite`
+- `observability.sqlite`
+
+Real repository runtime root `C:\csv_fix\.runtime` was **NOT** created during tests.
+
+Tests use `tmp_path`.
+
+------------------------------------------------------------
+BOUNDARIES
+------------------------------------------------------------
+
+11C.4 did **NOT** modify:
+
+- LangGraph runtime
+- HITL store / contracts / resume
+- checkpoint store
+- observability
+- Control Room
+- Query Port
+- Supabase
+- product data
+- security layer
+- Professional Passport
+
+11C.5: **NOT STARTED**<br>
+11D: **NOT STARTED**<br>
+Real Shadow: **NOT STARTED**
+
+Constructor professional implementation remains **10 / 10**. That is **not** completion of the entire Agent Runtime program.
+
+------------------------------------------------------------
+TEST / REVIEW EVIDENCE
+------------------------------------------------------------
+
+TARGETED: **17 / 17 PASS**<br>
+HANDOFF_NEIGHBOR: **96 / 96 PASS**<br>
+DURABLE_NEIGHBOR: **41 / 41 PASS**<br>
+POSTGRES_HANDOFF: **ENVIRONMENT_BLOCKED_NOT_REGRESSION**<br>
+py_compile: **PASS**<br>
+EOS-SEC: **PASS**<br>
+Architecture drift: **NO**<br>
+HANDOFF_REOPEN: **PASS**<br>
+IDENTICAL_REPLAY: **IDEMPOTENT**<br>
+CONFLICTING_REPLAY: **FAIL_CLOSED**<br>
+ORIGINAL_HANDOFF_PRESERVED: **PASS**<br>
+CREATED_AT_DRIFT: **FAIL_CLOSED**<br>
+PAYLOAD_DIGEST: **PASS**<br>
+COLUMN_PAYLOAD_MISMATCH: **FAIL_CLOSED**<br>
+REAL_RUNTIME_ROOT_CREATED: **NO**<br>
+PRODUCT_DATA_CHANGED: **NO**<br>
+SUPABASE_CHANGED: **NO**<br>
+REAL_SHADOW_RUN: **NOT STARTED**
+
+Postgres handoff harness remains environment-blocked. That is **not** a product defect or regression.
+
+------------------------------------------------------------
+GIT EVIDENCE
+------------------------------------------------------------
+
+CODE COMMIT: `8092ab3d0468844bb21a7f108b7ddd23bd43599b`<br>
+MESSAGE: `feat(agents): add persistent shadow handoff store`<br>
+PUSH: **SUCCESS**<br>
+LOCAL == UPSTREAM: **YES**
+
+------------------------------------------------------------
+PROGRAM POSITION
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| Constructor professional / runtime implementation | **10 / 10 DONE** |
+| Professional Passport | **DONE** |
+| 11A Real-Data Candidate Assembler | **DONE** |
+| 11B Shadow Runtime Composition Root | **DONE** |
+| 11C Persistent Shadow Runtime Stores | **IN PROGRESS** |
+| 11C.1 Runtime Root + Dependency Gate | **DONE** |
+| 11C.2 Durable SQLite Checkpointer | **DONE** |
+| 11C.3 Persistent HITL Store | **DONE** |
+| 11C.4 Persistent Handoff Store | **DONE** |
+| 11C.5 Integrated Reopen / Restart Proof | **NOT STARTED** |
+| 11D Resume / Operator Path | **NOT STARTED** |
+| Real September Shadow run | **NOT STARTED** |
+| Admission Agent | **NOT STARTED** |
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**Increment 11C.5 — Integrated Reopen / Restart Proof**
+
+Purpose: prove that the already-created durable runtime surfaces can participate in one coherent reopen/restart scenario while preserving their boundaries.
+
+Expected conceptual proof:
+
+checkpoint + HITL + handoff + observability → process/store objects closed → new process-independent store/runtime objects opened → durable state reconstructed consistently
+
+WITHOUT fabricating authority, receiver acceptance, target run, ownership transfer, or orchestration completion.
+
+11C.5 does **NOT** create another isolated store.
+
+**NO PRODUCT BUSINESS WRITES.** Do **not** implement 11C.5 in this checkpoint.
+
+Increment 11A: **DONE** · Increment 11B: **DONE** · Increment 11C.1: **DONE** · Increment 11C.2: **DONE** · Increment 11C.3: **DONE** · Increment 11C.4: **DONE** · Increment 11C.5: **NOT STARTED** · Constructor: **10 / 10**

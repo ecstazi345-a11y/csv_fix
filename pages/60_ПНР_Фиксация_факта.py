@@ -222,11 +222,19 @@ def measurements_from_rows(
     return prepared
 
 
+def require_selected_work_scope(work_scope_id: Any) -> str:
+    text = str(work_scope_id or "").strip()
+    if not text:
+        raise ValueError("Выберите раздел работ.")
+    return text
+
+
 def submit_fingerprint(kwargs: dict[str, Any]) -> tuple:
     measurements = kwargs.get("measurements") or []
     return (
         kwargs.get("system_id"),
         kwargs.get("object_id"),
+        kwargs.get("work_scope_id"),
         kwargs.get("functional_position_id"),
         kwargs.get("operation_id"),
         kwargs.get("unmapped_operation_name"),
@@ -253,6 +261,7 @@ def build_structured_kwargs(
     *,
     system_id: str,
     object_id: str,
+    work_scope_id: str,
     functional_position_id: str | None,
     operation_mode: str,
     operation_id: str | None,
@@ -270,6 +279,7 @@ def build_structured_kwargs(
     kwargs: dict[str, Any] = {
         "system_id": system_id,
         "object_id": object_id,
+        "work_scope_id": work_scope_id,
         "functional_position_id": functional_position_id,
         "execution_status": execution_status,
         "evaluation_status": evaluation_status,
@@ -747,31 +757,37 @@ submitted = st.button("Сохранить факт", type="primary")
 
 if submitted:
     error_message = None
-    if operation_mode == MODE_CATALOG and not operation_id:
-        error_message = "Выберите работу из справочника или режим «Другая операция»."
-    elif operation_mode == MODE_UNMAPPED and not (unmapped_name or "").strip():
-        error_message = "Укажите наименование работы."
-    elif execution_status == "COMPLETED" and evaluation_status == "DOES_NOT_CONFORM":
-        if not (observation_text or "").strip():
-            error_message = "Укажите, что обнаружено."
-    elif execution_status == "PARTIAL":
-        try:
-            partial_detail = build_partial_detail(
-                _partial_completed_draft, _partial_remaining_draft
-            )
-        except ValueError as exc:
-            error_message = str(exc)
-    elif execution_status == "BLOCKED":
-        try:
-            blocked_detail = build_blocked_detail(
-                blocked_category_label or "",
-                blocked_description or "",
-                other_work_label or "",
-            )
-        except ValueError as exc:
-            error_message = str(exc)
-    if error_message is None and measurement_error:
-        error_message = measurement_error
+    selected_scope_id = None
+    try:
+        selected_scope_id = require_selected_work_scope(work_scope_id)
+    except ValueError as exc:
+        error_message = str(exc)
+    if error_message is None:
+        if operation_mode == MODE_CATALOG and not operation_id:
+            error_message = "Выберите работу из справочника или режим «Другая операция»."
+        elif operation_mode == MODE_UNMAPPED and not (unmapped_name or "").strip():
+            error_message = "Укажите наименование работы."
+        elif execution_status == "COMPLETED" and evaluation_status == "DOES_NOT_CONFORM":
+            if not (observation_text or "").strip():
+                error_message = "Укажите, что обнаружено."
+        elif execution_status == "PARTIAL":
+            try:
+                partial_detail = build_partial_detail(
+                    _partial_completed_draft, _partial_remaining_draft
+                )
+            except ValueError as exc:
+                error_message = str(exc)
+        elif execution_status == "BLOCKED":
+            try:
+                blocked_detail = build_blocked_detail(
+                    blocked_category_label or "",
+                    blocked_description or "",
+                    other_work_label or "",
+                )
+            except ValueError as exc:
+                error_message = str(exc)
+        if error_message is None and measurement_error:
+            error_message = measurement_error
 
     if error_message:
         st.error(error_message)
@@ -780,6 +796,7 @@ if submitted:
         kwargs = build_structured_kwargs(
             system_id=system_id,
             object_id=str(object_id),
+            work_scope_id=selected_scope_id,
             functional_position_id=functional_position_id,
             operation_mode=operation_mode,
             operation_id=str(operation_id) if operation_id else None,

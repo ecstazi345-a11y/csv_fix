@@ -162,6 +162,7 @@ STRUCTURED_EVENT_FIELDS = EVENT_FIELDS + (
     "evaluation_status",
     "observation_text",
     "retry_of_event_id",
+    "work_scope_id",
 )
 
 
@@ -726,7 +727,8 @@ def _load_event(db: Client, event_id: str) -> dict[str, Any]:
         response = (
             db.table(TABLE_EVENTS)
             .select(
-                "event_id,system_id,object_id,operation_id,unmapped_operation_name"
+                "event_id,system_id,object_id,operation_id,"
+                "unmapped_operation_name,work_scope_id"
             )
             .eq("event_id", event_id)
             .limit(1)
@@ -844,6 +846,7 @@ def create_structured_execution_event(
     *,
     system_id: Any,
     object_id: Any,
+    work_scope_id: Any,
     execution_status: Any,
     evaluation_status: Any,
     occurred_at: Any,
@@ -865,6 +868,7 @@ def create_structured_execution_event(
 ) -> dict[str, Any]:
     sid = _require_id(system_id, "систему")
     oid = _require_id(object_id, "объект")
+    wid = _require_id(work_scope_id, "раздел работ")
     occurred = _require_aware_datetime(occurred_at)
     execution, evaluation, result = _require_status_pair(
         execution_status, evaluation_status
@@ -947,11 +951,17 @@ def create_structured_execution_event(
             raise PnrValidationError(
                 "Повторная попытка должна относиться к той же операции."
             )
+        prior_scope = _nonempty_text(prior.get("work_scope_id"))
+        if prior_scope is not None and prior_scope != wid:
+            raise PnrValidationError(
+                "Повторная попытка должна относиться к тому же разделу работ."
+            )
 
     payload: dict[str, Any] = {
         "event_id": event_id,
         "system_id": sid,
         "object_id": oid,
+        "work_scope_id": wid,
         "functional_position_id": fp_id,
         "execution_status": execution,
         "evaluation_status": evaluation,

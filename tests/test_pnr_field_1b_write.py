@@ -12,13 +12,16 @@ import unittest
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from services.pnr_service import (
+    EVENT_FIELDS,
     PnrServiceError,
     PnrValidationError,
     RPC_CREATE_STRUCTURED_EVENT,
+    STRUCTURED_EVENT_FIELDS,
     create_execution_event,
     create_structured_execution_event,
 )
@@ -30,6 +33,8 @@ OBJ_ID = "33333333-3333-4333-8333-333333333333"
 OTHER_OBJ = "66666666-6666-4666-8666-666666666666"
 OP_ID = "55555555-5555-4555-8555-555555555555"
 OTHER_OP = "77777777-7777-4777-8777-777777777777"
+SCOPE_ID = "44444444-4444-4444-8444-444444444444"
+OTHER_SCOPE = "99999999-9999-4999-8999-999999999999"
 PRIOR_ID = "88888888-8888-4888-8888-888888888888"
 AWARE = datetime(2026, 9, 11, 12, 0, tzinfo=timezone.utc)
 FIXED_EVENT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -98,6 +103,7 @@ class FakeRpc:
             "event_id": payload.get("event_id"),
             "system_id": payload.get("system_id"),
             "object_id": payload.get("object_id"),
+            "work_scope_id": payload.get("work_scope_id"),
             "operation_id": payload.get("operation_id"),
             "unmapped_operation_name": payload.get("unmapped_operation_name"),
             "result": {
@@ -214,6 +220,7 @@ def _kwargs(**overrides: object) -> dict:
     payload = {
         "system_id": SYS_ID,
         "object_id": OBJ_ID,
+        "work_scope_id": SCOPE_ID,
         "execution_status": "COMPLETED",
         "evaluation_status": "CONFORMS",
         "occurred_at": AWARE,
@@ -470,9 +477,66 @@ class PnrField1bWriteTests(unittest.TestCase):
         self.assertEqual(len(self.client.inserts), 1)
         self.assertEqual(self.client.inserts[0]["result"], "FAIL")
         self.assertNotIn("execution_status", self.client.inserts[0])
+        self.assertNotIn("work_scope_id", self.client.inserts[0])
         source = inspect.getsource(create_execution_event)
         self.assertIn(".insert(", source)
         self.assertNotIn(".rpc(", source)
+
+    def test_work_scope_id_required(self) -> None:
+        with self.assertRaises(PnrValidationError):
+            self._create(work_scope_id=None)
+        with self.assertRaises(PnrValidationError):
+            self._create(work_scope_id="  ")
+        missing = _kwargs()
+        del missing["work_scope_id"]
+        with self.assertRaises(TypeError):
+            create_structured_execution_event(client=self.client, **missing)
+        self.assertEqual(self.client.rpc_calls, [])
+
+    def test_payload_includes_work_scope_id(self) -> None:
+        row = self._create()
+        self.assertEqual(self._payload()["work_scope_id"], SCOPE_ID)
+        self.assertEqual(row["work_scope_id"], SCOPE_ID)
+        self.assertIn("work_scope_id", STRUCTURED_EVENT_FIELDS)
+        self.assertNotIn("work_scope_id", EVENT_FIELDS)
+
+    def test_unmapped_operation_still_sends_work_scope_id(self) -> None:
+        self._create(operation_id=None, unmapped_operation_name="Прозвонка")
+        payload = self._payload()
+        self.assertEqual(payload["work_scope_id"], SCOPE_ID)
+        self.assertIsNone(payload["operation_id"])
+        self.assertEqual(payload["unmapped_operation_name"], "Прозвонка")
+
+    def test_no_python_bridge_query(self) -> None:
+        source = inspect.getsource(create_structured_execution_event)
+        module_text = Path(create_structured_execution_event.__code__.co_filename).read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("pnr_work_scope_operations", source)
+        self.assertNotIn("work_scope_operations", source)
+        self.assertNotIn("TABLE_WORK_SCOPE_OPERATIONS", module_text)
+        self.assertNotIn('table("pnr_work_scope_operations")', module_text)
+        self.assertNotIn("table('pnr_work_scope_operations')", module_text)
+
+    def test_retry_scope_mismatch_no_rpc(self) -> None:
+        self.client.store["pnr_execution_events"][0]["work_scope_id"] = SCOPE_ID
+        with self.assertRaises(PnrValidationError):
+            self._create(retry_of_event_id=PRIOR_ID, work_scope_id=OTHER_SCOPE)
+        self.assertEqual(self.client.rpc_calls, [])
+
+    def test_retry_scope_match_calls_rpc(self) -> None:
+        self.client.store["pnr_execution_events"][0]["work_scope_id"] = SCOPE_ID
+        self._create(retry_of_event_id=PRIOR_ID, work_scope_id=SCOPE_ID)
+        self.assertEqual(self._payload()["work_scope_id"], SCOPE_ID)
+        self.assertEqual(len(self.client.rpc_calls), 1)
+
+    def test_retry_historical_null_scope_allowed(self) -> None:
+        self.assertIsNone(
+            self.client.store["pnr_execution_events"][0].get("work_scope_id")
+        )
+        self._create(retry_of_event_id=PRIOR_ID)
+        self.assertEqual(self._payload()["work_scope_id"], SCOPE_ID)
+        self.assertEqual(self._payload()["retry_of_event_id"], PRIOR_ID)
 
 
 if __name__ == "__main__":

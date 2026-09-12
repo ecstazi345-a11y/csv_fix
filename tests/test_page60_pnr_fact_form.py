@@ -220,6 +220,14 @@ class Page60SourceTests(unittest.TestCase):
         self.assertNotIn('"result":', self.source)
         self.assertNotIn('"labor_hours":', self.source)
 
+    def test_persists_selected_work_scope_without_m2m_reads(self) -> None:
+        self.assertIn("require_selected_work_scope", self.source)
+        self.assertIn("Выберите раздел работ.", self.source)
+        self.assertIn("work_scope_id=selected_scope_id", self.source)
+        self.assertIn('kwargs.get("work_scope_id")', self.source)
+        self.assertIn("list_active_operations(work_scope_id=", self.source)
+        self.assertNotIn("pnr_work_scope_operations", self.source)
+
 
 class Page60HelperTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -341,6 +349,42 @@ class Page60HelperTests(unittest.TestCase):
         self.assertEqual(kwargs["source"], "STREAMLIT")
         self.assertEqual(kwargs["measurements"], [])
 
+    def test_selected_work_scope_reaches_kwargs(self) -> None:
+        kwargs = self._kwargs()
+        self.assertEqual(kwargs["work_scope_id"], "scope-1")
+        unmapped = self._kwargs(
+            operation_mode=self.page.MODE_UNMAPPED,
+            unmapped_operation_name="Прозвонка нестандартной цепи",
+        )
+        self.assertEqual(unmapped["work_scope_id"], "scope-1")
+        self.assertIsNone(unmapped["operation_id"])
+
+    def test_fingerprint_includes_work_scope_id(self) -> None:
+        kwargs = self._kwargs()
+        fingerprint = self.page.submit_fingerprint(kwargs)
+        self.assertIn("scope-1", fingerprint)
+        other = dict(kwargs)
+        other["work_scope_id"] = "scope-2"
+        self.assertNotEqual(fingerprint, self.page.submit_fingerprint(other))
+
+    def test_save_refuses_missing_work_scope(self) -> None:
+        self.assertEqual(
+            self.page.require_selected_work_scope("scope-1"),
+            "scope-1",
+        )
+        with self.assertRaises(ValueError) as ctx:
+            self.page.require_selected_work_scope(None)
+        self.assertIn("раздел работ", str(ctx.exception).lower())
+        with self.assertRaises(ValueError):
+            self.page.require_selected_work_scope("  ")
+        self.assertIn("require_selected_work_scope(work_scope_id)", PAGE_PATH.read_text(encoding="utf-8"))
+
+    def test_operation_picker_stays_on_legacy_owner_path(self) -> None:
+        source = PAGE_PATH.read_text(encoding="utf-8")
+        self.assertIn("list_active_operations(work_scope_id=", source)
+        self.assertNotIn("pnr_work_scope_operations", source)
+        self.assertNotIn("list_work_scope_operations", source)
+
     def test_unmapped_mode_reaches_unmapped_name(self) -> None:
         kwargs = self._kwargs(
             operation_mode=self.page.MODE_UNMAPPED,
@@ -392,6 +436,7 @@ class Page60HelperTests(unittest.TestCase):
         payload = dict(
             system_id="sys-p1",
             object_id="obj-1",
+            work_scope_id="scope-1",
             functional_position_id="fp-1",
             operation_mode=self.page.MODE_CATALOG,
             operation_id="op-003",

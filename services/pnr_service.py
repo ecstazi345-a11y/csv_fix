@@ -9,6 +9,8 @@ monthly planning, and Agent Runtime.
 Legacy path: create_execution_event — single pnr_execution_events INSERT.
 Structured path: create_structured_execution_event — one RPC transaction.
 FIELD-1C adds narrow SELECT helpers for the field capture form.
+FIELD-1D.1E adds a Page 60 M:N membership reader on pnr_work_scope_operations.
+list_active_operations remains the legacy owner-column reader.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ TABLE_SYSTEMS = "eos_systems"
 TABLE_OBJECTS = "pnr_objects"
 TABLE_SCOPES = "pnr_work_scopes"
 TABLE_OPERATIONS = "pnr_operations"
+TABLE_WORK_SCOPE_OPERATIONS = "pnr_work_scope_operations"
 TABLE_EVENTS = "pnr_execution_events"
 TABLE_PROJECTS = "eos_projects"
 TABLE_TITLES = "eos_titles"
@@ -357,6 +360,97 @@ def list_active_operations(
     except Exception as exc:  # noqa: BLE001
         raise _query_error("чтение операций") from exc
     return [_pick(row, OPERATION_FIELDS) for row in (response.data or [])]
+
+
+def _membership_sequence_sort_key(row: dict[str, Any]) -> tuple:
+    raw_seq = row.get("sequence_no")
+    if raw_seq is None or (isinstance(raw_seq, str) and not raw_seq.strip()):
+        sequenced = 1
+        seq_num = 0
+    else:
+        try:
+            seq_num = int(raw_seq)
+            sequenced = 0
+        except (TypeError, ValueError):
+            sequenced = 1
+            seq_num = 0
+    return (
+        sequenced,
+        seq_num,
+        str(row.get("operation_code") or ""),
+        str(row.get("operation_id") or ""),
+    )
+
+
+def list_active_operations_for_work_scope(
+    *,
+    work_scope_id: Any,
+    client: Optional[Client] = None,
+) -> list[dict[str, Any]]:
+    """Canonical operations for a Work Scope via M:N membership.
+
+    Authority is pnr_work_scope_operations, not pnr_operations.work_scope_id.
+    """
+    wid = _require_id(work_scope_id, "раздел работ")
+    db = _client(client)
+    try:
+        membership_response = (
+            db.table(TABLE_WORK_SCOPE_OPERATIONS)
+            .select("operation_id,sequence_no")
+            .eq("work_scope_id", wid)
+            .eq("is_active", True)
+            .execute()
+        )
+    except PnrError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise _query_error("чтение состава раздела работ") from exc
+
+    memberships: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in membership_response.data or []:
+        oid = _nonempty_text(raw.get("operation_id"))
+        if oid is None or oid in seen:
+            continue
+        seen.add(oid)
+        memberships.append(
+            {"operation_id": oid, "sequence_no": raw.get("sequence_no")}
+        )
+    if not memberships:
+        return []
+
+    operation_ids = [item["operation_id"] for item in memberships]
+    try:
+        operations_response = (
+            db.table(TABLE_OPERATIONS)
+            .select(",".join(OPERATION_FIELDS))
+            .eq("is_active", True)
+            .in_("operation_id", operation_ids)
+            .execute()
+        )
+    except PnrError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise _query_error("чтение операций") from exc
+
+    by_id: dict[str, dict[str, Any]] = {}
+    for raw in operations_response.data or []:
+        row = _pick(raw, OPERATION_FIELDS)
+        oid = _nonempty_text(row.get("operation_id"))
+        if oid is None:
+            continue
+        by_id[oid] = row
+
+    composed: list[dict[str, Any]] = []
+    for member in memberships:
+        catalog = by_id.get(member["operation_id"])
+        if catalog is None:
+            continue
+        row = dict(catalog)
+        row["sequence_no"] = member["sequence_no"]
+        composed.append(row)
+    composed.sort(key=_membership_sequence_sort_key)
+    return composed
 
 
 def list_recent_execution_events(

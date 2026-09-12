@@ -220,12 +220,15 @@ class Page60SourceTests(unittest.TestCase):
         self.assertNotIn('"result":', self.source)
         self.assertNotIn('"labor_hours":', self.source)
 
-    def test_persists_selected_work_scope_without_m2m_reads(self) -> None:
+    def test_persists_selected_work_scope_via_bridge_reader(self) -> None:
         self.assertIn("require_selected_work_scope", self.source)
         self.assertIn("Выберите раздел работ.", self.source)
         self.assertIn("work_scope_id=selected_scope_id", self.source)
         self.assertIn('kwargs.get("work_scope_id")', self.source)
-        self.assertIn("list_active_operations(work_scope_id=", self.source)
+        self.assertIn("list_active_operations_for_work_scope", self.imported)
+        self.assertNotIn("list_active_operations", self.imported)
+        self.assertIn("list_active_operations_for_work_scope(work_scope_id=", self.source)
+        self.assertNotIn("list_active_operations(work_scope_id=", self.source)
         self.assertNotIn("pnr_work_scope_operations", self.source)
 
 
@@ -244,7 +247,10 @@ class Page60HelperTests(unittest.TestCase):
                 return_value="fp-1",
             ),
             patch("services.pnr_service.list_active_work_scopes", return_value=[SCOPE]),
-            patch("services.pnr_service.list_active_operations", return_value=[OP]),
+            patch(
+                "services.pnr_service.list_active_operations_for_work_scope",
+                return_value=[OP],
+            ),
             patch("services.pnr_service.create_structured_execution_event"),
         ]
         self._started = [p.start() for p in patches]
@@ -379,9 +385,10 @@ class Page60HelperTests(unittest.TestCase):
             self.page.require_selected_work_scope("  ")
         self.assertIn("require_selected_work_scope(work_scope_id)", PAGE_PATH.read_text(encoding="utf-8"))
 
-    def test_operation_picker_stays_on_legacy_owner_path(self) -> None:
+    def test_operation_picker_uses_bridge_reader(self) -> None:
         source = PAGE_PATH.read_text(encoding="utf-8")
-        self.assertIn("list_active_operations(work_scope_id=", source)
+        self.assertIn("list_active_operations_for_work_scope(work_scope_id=", source)
+        self.assertNotIn("list_active_operations(work_scope_id=", source)
         self.assertNotIn("pnr_work_scope_operations", source)
         self.assertNotIn("list_work_scope_operations", source)
 

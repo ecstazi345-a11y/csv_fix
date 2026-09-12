@@ -33,7 +33,7 @@ from services.pnr_service import (
     create_structured_execution_event,
     get_work_type_by_code,
     list_active_objects,
-    list_active_operations,
+    list_active_operations_for_work_scope,
     list_active_projects,
     list_active_titles,
     list_active_work_scopes,
@@ -541,7 +541,7 @@ else:
 operations: list[dict] = []
 if work_scope_id:
     try:
-        operations = list_active_operations(work_scope_id=work_scope_id)
+        operations = list_active_operations_for_work_scope(work_scope_id=work_scope_id)
     except (PnrConfigError, PnrServiceError, PnrValidationError) as exc:
         st.error(_safe_user_error(exc))
         st.stop()

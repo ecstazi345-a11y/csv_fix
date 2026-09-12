@@ -12,7 +12,6 @@ import unittest
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
@@ -509,14 +508,11 @@ class PnrField1bWriteTests(unittest.TestCase):
 
     def test_no_python_bridge_query(self) -> None:
         source = inspect.getsource(create_structured_execution_event)
-        module_text = Path(create_structured_execution_event.__code__.co_filename).read_text(
-            encoding="utf-8"
-        )
         self.assertNotIn("pnr_work_scope_operations", source)
         self.assertNotIn("work_scope_operations", source)
-        self.assertNotIn("TABLE_WORK_SCOPE_OPERATIONS", module_text)
-        self.assertNotIn('table("pnr_work_scope_operations")', module_text)
-        self.assertNotIn("table('pnr_work_scope_operations')", module_text)
+        self.assertNotIn("TABLE_WORK_SCOPE_OPERATIONS", source)
+        self.assertNotIn('table("pnr_work_scope_operations")', source)
+        self.assertNotIn("table('pnr_work_scope_operations')", source)
 
     def test_retry_scope_mismatch_no_rpc(self) -> None:
         self.client.store["pnr_execution_events"][0]["work_scope_id"] = SCOPE_ID

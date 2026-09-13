@@ -20,11 +20,13 @@ This file is the authoritative PNR **implementation progress** checkpoint. It do
 - **FIELD-1D.1C** M:N work-scope ↔ operation bridge — **DONE / LIVE PROVEN**
 - **FIELD-1D.1D** event work-scope context — **DONE / LIVE MIGRATION APPLIED / LIVE WRITE PROVEN**
 - **FIELD-1D.1E** M:N operation read path / picker — **DONE / LIVE CODE PATH / COMMITTED / PUSHED**
-- **FIELD-1D as a whole** — **NOT COMPLETE** (professional П-1 content layer remains)
-- **NEXT:** Professional П-1 content layer (review/freeze before any seed)
-- **Live execution events:** 4 (3 historical/pre-FIELD-1D.1D + 1 FIELD-1D.1D technical proof)
-- **Code HEAD:** `499358637773876070a6d93967202941d5a00992`
-- **Agent Runtime:** separate workstream; not touched by FIELD-1D.1E
+- **Professional П-1 Foundation Seed v1** — **DONE / LIVE PROVEN** (8 scopes, 15 COM-* operations, 42 M:N memberships)
+- **FIELD-1D as a whole** — **NOT COMPLETE** (Field UI Language Gate, Field Pilot, Required Work / remaining-work read model remain)
+- **NEXT:** Field UI Language Gate → real Field Pilot П-1 (do not expand ontology first)
+- **Live execution events:** 4 (3 historical/pre-FIELD-1D.1D + 1 FIELD-1D.1D technical proof; Foundation Seed created **0** events)
+- **Docs/code HEAD before this checkpoint:** `21dd10f1af4c1e0e5e0f81cea5ab6ce47bbf262b`
+- **Last product-code HEAD:** `499358637773876070a6d93967202941d5a00992` (FIELD-1D.1E)
+- **Agent Runtime:** separate workstream; not touched by Foundation Seed
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -443,3 +445,259 @@ Before any database seed:
 5. only after human approval prepare the П-1 seed/migration plan.
 
 This checkpoint only records NEXT. It does not implement it.
+
+---
+
+============================================================
+CHECKPOINT — 2026-09-13 — PROFESSIONAL П-1 FOUNDATION SEED v1
+============================================================
+
+PROGRAM:
+PNR Dataset / Commissioning Execution Reality
+
+CURRENT INCREMENT:
+Professional П-1 Foundation Seed v1 — catalog vocabulary only
+
+STATUS:
+DONE / LIVE PROVEN  
+SQL REVIEW = PASS  
+LIVE PRE-APPLICATION GATE = PASS  
+MANUAL SQL EDITOR APPLY = once  
+POST-APPLICATION LIVE PROOF = PASS  
+FINAL_STATUS = PROFESSIONAL_P1_FOUNDATION_SEED_LIVE_PASS
+
+Seed file (do not rewrite; already reviewed, applied once, live-proven):
+
+`sql/pnr_professional_p1_foundation_seed_v1.sql`
+
+SHA-256:
+
+`E2EF81F15AF7231FB7D91FF76392456359EE8A01CC2888B39C82014A2ACE3CCD`
+
+Apply path: Supabase SQL Editor as table-owner SQL (`BEGIN` … `COMMIT`).  
+Not PostgREST. Not application runtime. Not rerun in this checkpoint.
+
+------------------------------------------------------------
+FOUNDATION CONTENTS
+------------------------------------------------------------
+
+LIVE catalog now contains:
+
+- **8** professional PNR Work Scopes
+- **15** Canonical Operations (`COM-*`)
+- **42** authoritative M:N memberships in `pnr_work_scope_operations`
+
+Approved Work Scopes (display order = `sequence_no` 10…80; UI names omit outline prefixes `01.`…`08.`):
+
+| seq | scope_code | scope_name |
+|-----|------------|------------|
+| 10 | PNR-WS-01-PRESTART | Предпусковая готовность |
+| 20 | PNR-WS-02-VENT-DRIVE | Вентиляционные установки и электропривод |
+| 30 | PNR-WS-03-AUTOMATION | Автоматизация и управление |
+| 40 | PNR-WS-04-PROTECTION | Защиты, блокировки, аварийные режимы и межсистемное взаимодействие |
+| 50 | PNR-WS-05-PTI | ПТИ — теплотехнический и гидравлический контур |
+| 60 | PNR-WS-06-AIR-PATH | Воздушный тракт и регулирующие устройства |
+| 70 | PNR-WS-07-AERO | Аэродинамические измерения и регулирование |
+| 80 | PNR-WS-08-COMPLEX-P1 | Комплексные функциональные испытания П-1 |
+
+**SECTION 09 IS NOT PART OF THIS FOUNDATION SEED.**  
+Documentation / signatures / acceptance / commercial recognition / payment remain a later separate professional layer. No `PNR-WS-09*` row was created.
+
+------------------------------------------------------------
+CANONICAL OPERATION ARCHITECTURE
+------------------------------------------------------------
+
+Exactly **15** global reusable professional action types:
+
+| code | operation_name | catalog seq | legacy owner (compatibility only) |
+|------|----------------|-------------|-----------------------------------|
+| COM-ID-001 | Идентификация объекта и его функционального состава | 10 | PNR-WS-01-PRESTART |
+| COM-INSP-001 | Проверка соответствия установленного оборудования проектному составу | 20 | PNR-WS-01-PRESTART |
+| COM-INSP-002 | Проверка механической готовности объекта | 30 | PNR-WS-01-PRESTART |
+| COM-INSP-003 | Проверка электрической готовности объекта | 40 | PNR-WS-01-PRESTART |
+| COM-INSP-004 | Проверка готовности КИПиА и цепей управления | 50 | PNR-WS-01-PRESTART |
+| COM-MECH-001 | Проверка механического перемещения исполнительного устройства | 60 | PNR-WS-02-VENT-DRIVE |
+| COM-ELEC-001 | Проверка параметров электропитания | 70 | PNR-WS-02-VENT-DRIVE |
+| COM-ELEC-002 | Измерение сопротивления изоляции электрооборудования | 80 | PNR-WS-02-VENT-DRIVE |
+| COM-ELEC-003 | Проверка направления вращения электропривода | 90 | PNR-WS-02-VENT-DRIVE |
+| COM-ELEC-004 | Выполнение пробного пуска электропривода | 100 | PNR-WS-02-VENT-DRIVE |
+| COM-CMD-001 | Проверка выполнения команды управления | 110 | PNR-WS-03-AUTOMATION |
+| COM-SIG-001 | Проверка прохождения и корректности сигнала | 120 | PNR-WS-03-AUTOMATION |
+| COM-MEAS-001 | Выполнение измерения контролируемого параметра | 130 | PNR-WS-07-AERO |
+| COM-ADJ-001 | Выполнение регулирования или настройки физического параметра | 140 | PNR-WS-07-AERO |
+| COM-TEST-001 | Выполнение функционального испытания сценария | 150 | PNR-WS-08-COMPLEX-P1 |
+
+Architectural law:
+
+A Canonical Operation is a **reusable professional action type**.
+
+It MUST NOT encode:
+
+- system identity
+- physical asset identity
+- signal identity
+- measurement point
+- mode
+- setpoint / value
+- scenario identity
+- result
+- document identity
+- state
+
+Context belongs to other entities / contracts (object, FP, Work Scope membership, event, later Required Work / points / scenarios).
+
+------------------------------------------------------------
+M:N AUTHORITY LAW
+------------------------------------------------------------
+
+`pnr_operations.work_scope_id` remains **legacy compatibility ownership**.  
+It is **NOT** authoritative applicability.
+
+Authoritative operation applicability is:
+
+`pnr_work_scope_operations`
+
+The LIVE Foundation proves real M:N reuse (not only synthetic tests):
+
+- `COM-MEAS-001` (`f169798d-7ba3-4eed-864a-5bee32e68464`) is reused by scopes **02 / 05 / 06 / 07 / 08** with the same `operation_id`.
+- `COM-CMD-001` (`ab64b6cc-f44a-4fd4-b495-a4eeeaf51ae0`) is reused by scopes **02 / 03 / 04 / 05 / 08** with the same `operation_id`.
+
+Approved required memberships = **42** (5+9+3+3+11+5+2+4). Extra target-related memberships after apply = **0**.
+
+M:N authority is now **LIVE-proven**, not merely synthetic-test proven. FIELD-1D.1E Page 60 picker can therefore resolve professional membership from the live catalog.
+
+------------------------------------------------------------
+LIVE POST-APPLICATION PROOF
+------------------------------------------------------------
+
+Independent PostgREST SELECT proof after one SQL Editor apply:
+
+| Check | Result |
+|-------|--------|
+| TARGET_SCOPES_AFTER | 8 |
+| TARGET_OPERATIONS_AFTER | 15 |
+| TARGET_REQUIRED_MEMBERSHIPS_AFTER | 42 |
+| EXTRA_TARGET_MEMBERSHIPS_AFTER | 0 |
+| EVENT_COUNT_AFTER | 4 |
+| 8_SCOPES_POST_PROOF | PASS |
+| 15_OPERATIONS_POST_PROOF | PASS |
+| 42_MEMBERSHIPS_POST_PROOF | PASS |
+| M_N_SEQUENCE_POST_PROOF | PASS |
+| LIVE_M_N_CROSS_SCOPE_PROOF | PASS |
+| LEGACY_PRESERVATION | PASS |
+| EVENT_IMMUTABILITY | PASS |
+| PHYSICAL_IDENTITY | PASS |
+| SECTION_09_ABSENT | PASS |
+| DEFERRED_ONTOLOGY_UNTOUCHED | PASS |
+| RUSSIAN_PROFESSIONAL_NAMES | PASS |
+| IDEMPOTENCY_READ_ONLY_PREDICTION | PASS |
+| REPOSITORY_UNCHANGED_BY_PROOF | PASS |
+| FOUNDATION_SEED_LIVE_PROOF | PASS |
+| FINAL_STATUS | PROFESSIONAL_P1_FOUNDATION_SEED_LIVE_PASS |
+
+Rerun prediction (not executed): insert 0 / reuse 8 scopes, 15 operations, 42 memberships.
+
+------------------------------------------------------------
+PROTECTED BASELINE (UNCHANGED BY SEED)
+------------------------------------------------------------
+
+Legacy catalog preserved (not renamed, not deactivated, not merged into COM-TEST-001, not added to scope 03):
+
+- scope `AUT_ALGORITHMS` / `51beb0ed-c651-41d1-9843-c5d9b8b222eb` / Автоматика / алгоритмы / seq 1 / active
+- operation `PNR-AUT-003` / `3d564073-778f-48ba-a42d-4bcb5641405f` / Проверка алгоритма / owner AUT_ALGORITHMS / seq 1 / active
+- bridge AUT_ALGORITHMS ↔ PNR-AUT-003 / seq 1 / active
+
+Execution events remain **4** (Foundation Seed created **0** events):
+
+- `41bd0c13-7eaa-43bd-a7e5-23bb74e58ae9`
+- `51f7935e-785a-4f66-9877-af19f821b772`
+- `7e72c8bd-7b3f-413d-a5f9-dd799b2b1acb`
+- `0fcb7de1-eade-46a7-a024-4d6afbd8fb0f`
+
+Physical identity preserved (`system_code=P1` not renamed; Russian identity via alias):
+
+- system `4ab41ec1-f88e-4514-a07d-6c72f5ba212f` / `P1` / alias **П-1**
+- object ШСАУ-P1 `1796501a-44a6-4d3a-855b-7ea16b9fdc2c`
+- functional position ШСАУ-P1 `2a94d792-a26a-45f7-baa8-9887c97b39bb`
+
+**П-1.1 / П-1.2 were NOT created.**  
+No new physical objects were created by Foundation Seed.
+
+------------------------------------------------------------
+DEFERRED BOUNDARIES — NOT DONE
+------------------------------------------------------------
+
+Professional П-1 Foundation does **not** create:
+
+- Required Work
+- Requirement Registry
+- Signal Point Registry
+- Command Point Registry
+- Measurement Point Registry
+- Instrument Registry
+- Configuration History
+- Scenario Registry
+- Deficiency Registry
+- Corrective Action Registry
+- Evidence Graph
+- Document Lifecycle
+- Signature workflow
+- Acceptance
+- Commercial Recognition
+- Payment
+- Section 09 / documentation Work Scope
+- Page 60 Field UI Language Gate
+- Field Pilot production events
+
+These remain deferred until justified by source-backed professional requirements and/or real Field Pilot evidence. Do not mark them DONE.
+
+FIELD-1D as a whole is **not** complete. Foundation vocabulary is LIVE; field evidence has not yet tested it.
+
+------------------------------------------------------------
+NEXT PHASE (NOT IMPLEMENTED NOW)
+------------------------------------------------------------
+
+Professional Foundation design/seed is **DONE**.
+
+Intended sequence:
+
+1. Professional Foundation LIVE *(this checkpoint)*
+2. Documentation / Git checkpoint *(this increment; commit only after human review)*
+3. **Field UI Language Gate**
+4. real Field Pilot П-1
+5. first 10–20 real structured execution events
+6. Dataset review against field reality
+7. first System Status / Remaining Work read model
+8. later digital employee consumption
+
+Governing principle:
+
+Do not continue expanding ontology before field evidence requires it.  
+The next objective is to make **physical reality test the architecture**.
+
+------------------------------------------------------------
+FIELD UI LANGUAGE GATE — RECORD ONLY
+------------------------------------------------------------
+
+Mandatory upcoming implementation gate (not implemented in this increment; Page 60 not modified):
+
+**FIELD UI LANGUAGE GATE:** 100% professional Russian user-facing interface.  
+Machine codes and technical enums remain internal.
+
+Examples:
+
+| Internal | User-facing |
+|----------|-------------|
+| Work Scope | Раздел ПНР |
+| Operation | Выполняемая работа |
+| Execution Status | Статус выполнения |
+| Evaluation Status | Результат проверки |
+| CONFORMS | Соответствует |
+| DOES_NOT_CONFORM | Не соответствует |
+| BLOCKED | Невозможно выполнить |
+| PARTIAL | Выполнено частично |
+| Measurement | Измерение |
+| Evidence | Подтверждающие материалы |
+| Remaining Work | Оставшиеся работы |
+
+This checkpoint only records the gate. It does not implement it.

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import inspect
 import sys
 import unittest
 from datetime import date, datetime, time
@@ -72,6 +73,72 @@ OP = {
     "operation_name": "Проверка алгоритма",
     "sequence_no": 1,
 }
+P1_PILOT_SCOPES = [
+    {
+        "work_scope_id": "ws-08",
+        "scope_code": "PNR-WS-08-COMPLEX-P1",
+        "scope_name": "Комплексные функциональные испытания П-1",
+        "sequence_no": 80,
+    },
+    {
+        "work_scope_id": "ws-03",
+        "scope_code": "PNR-WS-03-AUTOMATION",
+        "scope_name": "Автоматизация и управление",
+        "sequence_no": 30,
+    },
+    {
+        "work_scope_id": "ws-01",
+        "scope_code": "PNR-WS-01-PRESTART",
+        "scope_name": "Предпусковая готовность",
+        "sequence_no": 10,
+    },
+    {
+        "work_scope_id": "ws-05",
+        "scope_code": "PNR-WS-05-PTI",
+        "scope_name": "ПТИ — теплотехнический и гидравлический контур",
+        "sequence_no": 50,
+    },
+    {
+        "work_scope_id": "ws-02",
+        "scope_code": "PNR-WS-02-VENT-DRIVE",
+        "scope_name": "Вентиляционные установки и электропривод",
+        "sequence_no": 20,
+    },
+    {
+        "work_scope_id": "ws-07",
+        "scope_code": "PNR-WS-07-AERO",
+        "scope_name": "Аэродинамические измерения и регулирование",
+        "sequence_no": 70,
+    },
+    {
+        "work_scope_id": "ws-04",
+        "scope_code": "PNR-WS-04-PROTECTION",
+        "scope_name": (
+            "Защиты, блокировки, аварийные режимы и межсистемное взаимодействие"
+        ),
+        "sequence_no": 40,
+    },
+    {
+        "work_scope_id": "ws-06",
+        "scope_code": "PNR-WS-06-AIR-PATH",
+        "scope_name": "Воздушный тракт и регулирующие устройства",
+        "sequence_no": 60,
+    },
+]
+LEGACY_SCOPE = SCOPE
+EXTRA_SCOPE = {
+    "work_scope_id": "ws-extra",
+    "scope_code": "PNR-WS-99-LEGACY",
+    "scope_name": "Лишний раздел не из контура П-1",
+    "sequence_no": 5,
+}
+COM_OP = {
+    "operation_id": "op-com-meas-001",
+    "work_scope_id": "ws-owner-legacy",
+    "operation_code": "COM-MEAS-001",
+    "operation_name": "Измерение параметра",
+    "sequence_no": 10,
+}
 
 
 class _SessionState(dict):
@@ -90,6 +157,12 @@ class _Stop(Exception):
 
 
 class _Column:
+    def __enter__(self) -> _Column:
+        return self
+
+    def __exit__(self, *args: Any) -> bool:
+        return False
+
     def button(self, *args: Any, **kwargs: Any) -> bool:
         return False
 
@@ -124,8 +197,10 @@ def _install_streamlit_stub() -> ModuleType:
     st.time_input = lambda *a, **k: time(12, 0)
     st.number_input = lambda *a, **k: k.get("value", 1)
     st.columns = lambda *a, **k: [_Column(), _Column()]
+    st.tabs = lambda labels, **k: [_Column() for _ in labels]
     st.rerun = lambda: None
     st.expander = lambda *a, **k: _Expander()
+    st.code = lambda *a, **k: None
     st.stop = lambda: (_ for _ in ()).throw(_Stop())
     sys.modules["streamlit"] = st
     return st
@@ -201,12 +276,45 @@ class Page60SourceTests(unittest.TestCase):
         self.assertIn('"Работа выполнена?"', self.source)
         self.assertIn('"Выполнена"', self.source)
         self.assertIn('"Выполнена частично"', self.source)
-        self.assertIn('"Работа заблокирована"', self.source)
-        self.assertIn('"Не выполнена"', self.source)
+        self.assertIn('"Невозможно выполнить — есть препятствие"', self.source)
+        self.assertIn('"Не выполнялась"', self.source)
+        self.assertNotIn('"Работа заблокирована"', self.source)
+        self.assertNotIn('"Не выполнена"', self.source)
         self.assertIn('"Полученный результат соответствует требованию?"', self.source)
+        self.assertIn('"Соответствует"', self.source)
+        self.assertIn('"Не соответствует"', self.source)
+        self.assertIn('"Пока не оценивалось"', self.source)
+        self.assertIn('"Что обнаружено?"', self.source)
         self.assertNotIn('"Результат"', self.source)
         self.assertNotIn(": \"PASS\"", self.source)
         self.assertNotIn(": \"FAIL\"", self.source)
+
+    def test_professional_russian_work_terminology(self) -> None:
+        self.assertIn('"Работа из справочника"', self.source)
+        self.assertIn('"Работы нет в списке"', self.source)
+        self.assertIn('"Как указать работу"', self.source)
+        self.assertNotIn('"Операция из справочника"', self.source)
+        self.assertNotIn('"Другая операция"', self.source)
+        self.assertNotIn("Операция из справочника", self.source)
+        self.assertNotIn("Другая операция", self.source)
+        self.assertIn("Выберите «Работы нет в списке».", self.source)
+        self.assertIn(
+            "Выберите работу из справочника или режим «Работы нет в списке».",
+            self.source,
+        )
+
+    def test_p1_pilot_scope_codes_are_explicit_approved_set(self) -> None:
+        self.assertIn("P1_PILOT_WORK_SCOPE_CODES", self.source)
+        self.assertIn("professional_p1_pilot_work_scopes", self.source)
+        self.assertIn("PNR-WS-01-PRESTART", self.source)
+        self.assertIn("PNR-WS-02-VENT-DRIVE", self.source)
+        self.assertIn("PNR-WS-03-AUTOMATION", self.source)
+        self.assertIn("PNR-WS-04-PROTECTION", self.source)
+        self.assertIn("PNR-WS-05-PTI", self.source)
+        self.assertIn("PNR-WS-06-AIR-PATH", self.source)
+        self.assertIn("PNR-WS-07-AERO", self.source)
+        self.assertIn("PNR-WS-08-COMPLEX-P1", self.source)
+        self.assertIn("Not a system↔scope architecture", self.source)
 
     def test_save_control_and_no_history_edit(self) -> None:
         self.assertIn('"Сохранить факт"', self.source)
@@ -266,8 +374,13 @@ class Page60HelperTests(unittest.TestCase):
             ("Выполнена", "Не соответствует", "COMPLETED", "DOES_NOT_CONFORM"),
             ("Выполнена", "Пока не оценивалось", "COMPLETED", "NOT_EVALUATED"),
             ("Выполнена частично", None, "PARTIAL", "NOT_EVALUATED"),
-            ("Работа заблокирована", None, "BLOCKED", "NOT_EVALUATED"),
-            ("Не выполнена", None, "NOT_COMPLETED", "NOT_EVALUATED"),
+            (
+                "Невозможно выполнить — есть препятствие",
+                None,
+                "BLOCKED",
+                "NOT_EVALUATED",
+            ),
+            ("Не выполнялась", None, "NOT_COMPLETED", "NOT_EVALUATED"),
         ]
         for done, evaluation, execution, expected_eval in cases:
             with self.subTest(done=done, evaluation=evaluation):
@@ -275,11 +388,89 @@ class Page60HelperTests(unittest.TestCase):
                 self.assertEqual(got_exec, execution)
                 self.assertEqual(got_eval, expected_eval)
 
+    def test_visible_execution_labels_match_page_constants(self) -> None:
+        self.assertEqual(self.page.MODE_CATALOG, "Работа из справочника")
+        self.assertEqual(self.page.MODE_UNMAPPED, "Работы нет в списке")
+        self.assertEqual(self.page.DONE_COMPLETED, "Выполнена")
+        self.assertEqual(self.page.DONE_PARTIAL, "Выполнена частично")
+        self.assertEqual(
+            self.page.DONE_BLOCKED,
+            "Невозможно выполнить — есть препятствие",
+        )
+        self.assertEqual(self.page.DONE_NOT_COMPLETED, "Не выполнялась")
+        self.assertEqual(
+            self.page.P1_PILOT_WORK_SCOPE_CODES,
+            (
+                "PNR-WS-01-PRESTART",
+                "PNR-WS-02-VENT-DRIVE",
+                "PNR-WS-03-AUTOMATION",
+                "PNR-WS-04-PROTECTION",
+                "PNR-WS-05-PTI",
+                "PNR-WS-06-AIR-PATH",
+                "PNR-WS-07-AERO",
+                "PNR-WS-08-COMPLEX-P1",
+            ),
+        )
+
     def test_not_completed_is_not_blocked(self) -> None:
-        execution, evaluation = self.page.map_execution_evaluation("Не выполнена", None)
+        execution, evaluation = self.page.map_execution_evaluation(
+            "Не выполнялась", None
+        )
         self.assertEqual(execution, "NOT_COMPLETED")
         self.assertNotEqual(execution, "BLOCKED")
         self.assertEqual(evaluation, "NOT_EVALUATED")
+
+    def test_blocked_and_completed_nonconform_remain_separate(self) -> None:
+        blocked_exec, blocked_eval = self.page.map_execution_evaluation(
+            self.page.DONE_BLOCKED, None
+        )
+        failed_exec, failed_eval = self.page.map_execution_evaluation(
+            self.page.DONE_COMPLETED, "Не соответствует"
+        )
+        self.assertEqual(blocked_exec, "BLOCKED")
+        self.assertEqual(blocked_eval, "NOT_EVALUATED")
+        self.assertEqual(failed_exec, "COMPLETED")
+        self.assertEqual(failed_eval, "DOES_NOT_CONFORM")
+        self.assertNotEqual(blocked_exec, failed_exec)
+
+    def test_p1_pilot_picker_hides_legacy_and_orders_by_sequence(self) -> None:
+        mixed = [LEGACY_SCOPE, EXTRA_SCOPE, *P1_PILOT_SCOPES]
+        selected = self.page.professional_p1_pilot_work_scopes(mixed)
+        self.assertEqual(len(selected), 8)
+        self.assertEqual(
+            [row["scope_code"] for row in selected],
+            list(self.page.P1_PILOT_WORK_SCOPE_CODES),
+        )
+        self.assertEqual(
+            [row["sequence_no"] for row in selected],
+            [10, 20, 30, 40, 50, 60, 70, 80],
+        )
+        self.assertEqual(
+            [row["scope_name"] for row in selected],
+            [
+                "Предпусковая готовность",
+                "Вентиляционные установки и электропривод",
+                "Автоматизация и управление",
+                "Защиты, блокировки, аварийные режимы и межсистемное взаимодействие",
+                "ПТИ — теплотехнический и гидравлический контур",
+                "Воздушный тракт и регулирующие устройства",
+                "Аэродинамические измерения и регулирование",
+                "Комплексные функциональные испытания П-1",
+            ],
+        )
+        codes = {row["scope_code"] for row in selected}
+        self.assertNotIn("AUT_ALGORITHMS", codes)
+        self.assertNotIn("PNR-WS-99-LEGACY", codes)
+        for row in selected:
+            visible = self.page.format_scope_label(row)
+            self.assertEqual(visible, row["scope_name"])
+            self.assertNotIn(row["scope_code"], visible)
+
+    def test_operation_label_shows_name_not_code(self) -> None:
+        visible = self.page.format_operation_label(COM_OP)
+        self.assertEqual(visible, "Измерение параметра")
+        self.assertNotIn("COM-MEAS-001", visible)
+        self.assertNotIn(COM_OP["operation_id"], visible)
 
     def test_nonconforming_observation_and_partial_detail(self) -> None:
         kwargs = self._kwargs(
@@ -354,6 +545,52 @@ class Page60HelperTests(unittest.TestCase):
         self.assertEqual(kwargs["functional_position_id"], "fp-1")
         self.assertEqual(kwargs["source"], "STREAMLIT")
         self.assertEqual(kwargs["measurements"], [])
+
+    def test_structured_write_kwargs_contract_unchanged(self) -> None:
+        params = list(inspect.signature(self.page.build_structured_kwargs).parameters)
+        self.assertEqual(
+            params,
+            [
+                "system_id",
+                "object_id",
+                "work_scope_id",
+                "functional_position_id",
+                "operation_mode",
+                "operation_id",
+                "unmapped_operation_name",
+                "execution_status",
+                "evaluation_status",
+                "occurred_at",
+                "people_count",
+                "duration_hours",
+                "observation_text",
+                "measurements",
+                "blocked_detail",
+                "partial_detail",
+            ],
+        )
+        kwargs = self._kwargs()
+        self.assertEqual(
+            set(kwargs),
+            {
+                "system_id",
+                "object_id",
+                "work_scope_id",
+                "functional_position_id",
+                "execution_status",
+                "evaluation_status",
+                "occurred_at",
+                "people_count",
+                "duration_hours",
+                "observation_text",
+                "measurements",
+                "blocked_detail",
+                "partial_detail",
+                "source",
+                "operation_id",
+                "unmapped_operation_name",
+            },
+        )
 
     def test_selected_work_scope_reaches_kwargs(self) -> None:
         kwargs = self._kwargs()

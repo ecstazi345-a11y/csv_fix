@@ -21,12 +21,15 @@ This file is the authoritative PNR **implementation progress** checkpoint. It do
 - **FIELD-1D.1D** event work-scope context — **DONE / LIVE MIGRATION APPLIED / LIVE WRITE PROVEN**
 - **FIELD-1D.1E** M:N operation read path / picker — **DONE / LIVE CODE PATH / COMMITTED / PUSHED**
 - **Professional П-1 Foundation Seed v1** — **DONE / LIVE PROVEN** (8 scopes, 15 COM-* operations, 42 M:N memberships)
-- **FIELD-1D as a whole** — **NOT COMPLETE** (Field UI Language Gate, Field Pilot, Required Work / remaining-work read model remain)
-- **NEXT:** Field UI Language Gate → real Field Pilot П-1 (do not expand ontology first)
+- **FIELD UI Language Gate** — **IMPLEMENTED / UNCOMMITTED** (Page60 user-facing professional Russian)
+- **Page60 Vertical Slice v0.1** — **IMPLEMENTED / UNCOMMITTED** (isolated execution prototype only)
+- **P1 Engineering Context Passport v0.2.2** — **IMPLEMENTED / UNCOMMITTED** (30/70; 12 sections; provenance-aware; product language cleaned)
+- **FIELD-1D as a whole** — **NOT COMPLETE** (Object Context / Required State / Gate / remaining-work read model remain)
+- **Architecture checkpoint:** `docs/pnr/P1_ENGINEERING_CONTEXT_AND_PHYSICAL_EXECUTION_ARCHITECTURE.md`
+- **NEXT:** OBJECT CONTEXT → REQUIRED STATE → GATE (design first on one real П1.1 object; do not implement Required Work next)
 - **Live execution events:** 4 (3 historical/pre-FIELD-1D.1D + 1 FIELD-1D.1D technical proof; Foundation Seed created **0** events)
-- **Docs/code HEAD before this checkpoint:** `21dd10f1af4c1e0e5e0f81cea5ab6ce47bbf262b`
-- **Last product-code HEAD:** `499358637773876070a6d93967202941d5a00992` (FIELD-1D.1E)
-- **Agent Runtime:** separate workstream; not touched by Foundation Seed
+- **Last committed HEAD:** `b60b141b3152786839e1933fc28426c36c56df66`
+- **Agent Runtime:** separate workstream; not touched by Passport / Language Gate / Vertical Slice
 
 Historical checkpoints below are append-only and are **not** rewritten.
 
@@ -701,3 +704,77 @@ Examples:
 | Remaining Work | Оставшиеся работы |
 
 This checkpoint only records the gate. It does not implement it.
+
+============================================================
+CHECKPOINT — 2026-09-14 — P1 PASSPORT v0.2.2 + ARCHITECTURE
+============================================================
+
+PROGRAM:
+PNR Dataset / Commissioning Execution Reality
+
+CURRENT INCREMENT:
+P1 Engineering Context Passport v0.2.2 documentation checkpoint
+(accumulated uncommitted Page60 work: Language Gate, Vertical Slice v0.1, Passport v0.2 / v0.2.1 / v0.2.2)
+
+STATUS:
+IMPLEMENTED / UNCOMMITTED
+DOCUMENTATION CHECKPOINT PREPARED
+NO GIT ADD / COMMIT / PUSH IN THIS INCREMENT
+
+------------------------------------------------------------
+AUTHORITATIVE ARCHITECTURE DOCUMENT
+------------------------------------------------------------
+
+`docs/pnr/P1_ENGINEERING_CONTEXT_AND_PHYSICAL_EXECUTION_ARCHITECTURE.md`
+
+That file is the source of truth for:
+
+- DYNAMIS physical execution chain;
+- two-graph model;
+- Passport v0.2.2 Page60 architecture;
+- provenance law;
+- current P1 physical-model status;
+- next step OBJECT CONTEXT → REQUIRED STATE → GATE;
+- forbidden drift.
+
+This progress log remains append-only implementation memory. It does not replace that architecture document.
+
+------------------------------------------------------------
+WHAT IS DONE (UNCOMMITTED)
+------------------------------------------------------------
+
+- Field UI Language Gate on Page60.
+- Vertical Slice v0.1 isolated execution prototype (`proto:*`; write disabled).
+- P1 Engineering Context Passport v0.2.2 on Page60 RIGHT 70%.
+- 12 Passport sections / 5 tabs / 30/70 layout.
+- Per-fact provenance retained; UI groups only identical provenance.
+- Product language cleanup (no internal development wording on Passport).
+
+------------------------------------------------------------
+WHAT IS NOT DONE
+------------------------------------------------------------
+
+- Object Context as executable layer
+- Required State
+- Gate
+- Required Work as architecture (motor RW remains prototype-only, not in Passport)
+- Evidence / Validation / Proven State / Next Work
+- Physical Object Registry persistence of graph nodes
+- object-specific Passport
+- Field Pilot production events
+
+------------------------------------------------------------
+NEXT PHASE (NOT IMPLEMENTED NOW)
+------------------------------------------------------------
+
+OBJECT CONTEXT → REQUIRED STATE → GATE
+
+Design first on one real П1.1 physical object.
+Do not implement Required Work as the immediate next increment.
+
+------------------------------------------------------------
+SAFETY
+------------------------------------------------------------
+
+No SQL. No Supabase write. No product event write in Passport increments.
+No Agent Runtime change. Existing `create_structured_execution_event` write path unchanged.

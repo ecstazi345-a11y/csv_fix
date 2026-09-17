@@ -77,26 +77,93 @@ from services.pnr_p1_engineering_context import (
     is_p1_system_context,
     shared_provenance,
 )
+from services.pnr_left_execution_hierarchy import (
+    CONTEXT_NOT_CONNECTED,
+    CONTEXT_UNAVAILABLE,
+    EMPTY_MODE,
+    GENERAL_FIELD_ORDER,
+    HIERARCHY_LABELS,
+    INTERFACE_NOT_PHYSICAL,
+    KEY_MOTOR_P11,
+    KEY_SHSAU_P11,
+    LIVE_SCOPES_MODE,
+    NO_OPERATIONS,
+    NO_REQUIRED_WORK,
+    NO_WORK_SECTIONS,
+    PROTOTYPE_MODE,
+    PROTOTYPE_PHYSICAL_CAPTION,
+    RW_SHSAU_P1_READY,
+    SECTION_ACCEPTANCE,
+    SECTION_DOC_READY,
+    SECTION_EVIDENCE,
+    SECTION_FACTUAL,
+    SECTION_GENERAL,
+    SECTION_INSPECTION,
+    SECTION_OPERATION,
+    SECTION_PHYSICAL,
+    SECTION_REQUIRED_WORK,
+    SECTION_SYSTEM,
+    SECTION_WORK_SECTION,
+    SECTION_WORK_STATUS,
+    WORK_KIND_OPTIONS,
+    WORK_KIND_PNR,
+    WORK_KIND_SMR,
+    WS_AUTO,
+    apply_hierarchy_cascade,
+    automation_subcontexts_for,
+    evidence_category_labels,
+    is_prototype_physical_identity,
+    operations_for_required_work,
+    permits_live_execution_identity,
+    physical_choice_ids,
+    physical_label,
+    queue_display,
+    required_work_lookup_key,
+    required_works_for_hierarchy,
+    reset_dependent_selections,
+    slice_required_work,
+    status_dimension_labels,
+    title_name_display,
+    work_section_resolution_mode,
+    work_sections_for,
+)
+from services.pnr_p1_physical_master_catalog import (
+    CHILD_KEYS_AFTER_P1_L1_CONTOUR,
+    CHILD_KEYS_AFTER_P1_L1_SYSTEM,
+    LEVEL1_NOT_INSTANCE_CAPTION,
+    SESSION_TRACK_P1_L1_CONTOUR,
+    SESSION_TRACK_P1_L1_SYSTEM,
+    WIDGET_P1_L1_CLASS,
+    WIDGET_P1_L1_CONTOUR,
+    contour_label,
+    contours as p1_level1_contours,
+    object_class_label,
+    object_classes_for,
+)
+from services.pnr_left_execution_hierarchy import (
+    CHILD_KEYS_AFTER_AUTO_SUB,
+    CHILD_KEYS_AFTER_PHYSICAL,
+    CHILD_KEYS_AFTER_REQUIRED_WORK,
+    CHILD_KEYS_AFTER_WORK_SECTION,
+    SESSION_TRACK_AUTO_SUB,
+    SESSION_TRACK_PHYSICAL,
+    SESSION_TRACK_REQUIRED_WORK,
+    SESSION_TRACK_WORK_SECTION,
+)
 from services.pnr_p1_slice_prototype import (
     CANDIDATE_STEP_CAPTION,
     CRITERION_UNSET,
     EVIDENCE_NOT_CONNECTED,
-    FAN_NO_REQUIRED_WORK,
     KEY_FAN,
     KEY_MOTOR,
     PROVEN_STATE_NOT_CALCULATED,
     REQUIREMENT_NEEDS_CONFIRMATION,
     RW_01_CANDIDATE_CHECKS,
     SAVE_DISABLED_REASON,
-    SELECTABLE_KEYS,
     STEP_UNDEFINED,
     allows_execution_event_write,
-    is_prototype_key,
     measurement_capture_enabled,
     observation_capture_enabled,
-    prototype_choice_label,
-    required_work_by_code,
-    required_works_for,
 )
 from services.pnr_service import (
     PnrConfigError,
@@ -510,6 +577,22 @@ def structured_write_permitted(physical_selection: str | None) -> bool:
     return allows_execution_event_write(physical_selection)
 
 
+def load_functional_position_id(object_id: str | None) -> tuple[str | None, bool]:
+    """Read FP map for display. Failure is unresolved, never fabricated.
+
+    Returns (position_id, unresolved). unresolved=True means write must stay
+    fail-closed. Empty mapping is a successful None, not unresolved.
+    """
+    if not object_id:
+        return None, False
+    try:
+        return resolve_object_functional_position_id(object_id=object_id), False
+    except (PnrConfigError, PnrServiceError, PnrValidationError):
+        return None, True
+    except Exception:  # noqa: BLE001
+        return None, True
+
+
 def _find_operation_by_code(operations: list[dict], operation_code: str) -> dict | None:
     for row in operations:
         if str(row.get("operation_code") or "") == operation_code:
@@ -713,7 +796,9 @@ left_col, right_col = st.columns([3, 7], gap="large")
 
 with left_col:
     st.markdown(f"### {NAV_TITLE}")
-    st.markdown("### Контекст")
+    st.markdown(f"### {SECTION_GENERAL}")
+    _ = GENERAL_FIELD_ORDER
+    _ = HIERARCHY_LABELS
 
     projects = _load_or_stop(
         list_active_projects,
@@ -731,6 +816,22 @@ with left_col:
     )
     project_row = project_map[str(project_id)]
 
+    st.markdown("**Очередь**")
+    st.caption(queue_display())
+
+    work_kind = st.selectbox(
+        "Вид работ",
+        list(WORK_KIND_OPTIONS),
+        index=0,
+        key="pnr_work_kind",
+    )
+    st.markdown("**Вид работ: ПНР**")
+    if work_kind == WORK_KIND_SMR:
+        st.info(
+            "Исполнение СМР в этом контуре не подключено. "
+            "Фиксация факта доступна только для ПНР."
+        )
+
     titles = _load_or_stop(
         lambda: list_active_titles(project_id=project_id),
         "Для выбранного проекта нет активных титулов.",
@@ -746,6 +847,8 @@ with left_col:
         key="pnr_title_id",
     )
     title_row = title_map[str(title_id)]
+    st.markdown("**Наименование титула**")
+    st.caption(title_name_display(title_row))
 
     try:
         pnr_work_type = get_work_type_by_code(work_type_code=WORK_TYPE_CODE_PNR)
@@ -760,7 +863,6 @@ with left_col:
         st.error("Не найден активный вид работ ПНР.")
         st.stop()
 
-    st.markdown("**Вид работ: ПНР**")
     work_type_id = pnr_work_type["work_type_id"]
 
     disciplines = _load_or_stop(
@@ -799,17 +901,53 @@ with left_col:
         st.stop()
 
     context_id = st.selectbox(
-        "Система",
+        SECTION_SYSTEM,
         context_ids,
         format_func=lambda cid: format_system_context_label(context_map[cid]),
         key="pnr_system_context_id",
     )
     context_row = context_map[str(context_id)]
     system_id = str(context_row["system_id"])
+    p1_context = is_p1_system_context(context_row.get("context_system_code"))
 
-    st.markdown(f"**{PASSPORT_CONTEXT_HEADING}**")
-    st.markdown(format_system_context_label(context_row))
-    st.caption(PASSPORT_NOT_OBJECT_CAPTION)
+    st.markdown(f"### {SECTION_PHYSICAL}")
+    reset_dependent_selections(
+        st.session_state,
+        tracker_key=SESSION_TRACK_P1_L1_SYSTEM,
+        parent_value=str(context_id) if p1_context else None,
+        child_keys=CHILD_KEYS_AFTER_P1_L1_SYSTEM,
+    )
+    if p1_context:
+        level1_contours = p1_level1_contours()
+        contour_ids = [item.contour_code for item in level1_contours]
+        contour_code = st.selectbox(
+            "Физический контур",
+            contour_ids,
+            format_func=lambda code: next(
+                contour_label(item) for item in level1_contours if item.contour_code == code
+            ),
+            key=WIDGET_P1_L1_CONTOUR,
+        )
+        reset_dependent_selections(
+            st.session_state,
+            tracker_key=SESSION_TRACK_P1_L1_CONTOUR,
+            parent_value=str(contour_code),
+            child_keys=CHILD_KEYS_AFTER_P1_L1_CONTOUR,
+        )
+        level1_classes = object_classes_for(str(contour_code))
+        class_ids = [item.class_code for item in level1_classes]
+        if class_ids:
+            st.selectbox(
+                "Класс физического объекта",
+                class_ids,
+                format_func=lambda code: next(
+                    object_class_label(item)
+                    for item in level1_classes
+                    if item.class_code == code
+                ),
+                key=WIDGET_P1_L1_CLASS,
+            )
+        st.caption(LEVEL1_NOT_INSTANCE_CAPTION)
 
     st.markdown(f"**{SELECTED_OBJECT_HEADING}**")
 
@@ -820,136 +958,213 @@ with left_col:
     )
     object_map = _index_by_id(objects, "object_id")
     persisted_ids = list(object_map.keys())
-    physical_choice_ids = persisted_ids + list(SELECTABLE_KEYS)
+    persisted_labels = {
+        oid: format_object_label(object_map[oid]) for oid in persisted_ids
+    }
+    choice_ids = physical_choice_ids(
+        include_p1_prototype=p1_context,
+        persisted_object_ids=persisted_ids,
+    )
 
     def _format_physical_choice(choice_id: str) -> str:
-        if is_prototype_key(choice_id):
-            return prototype_choice_label(choice_id)
-        return format_object_label(object_map[choice_id])
+        return physical_label(choice_id, persisted_labels)
 
     physical_selection = st.selectbox(
         "Физический объект",
-        physical_choice_ids,
+        choice_ids,
         format_func=_format_physical_choice,
         key="pnr_physical_selection",
     )
-    prototype_selected = is_prototype_key(str(physical_selection))
+    prototype_selected = is_prototype_physical_identity(str(physical_selection))
     object_id = None if prototype_selected else str(physical_selection)
     object_row = None if prototype_selected else object_map[str(physical_selection)]
     functional_position_id = None
+    fp_unresolved = False
     if not prototype_selected:
-        try:
-            functional_position_id = resolve_object_functional_position_id(
-                object_id=object_id
+        functional_position_id, fp_unresolved = load_functional_position_id(object_id)
+        if fp_unresolved:
+            st.warning(
+                "Функциональная позиция объекта сейчас не подтверждена. "
+                "Иерархия доступна. Сохранение факта закрыто, пока связь не прочитана."
             )
-        except (PnrConfigError, PnrServiceError, PnrValidationError) as exc:
-            st.error(_safe_user_error(exc))
-            st.stop()
-        except Exception:
-            st.error("Не удалось определить функциональную позицию объекта.")
-            st.stop()
 
     st.markdown(_format_physical_choice(str(physical_selection)))
     st.caption(PASSPORT_NOT_OBJECT_CAPTION)
+    st.caption(PROTOTYPE_PHYSICAL_CAPTION)
+    st.caption(INTERFACE_NOT_PHYSICAL)
 
-with right_col:
-    if is_p1_system_context(context_row.get("context_system_code")):
-        _render_p1_passport()
-    else:
-        st.caption(PASSPORT_REQUIRES_P1_CONTEXT)
+    reset_dependent_selections(
+        st.session_state,
+        tracker_key=SESSION_TRACK_PHYSICAL,
+        parent_value=str(physical_selection),
+        child_keys=CHILD_KEYS_AFTER_PHYSICAL,
+    )
 
-with st.expander(EXECUTION_EXPANDER_TITLE, expanded=False):
-    st.markdown("### Работа")
-
-    try:
-        scopes = professional_p1_pilot_work_scopes(list_active_work_scopes())
-    except (PnrConfigError, PnrServiceError, PnrValidationError) as exc:
-        st.error(_safe_user_error(exc))
-        st.stop()
-    except Exception:
-        st.error("Не удалось загрузить разделы работ.")
-        st.stop()
-
-    scope_map = _index_by_id(scopes, "work_scope_id")
-    scope_ids = [
-        str(row["work_scope_id"]) for row in scopes if row.get("work_scope_id")
-    ]
+    section_mode = work_section_resolution_mode(str(physical_selection))
+    st.markdown(f"### {SECTION_WORK_SECTION}")
     work_scope_id = None
-    if scope_ids:
-        scope_index = 0
-        if str(physical_selection) == KEY_MOTOR:
-            scope_index = preferred_index(
-                scope_ids, scope_map, "scope_code", "PNR-WS-02-VENT-DRIVE"
-            )
-        work_scope_id = st.selectbox(
-            "Раздел работ",
-            scope_ids,
-            index=scope_index,
-            format_func=lambda wid: format_scope_label(scope_map[wid]),
-            key="pnr_work_scope_id",
-        )
-    else:
-        st.info(
-            "Нет разделов работ профессионального контура П-1. "
-            "Можно указать работу, которой нет в списке."
-        )
-
-    operations: list[dict] = []
-    if work_scope_id:
+    proto_work_section_key = None
+    scope_map: dict[str, dict] = {}
+    scopes: list[dict] = []
+    if section_mode == LIVE_SCOPES_MODE:
         try:
-            operations = list_active_operations_for_work_scope(work_scope_id=work_scope_id)
+            scopes = professional_p1_pilot_work_scopes(list_active_work_scopes())
         except (PnrConfigError, PnrServiceError, PnrValidationError) as exc:
             st.error(_safe_user_error(exc))
             st.stop()
         except Exception:
-            st.error("Не удалось загрузить работы.")
+            st.error("Не удалось загрузить разделы работ.")
             st.stop()
+        scope_map = _index_by_id(scopes, "work_scope_id")
+        scope_ids = [
+            str(row["work_scope_id"]) for row in scopes if row.get("work_scope_id")
+        ]
+        if scope_ids:
+            work_scope_id = st.selectbox(
+                "Раздел работ",
+                scope_ids,
+                format_func=lambda wid: format_scope_label(scope_map[wid]),
+                key="pnr_work_scope_id",
+            )
+        else:
+            st.info(
+                "Нет разделов работ профессионального контура П-1. "
+                "Можно указать работу, которой нет в списке."
+            )
+    elif section_mode == PROTOTYPE_MODE:
+        proto_sections = work_sections_for(str(physical_selection))
+        if proto_sections:
+            proto_work_section_key = st.selectbox(
+                "Раздел работ",
+                [item.key for item in proto_sections],
+                format_func=lambda key: next(
+                    item.label for item in proto_sections if item.key == key
+                ),
+                key="pnr_work_section_key",
+            )
+        else:
+            st.info(NO_WORK_SECTIONS)
+    else:
+        st.info(NO_WORK_SECTIONS)
 
+    section_parent = (
+        str(work_scope_id)
+        if section_mode == LIVE_SCOPES_MODE
+        else proto_work_section_key
+    )
+    reset_dependent_selections(
+        st.session_state,
+        tracker_key=SESSION_TRACK_WORK_SECTION,
+        parent_value=section_parent,
+        child_keys=CHILD_KEYS_AFTER_WORK_SECTION,
+    )
+
+    auto_sub_key = None
+    auto_subs = automation_subcontexts_for(
+        str(physical_selection), proto_work_section_key
+    )
+    if auto_subs:
+        auto_sub_key = st.selectbox(
+            "Контекст автоматизации",
+            [item.key for item in auto_subs],
+            format_func=lambda key: next(
+                item.label for item in auto_subs if item.key == key
+            ),
+            key="pnr_auto_subcontext",
+        )
+        reset_dependent_selections(
+            st.session_state,
+            tracker_key=SESSION_TRACK_AUTO_SUB,
+            parent_value=str(auto_sub_key),
+            child_keys=CHILD_KEYS_AFTER_AUTO_SUB,
+        )
+
+    st.markdown(f"### {SECTION_REQUIRED_WORK}")
+    hierarchy_required = required_works_for_hierarchy(
+        str(physical_selection),
+        proto_work_section_key,
+        auto_sub_key,
+    )
+    required_work_code = None
+    work_label = ""
+    if hierarchy_required:
+        required_work_code = st.radio(
+            "Конкретная работа",
+            [item.code for item in hierarchy_required],
+            format_func=lambda code: next(
+                f"{item.code} — {item.title}"
+                for item in hierarchy_required
+                if item.code == code
+            ),
+            key="pnr_required_work",
+        )
+        selected_hier_rw = next(
+            item for item in hierarchy_required if item.code == required_work_code
+        )
+        work_label = selected_hier_rw.title
+        if selected_hier_rw.source == "slice":
+            selected_rw = slice_required_work(str(required_work_code))
+            st.caption(f"Целевое состояние: {selected_rw.target_state}")
+            if selected_rw.code == "RW-MOTOR-01":
+                st.caption("Кандидатный шаблон. Требует инженерного подтверждения.")
+                st.caption("; ".join(RW_01_CANDIDATE_CHECKS))
+            if selected_rw.code == "RW-MOTOR-02":
+                st.caption(f"Критерий: {CRITERION_UNSET}")
+                st.caption(f"Применимое требование: {REQUIREMENT_NEEDS_CONFIRMATION}")
+            st.markdown("**Технологический шаг**")
+            if selected_rw.step is None:
+                st.info(STEP_UNDEFINED)
+            else:
+                if selected_rw.step.candidate:
+                    st.caption(CANDIDATE_STEP_CAPTION)
+                st.markdown(selected_rw.step.operation_name)
+                st.caption(selected_rw.step.operation_code)
+            if selected_rw.code == "RW-MOTOR-03":
+                st.caption(f"Применимое требование: {REQUIREMENT_NEEDS_CONFIRMATION}")
+                st.caption(f"Критерий: {CRITERION_UNSET}")
+                st.caption(f"Доказанное состояние: {PROVEN_STATE_NOT_CALCULATED}")
+    else:
+        st.info(NO_REQUIRED_WORK)
+
+    reset_dependent_selections(
+        st.session_state,
+        tracker_key=SESSION_TRACK_REQUIRED_WORK,
+        parent_value=required_work_code,
+        child_keys=CHILD_KEYS_AFTER_REQUIRED_WORK,
+    )
+
+    st.markdown(f"### {SECTION_OPERATION}")
+    operations: list[dict] = []
     operation_mode = MODE_CATALOG
     operation_id = None
     unmapped_name = None
-    work_label = ""
-    required_work_code = None
-    if str(physical_selection) == KEY_MOTOR:
-        motor_works = required_works_for(KEY_MOTOR)
-        required_work_code = st.radio(
-            "Конкретная работа",
-            [item.code for item in motor_works],
-            format_func=lambda code: f"{code} — {required_work_by_code(code).title}",
-            key="pnr_required_work",
+    proto_operations = operations_for_required_work(required_work_code)
+    if proto_operations:
+        proto_op_key = st.selectbox(
+            "Операция",
+            [item.key for item in proto_operations],
+            format_func=lambda key: next(
+                item.label for item in proto_operations if item.key == key
+            ),
+            key="pnr_proto_operation_key",
         )
-        selected_rw = required_work_by_code(str(required_work_code))
-        work_label = selected_rw.title
-        st.caption(f"Целевое состояние: {selected_rw.target_state}")
-        if selected_rw.code == "RW-MOTOR-01":
-            st.caption("Кандидатный шаблон. Требует инженерного подтверждения.")
-            st.caption("; ".join(RW_01_CANDIDATE_CHECKS))
-        if selected_rw.code == "RW-MOTOR-02":
-            st.caption(f"Критерий: {CRITERION_UNSET}")
-            st.caption(f"Применимое требование: {REQUIREMENT_NEEDS_CONFIRMATION}")
-        st.markdown("**Технологический шаг**")
-        if selected_rw.step is None:
-            st.info(STEP_UNDEFINED)
-        else:
-            catalog_row = _find_operation_by_code(
-                operations, selected_rw.step.operation_code
-            )
-            step_name = (
-                format_operation_label(catalog_row)
-                if catalog_row
-                else selected_rw.step.operation_name
-            )
-            if selected_rw.step.candidate:
-                st.caption(CANDIDATE_STEP_CAPTION)
-            st.markdown(step_name)
-            st.caption(selected_rw.step.operation_code)
-        if selected_rw.code == "RW-MOTOR-03":
-            st.caption(f"Применимое требование: {REQUIREMENT_NEEDS_CONFIRMATION}")
-            st.caption(f"Критерий: {CRITERION_UNSET}")
-            st.caption(f"Доказанное состояние: {PROVEN_STATE_NOT_CALCULATED}")
-    elif str(physical_selection) == KEY_FAN:
-        st.info(FAN_NO_REQUIRED_WORK)
-    else:
+        selected_proto_op = next(
+            item for item in proto_operations if item.key == proto_op_key
+        )
+        if not work_label:
+            work_label = selected_proto_op.label
+        if selected_proto_op.prototype:
+            st.caption("Операция прототипа. Живая строка справочника не создаётся.")
+    elif section_mode == LIVE_SCOPES_MODE:
+        if work_scope_id:
+            try:
+                operations = list_active_operations_for_work_scope(work_scope_id=work_scope_id)
+            except (PnrConfigError, PnrServiceError, PnrValidationError) as exc:
+                st.error(_safe_user_error(exc))
+                st.stop()
+            except Exception:
+                st.error("Не удалось загрузить работы.")
+                st.stop()
         operation_mode = st.radio(
             "Как указать работу",
             [MODE_CATALOG, MODE_UNMAPPED],
@@ -976,8 +1191,12 @@ with st.expander(EXECUTION_EXPANDER_TITLE, expanded=False):
                 "Наименование работы", placeholder="Что выполнялось"
             )
             work_label = (unmapped_name or "").strip()
+    else:
+        st.info(NO_OPERATIONS)
 
-    st.markdown("### Фактический результат")
+    st.markdown(f"### {SECTION_FACTUAL}")
+    with st.expander(EXECUTION_EXPANDER_TITLE, expanded=False):
+        st.markdown("### Фактический результат")
 
     done_label = st.radio(
         "Работа выполнена?",
@@ -1172,11 +1391,7 @@ with st.expander(EXECUTION_EXPANDER_TITLE, expanded=False):
         title_name=format_title_label(title_row),
         discipline_name=format_discipline_label(discipline_row),
         system_label=format_system_context_label(context_row),
-        object_label=(
-            prototype_choice_label(str(physical_selection))
-            if prototype_selected
-            else format_object_label(object_row)
-        ),
+        object_label=_format_physical_choice(str(physical_selection)),
         scope_label=format_scope_label(scope_map[str(work_scope_id)]) if work_scope_id else None,
         work_label=work_label or "—",
         done_label=done_label,
@@ -1193,87 +1408,127 @@ with st.expander(EXECUTION_EXPANDER_TITLE, expanded=False):
     )
     st.markdown("\n".join(f"- {line}" for line in review_lines))
 
-    if not structured_write_permitted(str(physical_selection)):
+    write_permitted = structured_write_permitted(str(physical_selection)) and not fp_unresolved
+    if not write_permitted or work_kind != WORK_KIND_PNR:
         st.button("Сохранить факт", type="primary", disabled=True)
-        st.info(SAVE_DISABLED_REASON)
+        if work_kind != WORK_KIND_PNR:
+            st.info("Исполнение СМР в этом контуре не подключено.")
+        elif fp_unresolved:
+            st.info(
+                "Сохранение закрыто: функциональная позиция объекта не подтверждена."
+            )
+        else:
+            st.info(SAVE_DISABLED_REASON)
         submitted = False
     else:
         submitted = st.button("Сохранить факт", type="primary")
 
     if submitted and structured_write_permitted(str(physical_selection)):
-        error_message = None
-        selected_scope_id = None
-        try:
-            selected_scope_id = require_selected_work_scope(work_scope_id)
-        except ValueError as exc:
-            error_message = str(exc)
-        if error_message is None:
-            if operation_mode == MODE_CATALOG and not operation_id:
-                error_message = "Выберите работу из справочника или режим «Работы нет в списке»."
-            elif operation_mode == MODE_UNMAPPED and not (unmapped_name or "").strip():
-                error_message = "Укажите наименование работы."
-            elif execution_status == "COMPLETED" and evaluation_status == "DOES_NOT_CONFORM":
-                if not (observation_text or "").strip():
-                    error_message = "Укажите, что обнаружено."
-            elif execution_status == "PARTIAL":
-                try:
-                    partial_detail = build_partial_detail(
-                        _partial_completed_draft, _partial_remaining_draft
-                    )
-                except ValueError as exc:
-                    error_message = str(exc)
-            elif execution_status == "BLOCKED":
-                try:
-                    blocked_detail = build_blocked_detail(
-                        blocked_category_label or "",
-                        blocked_description or "",
-                        other_work_label or "",
-                    )
-                except ValueError as exc:
-                    error_message = str(exc)
-            if error_message is None and measurement_error:
-                error_message = measurement_error
-
-        if error_message:
-            st.error(error_message)
-        else:
-            duration_dec = Decimal(str(duration_hours))
-            kwargs = build_structured_kwargs(
-                system_id=system_id,
-                object_id=str(object_id),
-                work_scope_id=selected_scope_id,
-                functional_position_id=functional_position_id,
-                operation_mode=operation_mode,
-                operation_id=str(operation_id) if operation_id else None,
-                unmapped_operation_name=unmapped_name,
-                execution_status=execution_status,
-                evaluation_status=evaluation_status,
-                occurred_at=occurred_at,
-                people_count=int(people_count),
-                duration_hours=duration_dec,
-                observation_text=observation_text,
-                measurements=preview_measurements,
-                blocked_detail=blocked_detail,
-                partial_detail=partial_detail,
+        if fp_unresolved:
+            st.error(
+                "Сохранение закрыто: функциональная позиция объекта не подтверждена."
             )
-            fingerprint = submit_fingerprint(kwargs)
-            last = st.session_state.get("pnr_last_submit_fingerprint")
-            if last == fingerprint:
-                st.warning(
-                    "Этот же факт только что отправлен. "
-                    "Для новой попытки измените результат или другие данные."
-                )
+        else:
+            error_message = None
+            selected_scope_id = None
+            try:
+                selected_scope_id = require_selected_work_scope(work_scope_id)
+            except ValueError as exc:
+                error_message = str(exc)
+            if error_message is None:
+                if operation_mode == MODE_CATALOG and not operation_id:
+                    error_message = "Выберите работу из справочника или режим «Работы нет в списке»."
+                elif operation_mode == MODE_UNMAPPED and not (unmapped_name or "").strip():
+                    error_message = "Укажите наименование работы."
+                elif execution_status == "COMPLETED" and evaluation_status == "DOES_NOT_CONFORM":
+                    if not (observation_text or "").strip():
+                        error_message = "Укажите, что обнаружено."
+                elif execution_status == "PARTIAL":
+                    try:
+                        partial_detail = build_partial_detail(
+                            _partial_completed_draft, _partial_remaining_draft
+                        )
+                    except ValueError as exc:
+                        error_message = str(exc)
+                elif execution_status == "BLOCKED":
+                    try:
+                        blocked_detail = build_blocked_detail(
+                            blocked_category_label or "",
+                            blocked_description or "",
+                            other_work_label or "",
+                        )
+                    except ValueError as exc:
+                        error_message = str(exc)
+                if error_message is None and measurement_error:
+                    error_message = measurement_error
+
+            if error_message:
+                st.error(error_message)
             else:
-                try:
-                    created = create_structured_execution_event(**kwargs)
-                except (PnrConfigError, PnrValidationError, PnrServiceError) as exc:
-                    st.error(_safe_user_error(exc))
-                except Exception:
-                    st.error("Не удалось сохранить факт ПНР. Повторите попытку.")
+                duration_dec = Decimal(str(duration_hours))
+                kwargs = build_structured_kwargs(
+                    system_id=system_id,
+                    object_id=str(object_id),
+                    work_scope_id=selected_scope_id,
+                    functional_position_id=functional_position_id,
+                    operation_mode=operation_mode,
+                    operation_id=str(operation_id) if operation_id else None,
+                    unmapped_operation_name=unmapped_name,
+                    execution_status=execution_status,
+                    evaluation_status=evaluation_status,
+                    occurred_at=occurred_at,
+                    people_count=int(people_count),
+                    duration_hours=duration_dec,
+                    observation_text=observation_text,
+                    measurements=preview_measurements,
+                    blocked_detail=blocked_detail,
+                    partial_detail=partial_detail,
+                )
+                fingerprint = submit_fingerprint(kwargs)
+                last = st.session_state.get("pnr_last_submit_fingerprint")
+                if last == fingerprint:
+                    st.warning(
+                        "Этот же факт только что отправлен. "
+                        "Для новой попытки измените результат или другие данные."
+                    )
                 else:
-                    st.session_state.pnr_last_submit_fingerprint = fingerprint
-                    st.success("Факт выполнения сохранён.")
-                    event_id = (created or {}).get("event_id")
-                    if event_id:
-                        with st.expander("Технические сведения"):
-                            st.caption(f"Идентификатор записи: {event_id}")
+                    try:
+                        created = create_structured_execution_event(**kwargs)
+                    except (PnrConfigError, PnrValidationError, PnrServiceError) as exc:
+                        st.error(_safe_user_error(exc))
+                    except Exception:
+                        st.error("Не удалось сохранить факт ПНР. Повторите попытку.")
+                    else:
+                        st.session_state.pnr_last_submit_fingerprint = fingerprint
+                        st.success("Факт выполнения сохранён.")
+                        event_id = (created or {}).get("event_id")
+                        if event_id:
+                            with st.expander("Технические сведения"):
+                                st.caption(f"Идентификатор записи: {event_id}")
+
+    st.markdown(f"### {SECTION_INSPECTION}")
+    st.info(CONTEXT_NOT_CONNECTED)
+    st.caption("Инспекция отделена от фактического исполнения. Модель данных ещё не подключена.")
+
+    st.markdown(f"### {SECTION_EVIDENCE}")
+    st.info(EVIDENCE_NOT_CONNECTED)
+    st.caption("Категории: " + ", ".join(evidence_category_labels()) + ".")
+
+    st.markdown(f"### {SECTION_DOC_READY}")
+    st.info(CONTEXT_NOT_CONNECTED)
+    st.caption("Физическое завершение не означает документальную готовность.")
+
+    st.markdown(f"### {SECTION_ACCEPTANCE}")
+    st.info(CONTEXT_NOT_CONNECTED)
+    st.caption("Актирование отделено от исполнения, инспекции и доказательств.")
+
+    st.markdown(f"### {SECTION_WORK_STATUS}")
+    st.info(CONTEXT_NOT_CONNECTED)
+    st.caption("Различаются: " + ", ".join(status_dimension_labels()) + ".")
+    st.caption("Доказанное состояние и следующая работа не рассчитываются.")
+
+with right_col:
+    if is_p1_system_context(context_row.get("context_system_code")):
+        _render_p1_passport()
+    else:
+        st.caption(PASSPORT_REQUIRES_P1_CONTEXT)

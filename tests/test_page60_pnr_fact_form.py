@@ -698,6 +698,79 @@ class Page60HelperTests(unittest.TestCase):
         payload.update(overrides)
         return self.page.build_structured_kwargs(**payload)
 
+    def test_fp_read_exception_is_unresolved_and_not_fabricated(self) -> None:
+        from services.pnr_service import PnrConfigError, PnrServiceError, PnrValidationError
+
+        for exc in (
+            PnrServiceError("map unavailable"),
+            PnrConfigError("no config"),
+            PnrValidationError("bad object"),
+            RuntimeError("tls"),
+        ):
+            with patch.object(
+                self.page,
+                "resolve_object_functional_position_id",
+                side_effect=exc,
+            ):
+                position_id, unresolved = self.page.load_functional_position_id("obj-1")
+            self.assertIsNone(position_id)
+            self.assertTrue(unresolved)
+            self.assertNotEqual(position_id, "obj-1")
+            self.assertNotEqual(position_id, "fp-1")
+
+    def test_fp_success_preserves_resolved_id(self) -> None:
+        position_id, unresolved = self.page.load_functional_position_id("obj-1")
+        self.assertEqual(position_id, "fp-1")
+        self.assertFalse(unresolved)
+
+    def test_empty_fp_mapping_is_not_unresolved(self) -> None:
+        with patch.object(
+            self.page,
+            "resolve_object_functional_position_id",
+            return_value=None,
+        ):
+            position_id, unresolved = self.page.load_functional_position_id("obj-1")
+        self.assertIsNone(position_id)
+        self.assertFalse(unresolved)
+
+
+class FpReadDoesNotBlockPageTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from services.pnr_service import PnrServiceError
+
+        self._st = _install_streamlit_stub()
+        patches = [
+            patch("services.pnr_service.list_active_projects", return_value=[PROJECT]),
+            patch("services.pnr_service.list_active_titles", return_value=[TITLE]),
+            patch("services.pnr_service.get_work_type_by_code", return_value=WORK_TYPE),
+            patch("services.pnr_service.list_context_disciplines", return_value=[DISC]),
+            patch("services.pnr_service.list_system_work_contexts", return_value=[CTX]),
+            patch("services.pnr_service.list_active_objects", return_value=[OBJ]),
+            patch(
+                "services.pnr_service.resolve_object_functional_position_id",
+                side_effect=PnrServiceError("optional map unavailable"),
+            ),
+            patch("services.pnr_service.list_active_work_scopes", return_value=[SCOPE]),
+            patch(
+                "services.pnr_service.list_active_operations_for_work_scope",
+                return_value=[OP],
+            ),
+            patch("services.pnr_service.create_structured_execution_event"),
+        ]
+        self._started = [p.start() for p in patches]
+        self.addCleanup(lambda: [p.stop() for p in patches])
+        try:
+            self.page = _load_page()
+        except _Stop:
+            self.fail("functional-position read failure stopped Page60")
+
+    def test_page_renders_past_optional_fp_read(self) -> None:
+        self.assertTrue(callable(self.page.load_functional_position_id))
+        position_id, unresolved = self.page.load_functional_position_id("obj-1")
+        self.assertIsNone(position_id)
+        self.assertTrue(unresolved)
+        self.assertTrue(self.page.structured_write_permitted("obj-1"))
+
 
 if __name__ == "__main__":
     unittest.main()

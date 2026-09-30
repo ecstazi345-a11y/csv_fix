@@ -4,17 +4,10 @@ import time
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
-load_dotenv()
+from services.airtable_http import airtable_get, make_airtable_session, strip_proxy_env
 
-for key in [
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "ALL_PROXY",
-    "http_proxy",
-    "https_proxy",
-    "all_proxy",
-]:
-    os.environ.pop(key, None)
+load_dotenv()
+strip_proxy_env()
 
 AIRTABLE_TOKEN = os.getenv("AIRTABLE_TOKEN")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
@@ -40,9 +33,8 @@ SUPABASE_HEADERS = {
 
 
 def make_requests_session():
-    session = requests.Session()
-    session.trust_env = False
-    return session
+    """Supabase REST session (direct; no process proxy)."""
+    return make_airtable_session()
 
 
 def clean_value(value):
@@ -132,11 +124,10 @@ def map_fields(record):
 def fetch_airtable_records():
     url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}"
     all_rows = []
-    session = make_requests_session()
+    session = make_airtable_session()
 
     while True:
-        resp = session.get(url, headers=AIRTABLE_HEADERS)
-        resp.raise_for_status()
+        resp = airtable_get(url, headers=AIRTABLE_HEADERS, session=session)
         data = resp.json()
 
         for rec in data.get("records", []):

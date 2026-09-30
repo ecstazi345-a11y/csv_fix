@@ -61,6 +61,7 @@ def _install_streamlit_stub() -> ModuleType:
     st.set_page_config = lambda **kwargs: None
     st.cache_data = _cache_data_stub
     st.cache_resource = _cache_data_stub
+    st.fragment = lambda fn=None, **kwargs: (fn if fn is not None else (lambda f: f))
     st.markdown = lambda *a, **k: None
     st.caption = lambda *a, **k: None
     st.info = lambda *a, **k: None
@@ -129,19 +130,24 @@ def _load_page21() -> ModuleType:
         "services.constraints_loader",
         "services.perf_audit",
     ):
-        if mod_name not in sys.modules:
-            stub = ModuleType(mod_name)
-            if mod_name.endswith("history_service"):
-                stub.get_boq_execution_history = lambda *a, **k: pd.DataFrame()  # type: ignore
-            if mod_name.endswith("crews_service"):
-                stub.get_boq_execution_crew_breakdown = lambda *a, **k: pd.DataFrame()  # type: ignore
-            if mod_name.endswith("constraints_loader"):
-                stub.fetch_all_constraints = lambda *a, **k: []  # type: ignore
-            if mod_name.endswith("perf_audit"):
-                stub.start_page = lambda *a, **k: None  # type: ignore
-                stub.finish_page = lambda *a, **k: None  # type: ignore
-                stub.stage = MagicMock()
-            sys.modules[mod_name] = stub
+        stub = sys.modules.get(mod_name) or ModuleType(mod_name)
+        if mod_name.endswith("history_service"):
+            stub.get_boq_execution_history = lambda *a, **k: pd.DataFrame()  # type: ignore
+        if mod_name.endswith("crews_service"):
+            stub.get_boq_execution_crew_breakdown = lambda *a, **k: pd.DataFrame()  # type: ignore
+        if mod_name.endswith("constraints_loader"):
+            stub.fetch_all_constraints = lambda *a, **k: []  # type: ignore
+            stub.fetch_constraints_scoped = lambda *a, **k: ([], {})  # type: ignore
+            stub.fetch_constraint_filter_metadata = lambda *a, **k: {}  # type: ignore
+            stub.scope_filters_from_values = lambda *a, **k: (None, None)  # type: ignore
+            stub.DEFAULT_CONSTRAINT_COLUMNS = ("constraint_id", "month_key")  # type: ignore
+        if mod_name.endswith("perf_audit"):
+            stub.start_page = lambda *a, **k: None  # type: ignore
+            stub.finish_page = lambda *a, **k: None  # type: ignore
+            stub.stage = MagicMock()
+            stub.log_supabase_query = lambda *a, **k: None  # type: ignore
+            stub.perf_audit_enabled = lambda: False  # type: ignore
+        sys.modules[mod_name] = stub
 
     spec = importlib.util.spec_from_file_location("page21_ra_test", PAGE21_PATH)
     assert spec and spec.loader

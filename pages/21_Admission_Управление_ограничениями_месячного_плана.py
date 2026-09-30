@@ -1,6 +1,7 @@
 import html
 import os
 import re
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -18,9 +19,14 @@ from services.constraint_display import (
 )
 from services.boq_execution_history_service import get_boq_execution_history
 from services.boq_execution_crews_service import get_boq_execution_crew_breakdown
-from services.constraints_loader import fetch_all_constraints
+from services.constraints_loader import (
+    DEFAULT_CONSTRAINT_COLUMNS,
+    fetch_constraint_filter_metadata,
+    fetch_constraints_scoped,
+    scope_filters_from_values,
+)
 from services.constraints_service import merge_created_by_once
-from services.perf_audit import finish_page, stage, start_page
+from services.perf_audit import finish_page, log_supabase_query, perf_audit_enabled, stage, start_page
 from services.supabase_client import supabase
 
 load_dotenv()
@@ -31,6 +37,12 @@ TABLE_CONSTRAINTS = "monthly_plan_constraints"
 TABLE_EVIDENCE = "monthly_plan_constraint_evidence"
 VIEW_DASHBOARD_V2 = "monthly_plan_constraints_dashboard_v2"
 V2_PLAN_LINES_TABLE = "monthly_plan_lines_v2"
+
+# Columns Page 21 reads — never SELECT * on the hot path.
+REQUIRED_COLUMNS: Tuple[str, ...] = DEFAULT_CONSTRAINT_COLUMNS
+ADMISSION_LAST_QUERY_STATS_KEY = "_admission_last_query_stats"
+ADMISSION_FILTER_META_CACHE_KEY = "_admission_filter_meta_cache"
+V2_SELECT_COLUMNS_CACHE_KEY = "_admission_v2_select_columns"
 
 PLANNING_MONTH_OPTIONS = [
     "январь-2026",
@@ -127,6 +139,37 @@ WORKBENCH_MAX_ROWS = 80
 DIRECT_ADMIT_SELECTED_CID_KEY = "direct_admit_selected_cid"
 DIRECT_ADMIT_PENDING_ACTION_KEY = "direct_admit_pending_action"
 DIRECT_ADMIT_LAYOUT_KEY = "direct_admit_layout_preset"
+DIRECT_ADMIT_QUEUE_TABLE_KEY = "direct_admit_queue_table_select"  # legacy R1 dataframe key (cleared)
+DIRECT_ADMIT_QUEUE_SELECT_KEY = "direct_admit_queue_boq_select"
+DIRECT_ADMIT_QUEUE_PAGE_KEY = "direct_admit_queue_page_idx"
+DIRECT_ADMIT_QUEUE_VIEWPORT = 50  # HTML cards per page; O(1) widgets for paging
+DIRECT_ADMIT_ROW_PATCHES_KEY = "direct_admit_row_patches"
+ADMISSION_PACKAGES_CACHE_KEY = "_admission_packages_cache"
+ADMISSION_PERF_TIMINGS_KEY = "_admission_perf_timings"
+ADMISSION_PERF_SCENARIO_KEY = "_admission_perf_scenario_markers"
+
+
+def admission_perf_timing_enabled() -> bool:
+    return os.environ.get("PERF_ADMISSION_TIMING", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _admission_perf_bucket() -> Dict[str, Any]:
+    bucket = st.session_state.get(ADMISSION_PERF_TIMINGS_KEY)
+    if not isinstance(bucket, dict):
+        bucket = {}
+        st.session_state[ADMISSION_PERF_TIMINGS_KEY] = bucket
+    return bucket
+
+
+def _admission_perf_add(key: str, seconds: float) -> None:
+    if not admission_perf_timing_enabled():
+        return
+    bucket = _admission_perf_bucket()
+    bucket[key] = float(bucket.get(key) or 0.0) + float(seconds)
 
 DIRECT_ADMIT_LAYOUT_PRESETS: dict[str, list[float]] = {
     "Баланс": [28, 42, 30],
@@ -400,6 +443,7 @@ DIRECT_ADMIT_DECISION_FIO_ERROR_KEY = "direct_admit_decision_fio_error"
 DIRECT_ADMIT_DECISION_WARN_KEY = "direct_admit_decision_warn"
 DIRECT_ADMIT_DECISION_RECOMMENDED_KEY = "direct_admit_decision_recommended"
 DIRECT_ADMIT_STATUS_PATCHES_KEY = "direct_admit_status_patches"
+# Local post-write field overlays (avoid load_constraints.clear() on every decision).
 
 PACKAGE_STATUS_OPEN = "OPEN"
 PACKAGE_STATUS_READY = "READY"
@@ -448,6 +492,8 @@ ADMISSION_MAIN_TABLE_NUMERIC_COLUMNS = {
 }
 
 # TODO v2 persistence: system/iwp must be saved from 10B to monthly_plan_lines_v2.
+# Live schema evidence (R3A): queue/title columns do NOT exist on monthly_plan_lines_v2.
+# Never probe them — each miss costs a failed PostgREST round-trip.
 V2_PLAN_LINE_BASE_COLUMNS = [
     "plan_line_id",
     "project_code",
@@ -469,13 +515,14 @@ V2_PLAN_LINE_BASE_COLUMNS = [
 ]
 
 V2_PLAN_LINE_OPTIONAL_COLUMNS = [
-    "queue",
-    "title",
     "system",
     "iwp",
     "planned_by",
     "planned_at",
 ]
+
+# Process-wide memo (survives @st.cache_data clear within same worker).
+_V2_SELECT_COLUMNS_MEMO: Optional[Tuple[str, ...]] = None
 
 CHECK_STATUS_PRIORITY = {
     "FAIL": 0,
@@ -1150,6 +1197,21 @@ def package_key_from_row(row: pd.Series) -> str:
     return plan_line_key(row)
 
 
+def package_key_from_mapping(row: Dict[str, Any]) -> str:
+    line_id = safe_str(row.get("line_id"))
+    if line_id:
+        return f"line:{line_id}"
+    parts = [
+        safe_str(row.get("project_code")),
+        safe_str(row.get("month_key")),
+        safe_str(row.get("facility_building")),
+        safe_str(row.get("construction_discipline")),
+        safe_str(row.get("boq_code")),
+        safe_str(row.get("crew_id")),
+    ]
+    return "composite:" + "|".join(parts)
+
+
 def short_line_id(line_id: Any, package_key: str) -> str:
     raw = safe_str(line_id)
     if raw:
@@ -1158,10 +1220,7 @@ def short_line_id(line_id: Any, package_key: str) -> str:
     return suffix[:12] if suffix else "—"
 
 
-def compute_package_status(group: pd.DataFrame) -> str:
-    statuses: List[str] = []
-    for _, row in group.iterrows():
-        statuses.append(norm_check_status_key(row.get("check_status")))
+def _package_status_from_statuses(statuses: List[str]) -> str:
     if any(status in ("HOLD", "FAIL") for status in statuses):
         return PACKAGE_STATUS_BLOCKED
     if statuses and all(status == "PASS" for status in statuses):
@@ -1169,10 +1228,17 @@ def compute_package_status(group: pd.DataFrame) -> str:
     return PACKAGE_STATUS_OPEN
 
 
-def compute_bottleneck_department(group: pd.DataFrame) -> str:
+def compute_package_status(group: pd.DataFrame) -> str:
+    statuses = [
+        norm_check_status_key(row.get("check_status")) for _, row in group.iterrows()
+    ]
+    return _package_status_from_statuses(statuses)
+
+
+def _bottleneck_department_from_rows(rows: List[Dict[str, Any]]) -> str:
     best_dept = ""
     best_prio = 999
-    for _, row in group.iterrows():
+    for row in rows:
         status = norm_check_status_key(row.get("check_status"))
         prio = CHECK_STATUS_PRIORITY.get(status, 50)
         if prio < best_prio:
@@ -1181,10 +1247,14 @@ def compute_bottleneck_department(group: pd.DataFrame) -> str:
     return best_dept
 
 
-def find_blocking_check(group: pd.DataFrame) -> Optional[pd.Series]:
-    best_row: Optional[pd.Series] = None
+def compute_bottleneck_department(group: pd.DataFrame) -> str:
+    return _bottleneck_department_from_rows(group.to_dict("records"))
+
+
+def _find_blocking_check_mapping(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    best_row: Optional[Dict[str, Any]] = None
     best_prio = 999
-    for _, row in group.iterrows():
+    for row in rows:
         status = norm_check_status_key(row.get("check_status"))
         if status not in ("HOLD", "FAIL"):
             continue
@@ -1195,9 +1265,16 @@ def find_blocking_check(group: pd.DataFrame) -> Optional[pd.Series]:
     return best_row
 
 
-def compute_waiting_departments(group: pd.DataFrame) -> List[str]:
+def find_blocking_check(group: pd.DataFrame) -> Optional[pd.Series]:
+    best = _find_blocking_check_mapping(group.to_dict("records"))
+    if best is None:
+        return None
+    return pd.Series(best)
+
+
+def _waiting_departments_from_rows(rows: List[Dict[str, Any]]) -> List[str]:
     departments: List[str] = []
-    for _, row in group.iterrows():
+    for row in rows:
         status = norm_check_status_key(row.get("check_status"))
         if status not in ("ОЖИДАЕТ", "WARNING"):
             continue
@@ -1205,6 +1282,10 @@ def compute_waiting_departments(group: pd.DataFrame) -> List[str]:
         if dept and dept not in departments:
             departments.append(dept)
     return departments
+
+
+def compute_waiting_departments(group: pd.DataFrame) -> List[str]:
+    return _waiting_departments_from_rows(group.to_dict("records"))
 
 
 def format_waiting_checks_label(count: int) -> str:
@@ -1216,14 +1297,15 @@ def format_waiting_checks_label(count: int) -> str:
     return f"{n} проверок ожидает"
 
 
-def compute_package_clarity(
-    group: pd.DataFrame,
+def _package_clarity_from_rows(
+    rows: List[Dict[str, Any]],
     package_status: str,
     waiting_checks_count: int,
     blocked_checks_count: int,
     fallback_department: str,
 ) -> Dict[str, str]:
-    blocking_row = find_blocking_check(group)
+    del blocked_checks_count  # retained for call-site parity with prior signature
+    blocking_row = _find_blocking_check_mapping(rows)
     blocking_department = (
         safe_str(blocking_row.get("responsible_department"))
         if blocking_row is not None
@@ -1233,7 +1315,7 @@ def compute_package_clarity(
         safe_str(blocking_row.get("check_name")) if blocking_row is not None else ""
     )
     blocking_department_ui = dept_ui(blocking_department) if blocking_department else "—"
-    waiting_departments = compute_waiting_departments(group)
+    waiting_departments = _waiting_departments_from_rows(rows)
     waiting_departments_label = ", ".join(dept_ui(d) for d in waiting_departments[:4])
 
     if package_status == PACKAGE_STATUS_BLOCKED:
@@ -1265,32 +1347,67 @@ def compute_package_clarity(
     }
 
 
+def compute_package_clarity(
+    group: pd.DataFrame,
+    package_status: str,
+    waiting_checks_count: int,
+    blocked_checks_count: int,
+    fallback_department: str,
+) -> Dict[str, str]:
+    return _package_clarity_from_rows(
+        group.to_dict("records"),
+        package_status,
+        waiting_checks_count,
+        blocked_checks_count,
+        fallback_department,
+    )
+
+
+def _row_risk_value_mapping(row: Dict[str, Any]) -> float:
+    if "value_at_risk" in row and row.get("value_at_risk") is not None:
+        try:
+            if pd.isna(row.get("value_at_risk")):
+                return safe_num(row.get("plan_value"))
+        except (TypeError, ValueError):
+            pass
+        return safe_num(row.get("value_at_risk"))
+    return safe_num(row.get("plan_value"))
+
+
 def build_package_dataframe(constraints_df: pd.DataFrame) -> pd.DataFrame:
     """Одна строка плана / пакет = одна строка (группировка по line_id или legacy key)."""
     if constraints_df.empty:
         return pd.DataFrame()
 
-    working = constraints_df.copy()
-    working["_package_key"] = working.apply(package_key_from_row, axis=1)
+    records = constraints_df.to_dict("records")
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    order: List[str] = []
+    for row in records:
+        key = package_key_from_mapping(row)
+        bucket = grouped.get(key)
+        if bucket is None:
+            grouped[key] = [row]
+            order.append(key)
+        else:
+            bucket.append(row)
 
     packages: List[Dict[str, Any]] = []
-    for package_key, group in working.groupby("_package_key", sort=False):
-        first = group.iloc[0]
+    for package_key in order:
+        group = grouped[package_key]
+        first = group[0]
         line_id = safe_str(first.get("line_id")) or None
-        statuses = [norm_check_status_key(row.get("check_status")) for _, row in group.iterrows()]
+        statuses = [norm_check_status_key(row.get("check_status")) for row in group]
 
         total_checks = len(group)
         blocked_checks = sum(1 for status in statuses if status in ("HOLD", "FAIL"))
         passed_checks = sum(1 for status in statuses if status == "PASS")
-        open_checks = sum(
-            1 for status in statuses if status in ("ОЖИДАЕТ", "WARNING")
-        )
-        plan_value = row_risk_value(first)
+        open_checks = sum(1 for status in statuses if status in ("ОЖИДАЕТ", "WARNING"))
+        plan_value = _row_risk_value_mapping(first)
         required_hours = safe_num(first.get("required_hours"))
 
-        package_status = compute_package_status(group)
-        bottleneck = compute_bottleneck_department(group)
-        clarity = compute_package_clarity(
+        package_status = _package_status_from_statuses(statuses)
+        bottleneck = _bottleneck_department_from_rows(group)
+        clarity = _package_clarity_from_rows(
             group,
             package_status,
             open_checks,
@@ -1418,6 +1535,31 @@ def _merge_v2_plan_line_rows(
                 merged[key][field] = value
 
 
+@st.cache_data(ttl=3600)
+def _cached_v2_plan_line_select_columns() -> Tuple[str, ...]:
+    """Resolve working v2 select list once. Never probes missing queue/title."""
+    global _V2_SELECT_COLUMNS_MEMO
+    if _V2_SELECT_COLUMNS_MEMO is not None:
+        return _V2_SELECT_COLUMNS_MEMO
+
+    known = tuple(
+        dict.fromkeys(V2_PLAN_LINE_BASE_COLUMNS + V2_PLAN_LINE_OPTIONAL_COLUMNS)
+    )
+    try:
+        (
+            supabase.table(V2_PLAN_LINES_TABLE)
+            .select(",".join(known))
+            .limit(1)
+            .execute()
+        )
+        _V2_SELECT_COLUMNS_MEMO = known
+        return known
+    except Exception:  # noqa: BLE001
+        base = tuple(V2_PLAN_LINE_BASE_COLUMNS)
+        _V2_SELECT_COLUMNS_MEMO = base
+        return base
+
+
 @st.cache_data(ttl=300)
 def load_v2_plan_lines_for_constraints(line_ids: Tuple[str, ...]) -> pd.DataFrame:
     """Join key: monthly_plan_constraints.line_id = monthly_plan_lines_v2.plan_line_id."""
@@ -1426,72 +1568,29 @@ def load_v2_plan_lines_for_constraints(line_ids: Tuple[str, ...]) -> pd.DataFram
         return pd.DataFrame()
 
     merged: Dict[str, Dict[str, Any]] = {}
-    chunk_size = 200
-    candidate_columns = list(
-        dict.fromkeys(V2_PLAN_LINE_BASE_COLUMNS + V2_PLAN_LINE_OPTIONAL_COLUMNS)
-    )
+    chunk_size = 250
+    select_columns = list(_cached_v2_plan_line_select_columns())
+    t_query = 0.0
+    t_decode = 0.0
+    rows_total = 0
 
     def _fetch_chunk(select_cols: List[str], chunk: List[str], label: str) -> List[Dict[str, Any]]:
-        import time as _time
-
-        from services.perf_audit import log_supabase_query, perf_audit_enabled
-
-        t0 = _time.perf_counter()
+        nonlocal t_query, t_decode, rows_total
+        t0 = time.perf_counter()
         response = (
             supabase.table(V2_PLAN_LINES_TABLE)
             .select(",".join(select_cols))
             .in_("plan_line_id", chunk)
             .execute()
         )
-        batch = response.data or []
+        t_query += time.perf_counter() - t0
+        t1 = time.perf_counter()
+        batch = list(response.data or [])
+        t_decode += time.perf_counter() - t1
+        rows_total += len(batch)
         if perf_audit_enabled():
-            log_supabase_query(
-                label,
-                _time.perf_counter() - t0,
-                len(batch),
-            )
+            log_supabase_query(label, time.perf_counter() - t0, len(batch))
         return batch
-
-    def _probe_select_columns() -> List[str]:
-        """Resolve a single working select list (avoid 5 sequential queries per chunk)."""
-        try:
-            (
-                supabase.table(V2_PLAN_LINES_TABLE)
-                .select(",".join(candidate_columns))
-                .limit(1)
-                .execute()
-            )
-            return candidate_columns
-        except Exception:  # noqa: BLE001
-            pass
-
-        working = list(V2_PLAN_LINE_BASE_COLUMNS)
-        try:
-            (
-                supabase.table(V2_PLAN_LINES_TABLE)
-                .select(",".join(working))
-                .limit(1)
-                .execute()
-            )
-        except Exception:  # noqa: BLE001
-            return working
-
-        for optional_col in V2_PLAN_LINE_OPTIONAL_COLUMNS:
-            trial = working + [optional_col]
-            try:
-                (
-                    supabase.table(V2_PLAN_LINES_TABLE)
-                    .select(",".join(trial))
-                    .limit(1)
-                    .execute()
-                )
-                working = trial
-            except Exception:  # noqa: BLE001
-                # TODO v2 persistence: system/iwp must be saved from 10B to monthly_plan_lines_v2.
-                continue
-        return working
-
-    select_columns = _probe_select_columns()
 
     for offset in range(0, len(unique_ids), chunk_size):
         chunk = unique_ids[offset : offset + chunk_size]
@@ -1499,7 +1598,7 @@ def load_v2_plan_lines_for_constraints(line_ids: Tuple[str, ...]) -> pd.DataFram
             batch = _fetch_chunk(select_columns, chunk, V2_PLAN_LINES_TABLE)
             _merge_v2_plan_line_rows(merged, batch)
         except Exception:  # noqa: BLE001
-            # Last-resort fallback: base then optional columns one-by-one.
+            # Base-only fallback — never re-probe missing optional columns per chunk.
             try:
                 batch = _fetch_chunk(
                     list(V2_PLAN_LINE_BASE_COLUMNS),
@@ -1509,16 +1608,12 @@ def load_v2_plan_lines_for_constraints(line_ids: Tuple[str, ...]) -> pd.DataFram
                 _merge_v2_plan_line_rows(merged, batch)
             except Exception:  # noqa: BLE001
                 continue
-            for optional_col in V2_PLAN_LINE_OPTIONAL_COLUMNS:
-                try:
-                    batch = _fetch_chunk(
-                        ["plan_line_id", optional_col],
-                        chunk,
-                        f"{V2_PLAN_LINES_TABLE}({optional_col})",
-                    )
-                    _merge_v2_plan_line_rows(merged, batch)
-                except Exception:  # noqa: BLE001
-                    continue
+
+    if admission_perf_timing_enabled():
+        _admission_perf_add("G_v2_query", t_query)
+        _admission_perf_add("G_v2_decode", t_decode)
+        bucket = _admission_perf_bucket()
+        bucket["G_v2_rows"] = rows_total
 
     if not merged:
         return pd.DataFrame()
@@ -1534,13 +1629,13 @@ def enrich_packages_with_v2_lines(
 
     v2_lookup: Dict[str, Dict[str, Any]] = {}
     if not v2_df.empty and "plan_line_id" in v2_df.columns:
-        for _, row in v2_df.iterrows():
+        for row in v2_df.to_dict("records"):
             key = normalize_line_id(row.get("plan_line_id"))
             if key:
-                v2_lookup[key] = row.to_dict()
+                v2_lookup[key] = row
 
     enriched_rows: List[Dict[str, Any]] = []
-    for _, pkg in packages_df.iterrows():
+    for pkg in packages_df.to_dict("records"):
         line_id = safe_str(pkg.get("line_id"))
         v2_row = v2_lookup.get(normalize_line_id(line_id), {})
 
@@ -1566,7 +1661,7 @@ def enrich_packages_with_v2_lines(
         planned_by = safe_str(v2_row.get("planned_by")) if v2_row else ""
         planned_at = v2_row.get("planned_at") if v2_row else None
 
-        row = pkg.to_dict()
+        row = dict(pkg)
         row["queue_display"] = field_display(queue) if queue else "—"
         row["title_display"] = field_display(title)
         row["discipline_display"] = field_display(discipline)
@@ -1658,7 +1753,10 @@ def enrich_decision_registry_with_v2_lines(
     return pd.DataFrame(enriched_rows)
 
 
-def month_filter_options(packages_df: pd.DataFrame) -> List[str]:
+def month_filter_options(
+    packages_df: pd.DataFrame,
+    meta_months: Optional[List[str]] = None,
+) -> List[str]:
     data_months: List[str] = []
     if not packages_df.empty and "month_key" in packages_df.columns:
         data_months = [
@@ -1666,15 +1764,26 @@ def month_filter_options(packages_df: pd.DataFrame) -> List[str]:
             for month in packages_df["month_key"].dropna().astype(str).str.strip().unique()
             if month
         ]
-    merged = list(dict.fromkeys([*PLANNING_MONTH_OPTIONS, *sorted(data_months)]))
+    extra = [m for m in (meta_months or []) if m]
+    merged = list(dict.fromkeys([*PLANNING_MONTH_OPTIONS, *sorted({*data_months, *extra})]))
     return ["Все"] + merged
 
 
-def package_filter_options(packages_df: pd.DataFrame, col: str) -> List[str]:
-    if packages_df.empty or col not in packages_df.columns:
+def package_filter_options(
+    packages_df: pd.DataFrame,
+    col: str,
+    meta_values: Optional[List[str]] = None,
+) -> List[str]:
+    vals: List[str] = []
+    if not packages_df.empty and col in packages_df.columns:
+        series = packages_df[col].astype(str).str.strip()
+        vals = series[(series != "") & (series != "—")].unique().tolist()
+    for item in meta_values or []:
+        text = str(item or "").strip()
+        if text and text != "—" and text not in vals:
+            vals.append(text)
+    if not vals:
         return ["Все"]
-    vals = packages_df[col].astype(str).str.strip()
-    vals = vals[(vals != "") & (vals != "—")].unique().tolist()
     return ["Все"] + sorted(vals)
 
 
@@ -1771,10 +1880,11 @@ def filter_constraints_by_package_keys(
 ) -> pd.DataFrame:
     if constraints_df.empty or not package_keys:
         return pd.DataFrame()
-    working = constraints_df.copy()
-    working["_package_key"] = working.apply(package_key_from_row, axis=1)
-    filtered = working[working["_package_key"].astype(str).isin(package_keys)]
-    return filtered.drop(columns=["_package_key"], errors="ignore")
+    keys = [
+        package_key_from_mapping(row) for row in constraints_df.to_dict("records")
+    ]
+    mask = pd.Series(keys, index=constraints_df.index).isin(package_keys)
+    return constraints_df.loc[mask].copy()
 
 
 def reset_admission_filters() -> None:
@@ -3321,18 +3431,80 @@ def enrich_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-@st.cache_data(ttl=300)
-def load_constraints() -> pd.DataFrame:
+def resolve_constraint_load_scope() -> Tuple[str, str]:
+    """Read month/project from session BEFORE widgets (after filter-memory restore).
+
+    Empty string = no server filter (UI «Все»).
+    """
+    month_raw = st.session_state.get(
+        FILTER_SESSION_KEYS["month"], ADMISSION_FILTER_DEFAULTS[FILTER_SESSION_KEYS["month"]]
+    )
+    project_raw = st.session_state.get(
+        FILTER_SESSION_KEYS["project"],
+        ADMISSION_FILTER_DEFAULTS[FILTER_SESSION_KEYS["project"]],
+    )
+    month_key, project_code = scope_filters_from_values(month_raw, project_raw)
+    return month_key or "", project_code or ""
+
+
+@st.cache_data(ttl=900)
+def load_constraint_filter_metadata() -> Dict[str, Any]:
+    """Longer-TTL metadata for filter option lists (light columns, all rows)."""
     try:
-        rows = fetch_all_constraints(supabase, VIEW_DASHBOARD_V2)
-        return enrich_dataframe(pd.DataFrame(rows))
+        return fetch_constraint_filter_metadata(supabase, VIEW_DASHBOARD_V2)
     except Exception:  # noqa: BLE001
         try:
-            rows = fetch_all_constraints(supabase, TABLE_CONSTRAINTS)
-            return enrich_dataframe(pd.DataFrame(rows))
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"Не удалось загрузить ограничения: {exc}")
-            return pd.DataFrame()
+            return fetch_constraint_filter_metadata(supabase, TABLE_CONSTRAINTS)
+        except Exception:  # noqa: BLE001
+            return {
+                "months": [],
+                "projects": [],
+                "departments": [],
+                "check_statuses": [],
+                "disciplines": [],
+                "facilities": [],
+            }
+
+
+@st.cache_data(ttl=300)
+def _load_constraints_cached(
+    month_key: str = "",
+    project_code: str = "",
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """Scoped constraints load keyed by working month/project (empty = unscoped)."""
+    mk = month_key or None
+    pk = project_code or None
+    try:
+        rows, stats = fetch_constraints_scoped(
+            supabase,
+            VIEW_DASHBOARD_V2,
+            columns=REQUIRED_COLUMNS,
+            month_key=mk,
+            project_code=pk,
+        )
+        return enrich_dataframe(pd.DataFrame(rows)), {**stats, "source": VIEW_DASHBOARD_V2}
+    except Exception:  # noqa: BLE001
+        rows, stats = fetch_constraints_scoped(
+            supabase,
+            TABLE_CONSTRAINTS,
+            columns=REQUIRED_COLUMNS,
+            month_key=mk,
+            project_code=pk,
+        )
+        return enrich_dataframe(pd.DataFrame(rows)), {**stats, "source": TABLE_CONSTRAINTS}
+
+
+def load_constraints(month_key: str = "", project_code: str = "") -> pd.DataFrame:
+    try:
+        df, stats = _load_constraints_cached(month_key, project_code)
+        st.session_state[ADMISSION_LAST_QUERY_STATS_KEY] = stats
+        return df
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"Не удалось загрузить ограничения: {exc}")
+        return pd.DataFrame()
+
+
+load_constraints.clear = _load_constraints_cached.clear  # type: ignore[attr-defined]
 
 
 def _constraints_rows_signature(df: pd.DataFrame) -> tuple[tuple[str, ...], ...]:
@@ -3345,17 +3517,84 @@ def _constraints_rows_signature(df: pd.DataFrame) -> tuple[tuple[str, ...], ...]
     ]
     if not sig_cols:
         return ()
-    rows: list[tuple[str, ...]] = []
-    for _, row in df.iterrows():
-        rows.append(tuple(safe_str(row.get(col)) for col in sig_cols))
+    subset = df.loc[:, sig_cols].astype(str)
+    rows = [tuple(row) for row in subset.itertuples(index=False, name=None)]
     return tuple(sorted(rows))
 
 
-def clear_admission_constraint_caches() -> None:
-    """Точечная инвалидация read-only кэшей после сохранения решения."""
-    load_constraints.clear()
+def invalidate_admission_display_caches() -> None:
+    """Drop derived UI caches only — keep @st.cache_data load_constraints intact."""
     st.session_state.pop("_da_workbench_cache", None)
     st.session_state.pop("_decision_registry_display_cache", None)
+    st.session_state.pop(ADMISSION_PACKAGES_CACHE_KEY, None)
+
+
+def clear_admission_constraint_caches() -> None:
+    """Hard reload of constraints from Supabase (rare). Prefer local row patches."""
+    _load_constraints_cached.clear()
+    load_constraint_filter_metadata.clear()
+    invalidate_admission_display_caches()
+
+
+def register_local_constraint_row_patch(
+    constraint_id: str,
+    fields: Dict[str, Any],
+) -> None:
+    """Overlay DB fields for one constraint until next successful full fetch matches."""
+    cid = safe_str(constraint_id)
+    if not cid or not fields:
+        return
+    patches = dict(st.session_state.get(DIRECT_ADMIT_ROW_PATCHES_KEY) or {})
+    merged = dict(patches.get(cid) or {})
+    merged.update(fields)
+    patches[cid] = merged
+    st.session_state[DIRECT_ADMIT_ROW_PATCHES_KEY] = patches
+    if "check_status" in fields:
+        status_patches = dict(st.session_state.get(DIRECT_ADMIT_STATUS_PATCHES_KEY) or {})
+        status_patches[cid] = norm_check_status_key(fields["check_status"])
+        st.session_state[DIRECT_ADMIT_STATUS_PATCHES_KEY] = status_patches
+    invalidate_admission_display_caches()
+
+
+def apply_local_constraint_row_patches(df: pd.DataFrame) -> pd.DataFrame:
+    """Apply session row overlays onto a constraints dataframe (no network)."""
+    patches = st.session_state.get(DIRECT_ADMIT_ROW_PATCHES_KEY) or {}
+    if df.empty or not patches or "constraint_id" not in df.columns:
+        return df
+    out = df.copy()
+    remaining: Dict[str, Dict[str, Any]] = {}
+    for cid, fields in patches.items():
+        cid_s = safe_str(cid)
+        mask = out["constraint_id"].astype(str) == cid_s
+        if not mask.any():
+            remaining[cid_s] = fields
+            continue
+        if "check_status" in fields:
+            db_status = norm_check_status_key(out.loc[mask, "check_status"].iloc[0])
+            target_status = norm_check_status_key(fields["check_status"])
+            if db_status == target_status:
+                # Full fetch already reflects decision — drop overlay.
+                continue
+        for col, value in fields.items():
+            if col in out.columns:
+                out.loc[mask, col] = value
+        if "check_status" in fields and "check_status_ui" in out.columns:
+            status_key = norm_check_status_key(fields["check_status"])
+            out.loc[mask, "check_status_ui"] = CHECK_STATUS_RU.get(status_key, status_key)
+        remaining[cid_s] = fields
+    st.session_state[DIRECT_ADMIT_ROW_PATCHES_KEY] = remaining
+    return out
+
+
+def get_cached_package_dataframe(constraints_df: pd.DataFrame) -> pd.DataFrame:
+    """Recompute packages only when constraint signature changes."""
+    cache_key = _constraints_rows_signature(constraints_df)
+    cached = st.session_state.get(ADMISSION_PACKAGES_CACHE_KEY)
+    if isinstance(cached, dict) and cached.get("key") == cache_key:
+        return cached["df"].copy()
+    built = build_package_dataframe(constraints_df)
+    st.session_state[ADMISSION_PACKAGES_CACHE_KEY] = {"key": cache_key, "df": built}
+    return built.copy()
 
 
 def get_cached_workbench_dataframe(
@@ -3955,7 +4194,10 @@ def apply_check_quick_action(
     else:
         return "Неизвестное действие."
 
-    return update_constraint_record(constraint_id, payload)
+    err = update_constraint_record(constraint_id, payload)
+    if err is None:
+        register_local_constraint_row_patch(constraint_id, payload)
+    return err
 
 
 def direct_admit_queue_status(status_key: str) -> tuple[str, str, str]:
@@ -4544,7 +4786,6 @@ def _render_direct_admit_block_c(
                         if err:
                             st.warning(err)
                         else:
-                            clear_admission_constraint_caches()
                             st.success("Ограничение сохранено в реестр проверки.")
                             st.rerun()
             with ctrl_col:
@@ -5580,9 +5821,9 @@ def _render_fixation_decision_section(
                 if err:
                     st.error(err)
                 else:
-                    clear_admission_constraint_caches()
                     st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
                     _da_clear_decision_session()
+                    st.session_state.pop(DIRECT_ADMIT_QUEUE_TABLE_KEY, None)
                     st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = advance_direct_admit_selection(
                         workbench_df,
                         cid,
@@ -5720,9 +5961,9 @@ def _render_fixation_decision_section(
                 if err:
                     st.warning(err)
                 else:
-                    clear_admission_constraint_caches()
                     st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
                     _da_clear_decision_session()
+                    st.session_state.pop(DIRECT_ADMIT_QUEUE_TABLE_KEY, None)
                     st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = advance_direct_admit_selection(
                         workbench_df,
                         cid,
@@ -5759,9 +6000,9 @@ def _render_fixation_decision_section(
             if err:
                 st.warning(err)
             else:
-                clear_admission_constraint_caches()
                 st.session_state.pop(DIRECT_ADMIT_PENDING_ACTION_KEY, None)
                 _da_clear_decision_session()
+                st.session_state.pop(DIRECT_ADMIT_QUEUE_TABLE_KEY, None)
                 st.session_state[DIRECT_ADMIT_SELECTED_CID_KEY] = advance_direct_admit_selection(
                     workbench_df,
                     cid,
@@ -5948,7 +6189,7 @@ def save_direct_admission_decision(
         err = update_constraint_record(constraint_id, payload)
         if err is None:
             _register_direct_admit_status_patch(constraint_id, action)
-            clear_admission_constraint_caches()
+            register_local_constraint_row_patch(constraint_id, payload)
         return err
 
     description = description.strip()
@@ -6020,7 +6261,7 @@ def save_direct_admission_decision(
     err = update_constraint_record(constraint_id, payload)
     if err is None:
         _register_direct_admit_status_patch(constraint_id, action)
-        clear_admission_constraint_caches()
+        register_local_constraint_row_patch(constraint_id, payload)
     return err
 
 
@@ -6108,6 +6349,7 @@ def render_direct_admit_queue_pane(
     workbench_df: pd.DataFrame,
     selected_cid: str,
 ) -> None:
+    t_pane = time.perf_counter()
     progress = compute_direct_admit_progress(workbench_df)
     st.markdown("**1. Очередь допуска**")
     st.caption(
@@ -6116,7 +6358,13 @@ def render_direct_admit_queue_pane(
         f'{progress["clarify"]} уточн'
     )
 
+    t_prep = time.perf_counter()
     sorted_df = sort_workbench_for_queue(workbench_df)
+    _admission_perf_add("UI_queue_preparation", time.perf_counter() - t_prep)
+
+    button_count = 0
+    html_s = 0.0
+    button_s = 0.0
     with st.container(height=DIRECT_ADMIT_PANE_HEIGHT_PX, border=False):
         st.markdown('<div id="da-queue-scroll-host"></div>', unsafe_allow_html=True)
         for pos, (_, row) in enumerate(sorted_df.iterrows()):
@@ -6131,6 +6379,7 @@ def render_direct_admit_queue_pane(
             is_selected = select_id == selected_cid
 
             if is_selected:
+                t_html = time.perf_counter()
                 st.markdown(
                     _da_queue_card_html(
                         ordinal,
@@ -6142,8 +6391,10 @@ def render_direct_admit_queue_pane(
                     ),
                     unsafe_allow_html=True,
                 )
+                html_s += time.perf_counter() - t_html
             else:
                 with st.container(border=False):
+                    t_html = time.perf_counter()
                     st.markdown(
                         _da_queue_card_html(
                             ordinal,
@@ -6156,6 +6407,8 @@ def render_direct_admit_queue_pane(
                         ),
                         unsafe_allow_html=True,
                     )
+                    html_s += time.perf_counter() - t_html
+                    t_btn = time.perf_counter()
                     st.button(
                         "\u200b",
                         key=_da_queue_widget_key(select_id, pos),
@@ -6163,7 +6416,16 @@ def render_direct_admit_queue_pane(
                         args=(select_id,),
                         use_container_width=True,
                     )
+                    button_s += time.perf_counter() - t_btn
+                    button_count += 1
 
+    if admission_perf_timing_enabled():
+        bucket = _admission_perf_bucket()
+        bucket["UI_queue_html_generation"] = html_s
+        bucket["UI_queue_button_create"] = button_s
+        bucket["UI_queue_buttons"] = button_count
+        bucket["UI_queue_rows"] = int(len(sorted_df))
+        bucket["UI_queue_pane_total"] = time.perf_counter() - t_pane
 
 def render_direct_admit_center_pane(
     row: pd.Series | None,
@@ -6366,7 +6628,9 @@ def render_direct_admission_by_department_module(
                         '<span class="da-direct-admit-pane-marker" aria-hidden="true"></span>',
                         unsafe_allow_html=True,
                     )
+                    t_center = time.perf_counter()
                     render_direct_admit_center_pane(selected_row, department_label)
+                    _admission_perf_add("UI_center_pane", time.perf_counter() - t_center)
 
             with pane_right:
                 with st.container(border=True):
@@ -6374,9 +6638,12 @@ def render_direct_admission_by_department_module(
                         '<span class="da-direct-admit-pane-marker" aria-hidden="true"></span>',
                         unsafe_allow_html=True,
                     )
+                    t_fix = time.perf_counter()
                     render_direct_admit_governance_pane(
                         selected_row, pending_action, saver_name, workbench_df
                     )
+                    # Governance pane hosts criteria + fixation controls.
+                    _admission_perf_add("UI_criteria_fixation_pane", time.perf_counter() - t_fix)
 
 
 def render_queue_detail_summary(row: pd.Series) -> None:
@@ -6491,14 +6758,12 @@ def render_workbench_queue_row(
             if err:
                 st.error(err)
             else:
-                clear_admission_constraint_caches()
                 st.rerun()
         if ar2.button("Заблокировать", key=f"{prefix}_hold", use_container_width=True):
             err = apply_check_quick_action(row, "hold", saver_name, action_comment)
             if err:
                 st.warning(err)
             else:
-                clear_admission_constraint_caches()
                 st.rerun()
         ar3, ar4 = st.columns(2)
         if ar3.button("Уточнить", key=f"{prefix}_warn", use_container_width=True):
@@ -6506,7 +6771,6 @@ def render_workbench_queue_row(
             if err:
                 st.warning(err)
             else:
-                clear_admission_constraint_caches()
                 st.rerun()
         detail_open = st.session_state.get(WORKBENCH_DETAIL_CID_KEY) == constraint_id
         detail_label = "Скрыть" if detail_open else "Подробнее"
@@ -7145,7 +7409,7 @@ def render_edit_card(row: pd.Series) -> None:
             st.error(err)
         else:
             st.success("Ограничение обновлено")
-            clear_admission_constraint_caches()
+            register_local_constraint_row_patch(constraint_id, payload)
             st.rerun()
 
 
@@ -7331,6 +7595,11 @@ def render_admission_secondary_panels(
 
 
 def main() -> None:
+    t0 = time.perf_counter()
+    timings: Dict[str, Any] = {"T0_page_start": 0.0}
+    if admission_perf_timing_enabled():
+        # Fresh bucket each rerun; pane functions append UI_* marks into it.
+        st.session_state[ADMISSION_PERF_TIMINGS_KEY] = timings
     start_page("21 Admission")
     inject_admission_page_styles()
 
@@ -7340,8 +7609,44 @@ def main() -> None:
         "Каждый отдел допускает строки в своей зоне ответственности перед передачей в War Room."
     )
 
+    # Restore persisted filters BEFORE scoped load (session keys drive server WHERE).
+    apply_admission_filter_memory_before_widgets()
+    month_scope, project_scope = resolve_constraint_load_scope()
+    timings["scope_month"] = month_scope or "ALL"
+    timings["scope_project"] = project_scope or "ALL"
+
+    t_meta = time.perf_counter()
+    # Filter-option completeness WITHOUT a second full-table scan.
+    # Month/dept/status enums are known a priori; other facets come from scoped packages.
+    # Long-TTL metadata loader remains available for warm session enrichment.
+    filter_meta: Dict[str, Any] = {
+        "months": list(PLANNING_MONTH_OPTIONS),
+        "projects": [],
+        "departments": list(DEPARTMENT_RU.keys()),
+        "check_statuses": list(CHECK_STATUS_RU.keys()),
+        "disciplines": [],
+        "facilities": [],
+    }
+    cached_meta = st.session_state.get(ADMISSION_FILTER_META_CACHE_KEY)
+    if isinstance(cached_meta, dict):
+        for key in ("months", "projects", "departments", "check_statuses", "disciplines", "facilities"):
+            extra = cached_meta.get(key) or []
+            if not extra:
+                continue
+            base = list(filter_meta.get(key) or [])
+            filter_meta[key] = list(dict.fromkeys([*base, *extra]))
+    timings["A_filter_metadata"] = time.perf_counter() - t_meta
+
+    t_load = time.perf_counter()
     with stage("load constraints"):
-        base_df = load_constraints()
+        base_df = load_constraints(month_scope, project_scope)
+    query_stats = dict(st.session_state.get(ADMISSION_LAST_QUERY_STATS_KEY) or {})
+    timings["A_load_constraints"] = time.perf_counter() - t_load
+    timings["B_supabase_network"] = float(query_stats.get("network_s") or 0.0)
+    timings["B_supabase_decode"] = float(query_stats.get("decode_s") or 0.0)
+    timings["C_rows_returned"] = int(query_stats.get("rows") or len(base_df))
+    timings["D_pages_returned"] = int(query_stats.get("pages") or 0)
+    timings["columns_selected"] = int(query_stats.get("columns") or 0)
     if base_df.empty:
         st.info(
             "Строк в допуске пока нет. Отправьте план из "
@@ -7350,33 +7655,145 @@ def main() -> None:
         finish_page()
         return
 
+    t_enrich = time.perf_counter()
+    # enrich already applied inside load; marker for path accounting
+    timings["E_enrich_constraints"] = time.perf_counter() - t_enrich
+
+    base_df = apply_local_constraint_row_patches(base_df)
+
+    # Seed session filter metadata from whatever we already paid to load
+    # (unscoped cold open → later scoped opens keep complete option lists).
+    if not (month_scope or project_scope) and not base_df.empty:
+        seeded = {
+            "months": sorted(
+                {
+                    str(v).strip()
+                    for v in base_df.get("month_key", pd.Series(dtype=str)).dropna().tolist()
+                    if str(v).strip()
+                }
+            ),
+            "projects": sorted(
+                {
+                    str(v).strip()
+                    for v in base_df.get("project_code", pd.Series(dtype=str)).dropna().tolist()
+                    if str(v).strip()
+                }
+            ),
+            "departments": sorted(
+                {
+                    str(v).strip()
+                    for v in base_df.get(
+                        "responsible_department", pd.Series(dtype=str)
+                    ).dropna().tolist()
+                    if str(v).strip()
+                }
+            ),
+            "check_statuses": sorted(
+                {
+                    norm_check_status_key(v)
+                    for v in base_df.get("check_status", pd.Series(dtype=str)).dropna().tolist()
+                    if str(v).strip()
+                }
+            ),
+            "disciplines": sorted(
+                {
+                    str(v).strip()
+                    for v in base_df.get(
+                        "construction_discipline", pd.Series(dtype=str)
+                    ).dropna().tolist()
+                    if str(v).strip()
+                }
+            ),
+            "facilities": sorted(
+                {
+                    str(v).strip()
+                    for v in base_df.get(
+                        "facility_building", pd.Series(dtype=str)
+                    ).dropna().tolist()
+                    if str(v).strip()
+                }
+            ),
+        }
+        st.session_state[ADMISSION_FILTER_META_CACHE_KEY] = seeded
+
+    t_pkg = time.perf_counter()
     with stage("build package dataframe"):
-        packages_base = build_package_dataframe(base_df)
+        packages_base = get_cached_package_dataframe(base_df)
+    timings["F_build_package_dataframe"] = time.perf_counter() - t_pkg
     line_ids = tuple(
         safe_str(line_id)
         for line_id in packages_base.get("line_id", pd.Series(dtype=str)).tolist()
         if safe_str(line_id)
     )
+    t_v2 = time.perf_counter()
     with stage("load v2 plan lines for packages"):
         v2_lines_df = load_v2_plan_lines_for_constraints(line_ids)
+    timings["G_load_v2_plan_lines"] = time.perf_counter() - t_v2
+    t_v2e = time.perf_counter()
     with stage("enrich packages with v2"):
         packages_enriched = enrich_packages_with_v2_lines(packages_base, v2_lines_df)
+    timings["H_enrich_packages_with_v2_lines"] = time.perf_counter() - t_v2e
 
-    check_status_opts = filter_options_ru(base_df, "check_status", CHECK_STATUS_RU)
+    meta_check = filter_meta.get("check_statuses") or []
+    if meta_check:
+        check_status_opts = ["Все"] + sorted(
+            {
+                *(
+                    norm_check_status_key(v)
+                    for v in base_df["check_status"].dropna().astype(str).tolist()
+                    if "check_status" in base_df.columns
+                ),
+                *(norm_check_status_key(v) for v in meta_check),
+            }
+        )
+        # Prefer RU ordering via CHECK_STATUS_RU keys present
+        known = [k for k in CHECK_STATUS_RU if k in check_status_opts]
+        rest = [k for k in check_status_opts if k not in known and k != "Все"]
+        check_status_opts = ["Все"] + known + sorted(rest)
+    else:
+        check_status_opts = filter_options_ru(base_df, "check_status", CHECK_STATUS_RU)
 
+    t_filters = time.perf_counter()
     st.markdown("### Фильтры")
     with st.container():
         st.markdown('<div class="admission-v2-filters">', unsafe_allow_html=True)
         r1c1, r1c2, r1c3, r1c4, r1c5, r1c6 = st.columns(6)
         r2c1, r2c2, r2c3, r2c4, r2c5, r2c6 = st.columns([1.2, 1.2, 1.2, 1.0, 0.9, 0.8])
 
-        month_opts = month_filter_options(packages_enriched)
-        project_opts = package_filter_options(packages_enriched, "project_code")
-        queue_opts = package_filter_options(packages_enriched, "queue_display")
-        title_opts = package_filter_options(packages_enriched, "title_display")
-        discipline_opts = package_filter_options(packages_enriched, "discipline_display")
-        department_opts = filter_options(base_df, "responsible_department")
+        meta_queues = sorted(
+            {
+                derive_construction_queue_from_facility(fac)
+                for fac in (filter_meta.get("facilities") or [])
+                if fac
+            }
+        )
+        month_opts = month_filter_options(packages_enriched, filter_meta.get("months"))
+        project_opts = package_filter_options(
+            packages_enriched, "project_code", filter_meta.get("projects")
+        )
+        queue_opts = package_filter_options(packages_enriched, "queue_display", meta_queues)
+        title_opts = package_filter_options(
+            packages_enriched, "title_display", filter_meta.get("facilities")
+        )
+        discipline_opts = package_filter_options(
+            packages_enriched, "discipline_display", filter_meta.get("disciplines")
+        )
+        if filter_meta.get("departments"):
+            dept_vals = sorted(
+                {
+                    *filter_meta["departments"],
+                    *(
+                        base_df["responsible_department"].dropna().astype(str).str.strip().tolist()
+                        if "responsible_department" in base_df.columns
+                        else []
+                    ),
+                }
+            )
+            department_opts = ["Все"] + [d for d in dept_vals if d]
+        else:
+            department_opts = filter_options(base_df, "responsible_department")
 
+        # Memory already applied pre-load; keep call for reset/lock request handling.
         apply_admission_filter_memory_before_widgets()
 
         init_filter_defaults(month_opts, FILTER_SESSION_KEYS["month"])
@@ -7463,16 +7880,103 @@ def main() -> None:
         check_status_sel,
         overdue_only,
     )
+    timings["I_filters"] = time.perf_counter() - t_filters
 
+    t_queue = time.perf_counter()
+    # Queue entries prepared inside render; mark prep boundary for instrumentation.
+    timings["J_queue_preparation"] = time.perf_counter() - t_queue
+
+    # Scenario markers (console classification only).
+    markers = dict(st.session_state.get(ADMISSION_PERF_SCENARIO_KEY) or {})
+    prev_cid = safe_str(markers.get("selected_cid"))
+    prev_filters = markers.get("filters")
+    curr_filters = (
+        safe_str(month_sel),
+        safe_str(project_sel),
+        safe_str(queue_sel),
+        safe_str(title_sel),
+        safe_str(discipline_sel),
+        safe_str(check_status_sel),
+        safe_str(department_sel),
+        bool(overdue_only),
+        safe_str(search_boq),
+        safe_str(search_iwp),
+        safe_str(search_system),
+    )
+    curr_cid = safe_str(st.session_state.get(DIRECT_ADMIT_SELECTED_CID_KEY))
+    run_n = int(markers.get("run_n") or 0) + 1
+    if run_n <= 1:
+        scenario = "COLD"
+    elif curr_filters != prev_filters:
+        scenario = "CRITERIA"
+    elif curr_cid and prev_cid and curr_cid != prev_cid:
+        scenario = "BOQ_SWITCH"
+    elif markers.get("save_flag"):
+        scenario = "SAVE"
+    else:
+        scenario = "WARM"
+    timings["scenario"] = scenario
+    timings["run_n"] = run_n
+
+    # Preserve any UI sub-timings already written during pane render into same dict.
+    prior_ui = dict(st.session_state.get(ADMISSION_PERF_TIMINGS_KEY) or {})
+    for key, value in prior_ui.items():
+        if key.startswith("UI_") or key.startswith("G_v2_"):
+            timings[key] = value
+
+    t_render = time.perf_counter()
     with stage("render admission modules"):
+        t_list = time.perf_counter()
         render_admission_plan_list_module(packages_df, scope_df)
+        timings["UI_plan_list_module"] = time.perf_counter() - t_list
+
+        t_da = time.perf_counter()
         render_direct_admission_by_department_module(queue_df, packages_df, department_sel)
+        timings["UI_direct_admit_module"] = time.perf_counter() - t_da
 
-        # Legacy-блок деталей и ручного редактирования проверки временно скрыт из UI.
-        # Основной контур допуска — «Непосредственный допуск по отделам».
-        # render_admission_secondary_panels(packages_df, scope_df, queue_df, department_sel)
-
+        t_reg = time.perf_counter()
         render_decision_registry_module(queue_df, v2_lines_df)
+        timings["UI_registry"] = time.perf_counter() - t_reg
+
+    # Merge UI marks written inside pane functions during this render.
+    after_ui = dict(st.session_state.get(ADMISSION_PERF_TIMINGS_KEY) or {})
+    for key, value in after_ui.items():
+        if key.startswith("UI_") or key.startswith("G_v2_"):
+            timings[key] = value
+
+    timings["K_queue_rendering"] = time.perf_counter() - t_render
+    timings["L_total_server_side_page_path"] = time.perf_counter() - t0
+    data_keys = (
+        "A_load_constraints",
+        "F_build_package_dataframe",
+        "G_load_v2_plan_lines",
+        "H_enrich_packages_with_v2_lines",
+    )
+    timings["DATA_path_total"] = sum(float(timings.get(k) or 0.0) for k in data_keys)
+    timings["UI_path_total"] = float(timings.get("K_queue_rendering") or 0.0)
+    # Keep legacy keys for existing PERF_ADMISSION_TIMING consumers.
+    timings["T1_load_constraints"] = timings["A_load_constraints"]
+    timings["T2_package_construction"] = timings["F_build_package_dataframe"]
+    timings["T3_v2_enrichment"] = (
+        float(timings["G_load_v2_plan_lines"]) + float(timings["H_enrich_packages_with_v2_lines"])
+    )
+    timings["T4_filters"] = timings["I_filters"]
+    timings["T5_queue_data_prep_marker"] = timings["J_queue_preparation"]
+    timings["T6_workbench_render"] = timings["K_queue_rendering"]
+    timings["T7_page_complete"] = timings["L_total_server_side_page_path"]
+    st.session_state[ADMISSION_PERF_TIMINGS_KEY] = timings
+    st.session_state[ADMISSION_PERF_SCENARIO_KEY] = {
+        "run_n": run_n,
+        "selected_cid": curr_cid or safe_str(st.session_state.get(DIRECT_ADMIT_SELECTED_CID_KEY)),
+        "filters": curr_filters,
+        "save_flag": False,
+    }
+    if admission_perf_timing_enabled():
+        # Console-only; no user-visible timing UI.
+        printable = {
+            k: (round(v, 3) if isinstance(v, float) else v) for k, v in timings.items()
+        }
+        print(f"[ADMISSION_PERF][{scenario}]", printable, flush=True)
 
     finish_page()
 

@@ -41,6 +41,7 @@ from agents.observability.contracts import (
     EventType,
     ObservabilityEvent,
     OperationalStatus,
+    TERMINAL_OPERATIONAL_STATUSES,
 )
 
 _STAGE_TERMINAL = frozenset({EventType.STAGE_COMPLETED, EventType.STAGE_FAILED})
@@ -136,7 +137,15 @@ def build_event_timeline(events: tuple[ObservabilityEvent, ...]) -> tuple[AgentE
     return tuple(observability_event_to_view(event) for event in events)
 
 
-def _stage_occurrence_key(event: ObservabilityEvent) -> Optional[tuple[str, str, int, int, str]]:
+def _stage_occurrence_key(event: ObservabilityEvent) -> Optional[tuple[str, str, int, int]]:
+    """
+    Correlate STAGE_STARTED with STAGE_COMPLETED/FAILED.
+
+    artifact_id is intentionally excluded: start often has no artifact yet while
+    the terminal stage event may carry the produced artifact id. Matching on
+    artifact_id falsely leaves the start occurrence RUNNING and marks INCONSISTENT.
+    Chronology authority is the ordered event stream (append_sequence ASC from store).
+    """
     if event.stage_id is None or event.node_name is None:
         return None
     return (
@@ -144,7 +153,24 @@ def _stage_occurrence_key(event: ObservabilityEvent) -> Optional[tuple[str, str,
         event.node_name,
         event.attempt_n,
         event.resume_n,
-        event.artifact_id or "",
+    )
+
+
+def _operational_status_is_terminal(
+    operational_status: Optional[OperationalStatus],
+    events: tuple[ObservabilityEvent, ...],
+) -> bool:
+    if operational_status is not None:
+        return operational_status in TERMINAL_OPERATIONAL_STATUSES
+    return any(
+        event.event_type
+        in {
+            EventType.RUN_COMPLETED,
+            EventType.RUN_FAILED,
+            EventType.RUN_ABORTED,
+            EventType.RUN_DENIED,
+        }
+        for event in events
     )
 
 
@@ -180,9 +206,10 @@ def derive_stage_view(
     events: tuple[ObservabilityEvent, ...],
     *,
     events_complete: bool,
+    operational_status: Optional[OperationalStatus] = None,
 ) -> AgentStageView:
     derivation_state = DerivationState.OK
-    open_by_key: dict[tuple[str, str, int, int, str], _StageOccurrenceBuilder] = {}
+    open_by_key: dict[tuple[str, str, int, int], _StageOccurrenceBuilder] = {}
     ordered_occurrences: list[_StageOccurrenceBuilder] = []
 
     for event in events:
@@ -205,7 +232,7 @@ def derive_stage_view(
                 node_name=key[1],
                 attempt_n=key[2],
                 resume_n=key[3],
-                artifact_id=key[4],
+                artifact_id=event.artifact_id or "",
                 started_at=event.occurred_at,
                 started_event_id=event.event_id,
             )
@@ -230,13 +257,17 @@ def derive_stage_view(
             builder.display_state = StageDisplayState.FAILED
         builder.completed_at = event.occurred_at
         builder.terminal_event_id = event.event_id
+        if event.artifact_id:
+            builder.artifact_id = event.artifact_id
         del open_by_key[key]
 
     if not events_complete:
         derivation_state = _merge_derivation_state(derivation_state, DerivationState.INCOMPLETE)
 
     current_stage = None
-    if events_complete:
+    run_terminal = _operational_status_is_terminal(operational_status, events)
+    # Terminal AgentRun must not present an active RUNNING current stage.
+    if events_complete and not run_terminal:
         for builder in reversed(ordered_occurrences):
             if builder.display_state is StageDisplayState.RUNNING:
                 current_stage = builder.to_view()
@@ -973,7 +1004,7 @@ def derive_professional_execution_path(
     stage_tools = _collect_stage_tools(events)
     stage_artifacts = _collect_stage_artifacts(events)
 
-    stage_open: dict[tuple[str, str, int, int, str], AgentStageOccurrenceView] = {}
+    stage_open: dict[tuple[str, str, int, int], AgentStageOccurrenceView] = {}
     steps: list[ProfessionalExecutionStepView] = []
     refresh_open: dict[tuple[int, str], RealityRefreshStepView] = {}
     handoff_open: dict[str, int] = {}
@@ -993,7 +1024,7 @@ def derive_professional_execution_path(
                 node_name=key[1],
                 attempt_n=key[2],
                 resume_n=key[3],
-                artifact_id=key[4],
+                artifact_id=event.artifact_id or "",
                 display_state=StageDisplayState.RUNNING,
                 started_at=event.occurred_at,
                 completed_at=None,
@@ -1042,7 +1073,7 @@ def derive_professional_execution_path(
                 node_name=occurrence.node_name,
                 attempt_n=occurrence.attempt_n,
                 resume_n=occurrence.resume_n,
-                artifact_id=occurrence.artifact_id,
+                artifact_id=event.artifact_id or occurrence.artifact_id,
                 display_state=display_state,
                 started_at=occurrence.started_at,
                 completed_at=event.occurred_at,

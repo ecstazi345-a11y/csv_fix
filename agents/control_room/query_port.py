@@ -132,7 +132,11 @@ class AgentControlRoomQueryPort:
         handoff = derive_handoff_view(run, events, events_complete=events_complete)
         return AgentRunSnapshot(
             run=detail,
-            stage=derive_stage_view(events, events_complete=events_complete),
+            stage=derive_stage_view(
+                events,
+                events_complete=events_complete,
+                operational_status=run.operational_status,
+            ),
             human_wait=human_wait,
             human_decision_surface=derive_human_decision_surface(
                 run,

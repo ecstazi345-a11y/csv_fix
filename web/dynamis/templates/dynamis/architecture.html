@@ -1,0 +1,377 @@
+{% extends "dynamis/base.html" %}
+{% block title %}Архитектура исполнения — DYNAMIS{% endblock %}
+{% block content_class %}content-wide{% endblock %}
+{% block content %}
+  <header class="arch-hero">
+    <div class="brand-name">DYNAMIS</div>
+    <h1 class="page-title">AI-native оркестрация физического исполнения инженерно-критической инфраструктуры</h1>
+    <p class="page-lead">
+      Единая операционная среда людей, цифровых сотрудников и физических исполнителей
+    </p>
+  </header>
+
+  <section class="card arch-section">
+    <h2>Основной принцип</h2>
+    <p class="arch-principle">Управление жизненным циклом физической системы</p>
+    <p>
+      DYNAMIS управляет не страницами, таблицами и отделами.
+      Главный объект управления — <strong>физическая система</strong>.
+    </p>
+    <p class="arch-callout">Операционный граф физического исполнения</p>
+  </section>
+
+  <section class="card arch-section">
+    <h2>Пример системы: П1</h2>
+    <p>П1 — система приточной вентиляции. Ниже — жизненный цикл и физическая декомпозиция.</p>
+  </section>
+
+  <section class="card arch-section">
+    <h2>Жизненный цикл П1</h2>
+    <div class="flow-wrap">
+      <span class="flow-chip">Замысел / контракт</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Инженерный контекст</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">РД / спецификации / смета</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Анализ и декомпозиция</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Физические объекты</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Материалы / оборудование</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Закупка</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Поставка</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Входной контроль</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Склад / выдача</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Фронт / допуск</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Рабочий пакет</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Ресурс</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Исполнение</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Контроль качества</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Инспекция</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Исполнительная документация</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Признание объёма</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">КС-2 / КС-3</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Списание МТР / М-29</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Готовность к ПНР</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Передача в ПНР</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">ПНР</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Приёмка</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Закрыто / архив</span>
+    </div>
+  </section>
+
+  <section class="card arch-section">
+    <h2>Физическая декомпозиция П1</h2>
+    <div class="tree-grid">
+      <div class="tree-block">
+        <div class="tree-root">П1</div>
+        <ul class="tree">
+          <li>Вентиляционная установка
+            <ul>
+              <li>корпус</li><li>вентилятор</li><li>фильтр</li>
+              <li>калорифер</li><li>клапаны</li><li>автоматика</li>
+            </ul>
+          </li>
+          <li>Воздуховоды
+            <ul>
+              <li>магистрали</li><li>ответвления</li>
+              <li>фасонные элементы</li><li>гибкие вставки</li>
+            </ul>
+          </li>
+          <li>Изоляция</li>
+          <li>Клапаны</li>
+          <li>Решётки / диффузоры</li>
+          <li>Опоры / крепления</li>
+          <li>Электроснабжение</li>
+          <li>КИПиА
+            <ul>
+              <li>датчики</li><li>приводы</li><li>шкаф автоматики</li>
+            </ul>
+          </li>
+          <li>BMS / верхний уровень</li>
+        </ul>
+      </div>
+      <div class="object-state">
+        <h3>Состояние физического объекта</h3>
+        <p class="object-id">Клапан К1 · идентификатор физического объекта: П1.КЛАПАН.0017</p>
+        <div class="flow-wrap compact">
+          <span class="flow-chip subtle">Требуется</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Специфицирован</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Заказан</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Поставлен</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Входной контроль пройден</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Выдан</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Смонтирован</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Проинспектирован</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Принят</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Передан в ПНР</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Протестирован</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Закрыто</span>
+        </div>
+        <p class="help-note">
+          К одному физическому объекту могут быть привязаны РД, спецификация, BOQ, смета, МТР,
+          заказ, поставка, входной контроль, рабочий пакет, операция, исполнитель,
+          событие исполнения, фото, измерение, тест, акт, КС-2, причинность, ПНР.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="arch-section">
+    <h2 class="section-heading">Связанные операционные графы</h2>
+    <div class="cards graphs">
+      <article class="card graph-card">
+        <h3>Инженерный граф</h3>
+        <div class="flow-wrap compact">
+          <span class="flow-chip subtle">РД</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Анализ</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Физические объекты</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Требования</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Спецификации</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">TEQ/RFI</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Новая ревизия</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Актуальное инженерное решение</span>
+        </div>
+      </article>
+      <article class="card graph-card">
+        <h3>Материальный граф</h3>
+        <div class="flow-wrap compact">
+          <span class="flow-chip subtle">Потребность</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Заявка</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Согласование</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Заказ</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Производство</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Отгрузка</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Доставка</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Входной контроль</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Склад</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Резервирование</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Выдача</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Монтаж</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Списание</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">М-29</span>
+        </div>
+      </article>
+      <article class="card graph-card">
+        <h3>Граф допуска</h3>
+        <div class="flow-wrap compact">
+          <span class="flow-chip subtle">Физический объект</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">РД готова?</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Фронт готов?</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">МТР есть?</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Доступ есть?</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Предшествующие работы завершены?</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Требования QA/QC выполнены?</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Разрешения есть?</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Ресурс доступен?</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Допущено / заблокировано / требует уточнения</span>
+        </div>
+      </article>
+      <article class="card graph-card">
+        <h3>Граф рабочего пакета</h3>
+        <div class="flow-wrap compact">
+          <span class="flow-chip subtle">Система</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Зона</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">IWP</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Рабочий пакет</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Операция</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Звено</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">План начала</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">План окончания</span>
+        </div>
+      </article>
+      <article class="card graph-card">
+        <h3>Граф физического исполнения</h3>
+        <div class="flow-wrap compact">
+          <span class="flow-chip subtle">Требуемая работа</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Операция</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Исполнитель</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Событие исполнения</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Объём</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Труд</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Доказательство</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Новое состояние</span>
+        </div>
+      </article>
+      <article class="card graph-card">
+        <h3>Граф качества</h3>
+        <div class="flow-wrap compact">
+          <span class="flow-chip subtle">Работа выполнена</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Контроль</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Замечание?</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Исправление</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Инспекция</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Приёмка</span>
+        </div>
+      </article>
+      <article class="card graph-card">
+        <h3>Граф исполнительной документации</h3>
+        <div class="flow-wrap compact">
+          <span class="flow-chip subtle">Событие исполнения</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Доказательство</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Исполнительная схема</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Акт</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Протокол</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Комплект</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Предъявление</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Утверждение</span>
+        </div>
+      </article>
+      <article class="card graph-card">
+        <h3>Коммерческий граф</h3>
+        <div class="flow-wrap compact">
+          <span class="flow-chip subtle">Выполненный объём</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Принятый объём</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Признанный объём</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">КС-2</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">КС-3</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Счёт</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Оплата</span>
+        </div>
+      </article>
+      <article class="card graph-card">
+        <h3>Граф причинности</h3>
+        <div class="flow-wrap compact">
+          <span class="flow-chip subtle">Событие</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Причина</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Источник причины</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Ответственный контур</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Последствие</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Затронутая работа</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Влияние на срок</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Влияние на труд</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Влияние на стоимость</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Влияние на деньги</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Основание для требования / claim</span>
+        </div>
+      </article>
+      <article class="card graph-card">
+        <h3>Граф ПНР</h3>
+        <div class="flow-wrap compact">
+          <span class="flow-chip subtle">Инженерный контекст</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Требуемая работа</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Операция</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Измерение</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Доказательство</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Результат</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Проверка</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Новое состояние</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Функциональное испытание</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Комплексное испытание</span><span class="flow-arrow">→</span>
+          <span class="flow-chip subtle">Приёмка</span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="card arch-section">
+    <h2>Исполнители</h2>
+    <p>Исполнителем работы может быть:</p>
+    <div class="pill-row">
+      <span class="status-pill">Человек</span>
+      <span class="status-pill">Цифровой сотрудник</span>
+      <span class="status-pill">Робот</span>
+      <span class="status-pill">Дрон</span>
+      <span class="status-pill">Автономная машина</span>
+      <span class="status-pill">Внешняя информационная система</span>
+    </div>
+  </section>
+
+  <section class="card arch-section">
+    <h2>Цифровые сотрудники</h2>
+    <div class="cards">
+      <article class="card nested">
+        <h3>Конструктор месячного плана</h3>
+        <p>Формирует кандидатный состав работ, который потенциально может войти в производственное обязательство месяца.</p>
+      </article>
+      <article class="card nested">
+        <h3>Агент исполнимости</h3>
+        <p>Проверяет допуск и ограничения кандидатов: допуск, ограничения, эскалации, уточнения.</p>
+      </article>
+      <article class="card nested">
+        <h3>Агент производственного обязательства</h3>
+        <p>Сопоставляет доступную производственную мощность, ресурсы, труд, экономику и риски; готовит проект производственного обязательства.</p>
+      </article>
+    </div>
+    <p class="help-note" style="margin-top:16px">
+      После них: решение человека → утверждённое обязательство → паспорт месяца.
+    </p>
+  </section>
+
+  <section class="card arch-section">
+    <h2>Месячное планирование как временной срез</h2>
+    <p class="arch-callout soft">
+      Месячное планирование отвечает на вопрос:
+      какую часть жизненного графа физической системы
+      организация готова взять в производственное обязательство
+      на конкретный период.
+    </p>
+    <p>Месячное планирование — не вся DYNAMIS. Это временной срез общего жизненного графа системы.</p>
+    <div class="flow-wrap compact">
+      <span class="flow-chip">Паспорт месяца</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Рабочий пакет</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Полевое исполнение</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Событие</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Доказательство</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Проверка</span><span class="flow-arrow">→</span>
+      <span class="flow-chip">Новое состояние</span>
+    </div>
+  </section>
+
+  <section class="card arch-section">
+    <h2>Передача в ПНР</h2>
+    <p>
+      Система должна переходить в ПНР не по ручной команде «передать»,
+      а по доказанному состоянию готовности.
+    </p>
+    <div class="pnr-grid">
+      <span class="pnr-item">Механическая готовность</span>
+      <span class="pnr-plus">+</span>
+      <span class="pnr-item">Электрическая готовность</span>
+      <span class="pnr-plus">+</span>
+      <span class="pnr-item">Готовность автоматики</span>
+      <span class="pnr-plus">+</span>
+      <span class="pnr-item">Качество принято</span>
+      <span class="pnr-plus">+</span>
+      <span class="pnr-item">Документация готова</span>
+      <span class="pnr-plus">+</span>
+      <span class="pnr-item">Нет блокирующих ограничений</span>
+      <span class="pnr-plus">→</span>
+      <span class="pnr-result">Готово к ПНР</span>
+    </div>
+  </section>
+
+  <section class="card arch-section">
+    <h2>Межсистемные зависимости</h2>
+    <p>Системы не изолированы. Блокировка одной системы может находиться в другом графе.</p>
+    <div class="dependency-example">
+      <div class="dep-line">П1 не может быть завершена → нет питания шкафа автоматики</div>
+      <div class="dep-line">Шкаф автоматики не готов → не проложен кабель</div>
+      <div class="dep-line">Кабель не проложен → не готова трасса</div>
+    </div>
+    <div class="pill-row" style="margin-top:16px">
+      <span class="status-pill">П1</span>
+      <span class="status-pill">П2</span>
+      <span class="status-pill">В1</span>
+      <span class="status-pill">ХС1</span>
+      <span class="status-pill">ЭОМ</span>
+      <span class="status-pill">АОВ</span>
+    </div>
+    <p class="help-note">
+      Связаны через зависимости, ограничения, предшествующие работы,
+      общие ресурсы, общую инфраструктуру и общие точки приёмки.
+    </p>
+  </section>
+
+  <section class="card arch-section formula">
+    <h2>Итоговая архитектурная формула</h2>
+    <div class="flow-wrap formula-flow">
+      <span class="flow-chip strong">Состояние</span><span class="flow-arrow">→</span>
+      <span class="flow-chip strong">Допуск</span><span class="flow-arrow">→</span>
+      <span class="flow-chip strong">Работа</span><span class="flow-arrow">→</span>
+      <span class="flow-chip strong">Исполнитель</span><span class="flow-arrow">→</span>
+      <span class="flow-chip strong">Операция</span><span class="flow-arrow">→</span>
+      <span class="flow-chip strong">Событие</span><span class="flow-arrow">→</span>
+      <span class="flow-chip strong">Доказательство</span><span class="flow-arrow">→</span>
+      <span class="flow-chip strong">Проверка</span><span class="flow-arrow">→</span>
+      <span class="flow-chip strong">Новое состояние</span><span class="flow-arrow">→</span>
+      <span class="flow-chip strong">Следующая работа</span>
+    </div>
+  </section>
+{% endblock %}

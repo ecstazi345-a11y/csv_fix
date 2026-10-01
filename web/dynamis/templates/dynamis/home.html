@@ -1,0 +1,34 @@
+{% extends "dynamis/base.html" %}
+{% block title %}DYNAMIS — Главная{% endblock %}
+{% block content %}
+  <h1 class="page-title">DYNAMIS</h1>
+  <p class="page-lead">
+    AI-native оркестрация физического исполнения инженерно-критической инфраструктуры
+  </p>
+  <p class="page-lead">
+    Единая операционная среда людей, цифровых сотрудников и физических исполнителей
+  </p>
+
+  <div class="cards">
+    <section class="card">
+      <h2>Архитектура исполнения</h2>
+      <p>Жизненный цикл физической системы и операционные графы.</p>
+      <p style="margin-top:14px"><a href="{% url 'architecture' %}">Открыть архитектуру →</a></p>
+    </section>
+    <section class="card">
+      <h2>Месячное планирование</h2>
+      <p>Временной срез жизненного графа. Интерфейс развивается.</p>
+      <span class="status-pill">развивается</span>
+    </section>
+    <section class="card">
+      <h2>Цифровые сотрудники</h2>
+      <p>Конструктор / агент исполнимости / агент производственного обязательства.</p>
+      <span class="status-pill">вне этой поверхности</span>
+    </section>
+    <section class="card">
+      <h2>Решения человека</h2>
+      <p>Человеческие решения, которые фиксируются как устойчивая власть.</p>
+      <p style="margin-top:14px"><a href="{% url 'labor_norm_decision' %}">Решение по трудовой норме →</a></p>
+    </section>
+  </div>
+{% endblock %}

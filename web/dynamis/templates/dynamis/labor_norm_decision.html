@@ -1,0 +1,76 @@
+{% extends "dynamis/base.html" %}
+{% block title %}Решение по трудовой норме — DYNAMIS{% endblock %}
+{% block content %}
+  <h1 class="page-title">Принять временное решение по трудовой норме</h1>
+  <p class="page-lead">
+    Человеческий реестр временных (provisional) норм.
+    Исторические подсказки в этой поверхности не подключены.
+  </p>
+
+  <section class="card">
+    <form method="post" class="form-grid" novalidate>
+      {% csrf_token %}
+      <input type="hidden" name="action" value="save">
+
+      {% for field in form %}
+      <div class="field {% if field.name == 'decision' %}radio{% endif %}">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+        {{ field.errors }}
+      </div>
+      {% endfor %}
+
+      <div class="actions">
+        <button class="btn" type="submit">Сохранить решение</button>
+      </div>
+    </form>
+    <div class="note">{{ operator_note }}</div>
+  </section>
+
+  {% if save_result %}
+  <section class="card result-card" style="margin-top:20px">
+    <h3>Результат сохранения</h3>
+    <dl>
+      <dt>status</dt><dd>{{ save_result.status }}</dd>
+      <dt>decision_id</dt><dd>{{ save_result.decision_id }}</dd>
+      <dt>decision</dt><dd>{{ save_result.decision }}</dd>
+      <dt>approved_norm</dt>
+      <dd>{% if save_result.approved_norm != None %}{{ save_result.approved_norm }}{% else %}—{% endif %}</dd>
+    </dl>
+    <form method="post" class="actions" style="margin-top:16px">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="readback">
+      <input type="hidden" name="project_code" value="{{ form.project_code.value|default_if_none:'' }}">
+      <input type="hidden" name="facility_building" value="{{ form.facility_building.value|default_if_none:'' }}">
+      <input type="hidden" name="construction_discipline" value="{{ form.construction_discipline.value|default_if_none:'' }}">
+      <input type="hidden" name="boq_code" value="{{ form.boq_code.value|default_if_none:'' }}">
+      <input type="hidden" name="unit_of_measure" value="{{ form.unit_of_measure.value|default_if_none:'' }}">
+      <input type="hidden" name="boq_name" value="{{ form.boq_name.value|default_if_none:'' }}">
+      <input type="hidden" name="decision" value="{{ form.decision.value|default_if_none:'' }}">
+      <input type="hidden" name="approved_by" value="{{ form.approved_by.value|default_if_none:'' }}">
+      <input type="hidden" name="comment" value="{{ form.comment.value|default_if_none:'' }}">
+      <button class="btn secondary" type="submit">Проверить сохранённое решение</button>
+    </form>
+  </section>
+  {% endif %}
+
+  {% if active_record %}
+  <section class="card result-card" style="margin-top:20px">
+    <h3>Текущее ACTIVE</h3>
+    <dl>
+      <dt>decision_id</dt><dd>{{ active_record.decision_id }}</dd>
+      <dt>decision</dt><dd>{{ active_record.decision }}</dd>
+      <dt>decision_status</dt><dd>{{ active_record.decision_status }}</dd>
+      <dt>approved_norm</dt>
+      <dd>{% if active_record.approved_norm != None %}{{ active_record.approved_norm }}{% else %}—{% endif %}</dd>
+      <dt>approved_by</dt><dd>{{ active_record.approved_by }}</dd>
+      <dt>approved_at</dt><dd>{{ active_record.approved_at }}</dd>
+    </dl>
+  </section>
+  {% elif readback_error %}
+  <section class="card" style="margin-top:20px">
+    <p class="page-lead">Readback недоступен: {{ readback_error }}</p>
+  </section>
+  {% endif %}
+{% endblock %}

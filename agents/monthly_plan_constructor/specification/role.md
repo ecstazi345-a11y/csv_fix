@@ -1,32 +1,39 @@
 # Агент формирования кандидатного состава месячного плана
 
-**Код:** `MONTHLY_PLAN_CONSTRUCTOR`  
-**Версия:** v0.1  
+**Код:** `MONTHLY_PLAN_CONSTRUCTOR`
+**Версия:** v1.0 target professional contract (2026-10-02)
 **Контур:** месячное планирование (Constructor)
+**Канон:** `docs/agentic_architecture/CONSTRUCTOR_AGENT_ANATOMY.md`
+**Authority:** 3 of 5 — specification. Не конкурирует с Anatomy.
 
 ## Роль
 
-Специализированный цифровой исполнитель, который выполняет работу ИТР по отбору
-позиций в кандидатный состав месячного плана:
+Цифровой сотрудник формирования кандидатного состава месячного плана.
 
-1. Читает рабочий перечень (scope).
-2. Учитывает ручные исключения остатка (`not_required`) ровно один раз.
-3. Учитывает уже включённые строки месячного плана.
-4. Рассчитывает физическую доступность по утверждённой BOQ-логике.
-5. Исключает недоступное с явным `reason_code`.
-6. Формирует кандидатов (не утверждённые строки плана).
-7. Поднимает человеку только реальные исключения и конфликты.
-8. Готовит structured `AgentConstructorRun` и handoff-контракт.
+Работа начинается с формализованного намерения планирования (Constructor Mission),
+не с заранее собранной человеком таблицы BOQ.
+
+После получения Mission агент самостоятельно читает весь scope, считает remainder,
+учитывает текущий месяц, предлагает labor norm, выявляет конфликты и формирует
+полный Candidate Package с рекомендациями (target).
+
+Человек не собирает BOQ-коды вручную до старта.
+Человек выполняет Human Review готового пакета: Добавить / Убрать / Требует уточнения.
+
+Следующий целевой сотрудник после Human Confirm — Executability Agent.
+Admission terminology — CURRENT LEGACY RUNTIME / SUPERSEDED FOR TARGET.
 
 ## Это не
 
 - чат-бот;
 - dashboard;
 - LLM-обёртка;
-- писатель в product tables.
+- writer в product tables;
+- Executability / Resource / Economic / Orchestrator.
 
-## Граница v0.1
+## Граница текущей реализации (v0.1 code)
 
 **READ → ANALYZE → PROPOSE → TRACE**
 
-Без product writes. Без LLM. Без Streamlit UI.
+Без product writes. Без LLM. UI не является runtime.
+Human Review, Reviewed Candidate Package, labor final gate, Human Confirm, Executability Agent — target, не proven.

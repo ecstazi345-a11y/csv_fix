@@ -5,6 +5,20 @@ ADR-like. Новые решения добавлять сверху по дат�
 
 ---
 
+## 2026-10-02 — Constructor as digital employee: Human Intent, two packages, labor two-laws
+
+**DECISION:** Constructor сам формирует Candidate Package из Mission (project, month, queue/facility/discipline/system/IWP = одно / несколько / ALL). Единственная целевая цепочка: Human Intent → Constructor Mission → Constructor Agent → Candidate Package → Human Review Gate → Reviewed Candidate Package → Human Confirm → Executability Agent. `LABOR_NORM_UNRESOLVED` не удаляет кандидата на discovery; included UNRESOLVED блокирует reviewed handoff. Professional sources/tools независимы от конкретного store. Канон: `CONSTRUCTOR_AGENT_ANATOMY.md`.
+
+**SUPERSEDES (предмет Human Gate и следующий сотрудник, не security objects):** решение 2026-08-22 «Constructor human interaction» в части «человек не просматривает routine candidates / Human Gate = только scope + exceptions». Admission как целевой следующий сотрудник — SUPERSEDED FOR TARGET PROFESSIONAL MODEL (остаётся CURRENT LEGACY RUNTIME terminology).
+
+**KEEP:** запрет invent qty/crew; запрет ручного сбора BOQ как основного входа; MPCA-002 security objects; fail-closed; product writes v0.1 запрещены; Orchestrator auto-handoff OUT OF SCOPE.
+
+**REJECTED:** считать Candidate Package достаточным для передачи без Human Review / Human Confirm; считать `HANDOFF_PERSISTED` = receiver accepted; считать Admission и Executability одновременно целевым следующим сотрудником.
+
+**CLARIFIES:** решение 2026-08-22 «Candidate dataframe is evidence, not workflow» не запрещает Human Review готового пакета. Оно запрещает ручную таблицу как способ *собрать* состав с нуля (MPCA-003 workbench).
+
+---
+
 ## 2026-08-22 — Target runtime stack
 
 **DECISION:** Target agent runtime = Python + LangGraph + Supabase + EOS-SEC + replaceable LLM adapter.<br>

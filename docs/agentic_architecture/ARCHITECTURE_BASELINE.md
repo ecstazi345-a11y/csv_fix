@@ -15,7 +15,7 @@ Execution OS строит **агентную оркестрацию физиче
 - получает производственную миссию;
 - читает актуальную реальность;
 - выполняет повторяемую работу;
-- поднимает человеку только исключения и профессиональные решения;
+- поднимает человеку подготовленный результат и решения, где требуется человек (review / confirm / unresolved), а не сырой массив для ручной сборки с нуля;
 - передаёт структурированный результат следующему сотруднику через оркестратор и shared state.
 
 Главный организационный принцип (канон Page52):
@@ -230,12 +230,14 @@ Agent B получает **identifiers** и сам читает current reality 
 Человек **не**:
 
 - не является runtime агента;
-- не просматривает сотни routine строк как основной результат;
+- не собирает заранее таблицу BOQ как вход Constructor;
 - не переносит результаты между агентами вручную;
 - не держит state workflow в памяти.
 
-Human Gate constructor: **scope/task confirmation + exception decisions**, не 175 checkbox.<br>
-Детали: [MONTHLY_PLAN_CONSTRUCTOR_AGENT.md](MONTHLY_PLAN_CONSTRUCTOR_AGENT.md).
+Human Gate constructor (2026-10-02): Human Intent → Human Review готового Candidate Package (Добавить / Убрать / Требует уточнения, массовые решения) → Reviewed Candidate Package → Human Confirm → Executability Agent.
+Не закон целевой профессии: «человек видит только blocking exceptions».
+Не закон: ручной ритуал как способ *собрать* состав с нуля.
+Канон: [CONSTRUCTOR_AGENT_ANATOMY.md](CONSTRUCTOR_AGENT_ANATOMY.md). Architecture Baseline не конкурирует с Anatomy.
 
 Security-объекты MPCA-002 (issuer-only HumanApproval, WriteAuthorization, kill switch) **сохраняются**. Меняется предмет подтверждения, не контур полномочий. Код security в этом checkpoint не меняется.
 
@@ -245,9 +247,12 @@ Security-объекты MPCA-002 (issuer-only HumanApproval, WriteAuthorization,
 
 **MISSING INTERNAL HISTORY ≠ STOP THE ENTIRE PLANNING FLOW.**
 
-Отсутствие собственного исторического P50 не означает отсутствие физически существующей работы.
+Отсутствие собственной истории не означает отсутствие физически существующей работы.
 
-Constructor может сформировать physical candidate package, даже если labor norm ещё не доказан.
+Два закона Constructor (канон Anatomy; taxonomy статусов — Candidate Package, не новые P50/P80 production semantics):
+
+- Discovery: `UNRESOLVED` не удаляет physical candidate. Candidate Package может содержать unresolved и обязан показать их человеку.
+- Reviewed / final handoff: included `UNRESOLVED` → HANDOFF BLOCKED. Семь unresolved в discovery-пакете нельзя передать Executability Agent как reviewed handoff.
 
 Норма труда — отдельная атрибутированная оценка для:
 
@@ -305,12 +310,12 @@ Worktree на 2026-08-22 также содержит **незакоммичен�
 - derived labor/price не от агента;
 - missing P50 → zero writes на **write** path.
 
-**Не считать target UX law:** row-by-row human approval 175 строк.
+**Не считать target UX law:** row-by-row human approval как способ собрать состав с нуля.
 
-Предмет Human Gate будет пересмотрен:
+Предмет Human Gate Constructor (2026-10-02) — Anatomy, не этот список MPCA-002:
 
-- confirmation of scope/task;
-- exception decisions;
+- Human Review готового пакета;
+- Human Confirm перед Executability Agent;
 - critical action authorization.
 
 Live product write **не** разрешён этим документом.

@@ -78,9 +78,24 @@ Admission Agent **ещё не реализован**. Кнопка Page10B «В 
 ## Constructor
 
 Профессиональное имя: **Агент формирования кандидатного состава месячного плана**.
+Канон профессии: `CONSTRUCTOR_AGENT_ANATOMY.md`. Этот recovery-документ не конкурирует с Anatomy.
 
-Не показывает человеку список BOQ как работу.<br>
-Получает `ConstructorMission` / `MonthlyPlanningScope`, обрабатывает весь scope, исключает routine, формирует **package**, человеку — только exceptions, готовит handoff к Admission.
+Самостоятельно формирует Candidate Package из Constructor Mission (рамки: project, month, queue/facility/discipline/system/IWP = одно / несколько / ALL), не из заранее собранной человеком таблицы BOQ.
+
+### TARGET PROFESSIONAL MODEL
+
+```
+Human Intent → Constructor Mission → Constructor Agent → Candidate Package
+  → Human Review Gate → Reviewed Candidate Package → Human Confirm → Executability Agent
+```
+
+Человек: Добавить / Убрать / Требует уточнения, затем Human Confirm.
+Admission как целевой следующий сотрудник — SUPERSEDED FOR TARGET PROFESSIONAL MODEL.
+
+### CURRENT / HISTORICAL RUNTIME
+
+Interrupt на blocking exceptions; persist handoff с Admission terminology; Candidate Package без Human Review пакета.
+Это CURRENT LEGACY RUNTIME, не целевая профессия.
 
 ### MonthlyPlanningScope
 
@@ -100,7 +115,11 @@ NOT mission: витринный статус, свободный search BOQ.
 UI FILTER ≠ AGENT BUSINESS SCOPE
 ```
 
-### Lifecycle (target)
+### Lifecycle
+
+TARGET PROFESSIONAL MODEL: см. цепочку выше (Candidate Package → Human Review → Reviewed Candidate Package → Human Confirm → Executability Agent).
+
+CURRENT / HISTORICAL RUNTIME:
 
 ```
 MISSION_RECEIVED → LOAD_REALITY → CLASSIFY_SCOPE → BUILD_CANDIDATE_PACKAGE
@@ -109,6 +128,8 @@ MISSION_RECEIVED → LOAD_REALITY → CLASSIFY_SCOPE → BUILD_CANDIDATE_PACKAGE
       → PREPARE_HANDOFF → HANDOFF_READY → COMPLETED
 FAILED/BLOCKED if unsafe (fail-closed)
 ```
+
+Это не целевой Human Review Gate.
 
 Grain KEEP: `constructor_candidate_id = PROJECT|MONTH|FACILITY|DISCIPLINE|BOQ`.
 
@@ -122,22 +143,26 @@ Zero price ≠ нет работы.
 
 NO HIDDEN AGENT-TO-AGENT CHAT.
 
-Constructor → Admission (conceptual): `handoff_type`, `orchestration_run_id`, `source_agent`, `source_run_id`, `project_code`, `month_key`, `scope`, `candidate_ids`, package summary, labor_norm_status summary, `created_at`, `status`.
+TARGET PROFESSIONAL MODEL: только Reviewed Candidate Package после Human Confirm → Executability Agent.
+
+CURRENT / HISTORICAL RUNTIME (Admission terminology, SUPERSEDED FOR TARGET): persist `handoff_type`, `orchestration_run_id`, `source_agent`, `source_run_id`, `project_code`, `month_key`, `scope`, `candidate_ids`, package summary, labor_norm_status summary, `created_at`, `status`. Не читать как целевую передачу Candidate Package напрямую в receiver.
 
 Agent B reads current reality itself.
 
-Human Interrupt: pause with `question_id`, reason, object, evidence, allowed decisions; resume after answer. Human does not rerun the whole chain by hand.
+Human Interrupt текущего runtime: pause with `question_id`, reason, object, evidence, allowed decisions; resume after answer. Это не Human Review Gate целевой профессии.
 
 ---
 
 ## Human role
 
-Задаёт mission/scope, сообщает факты, решает exceptions, управленческие решения, EOS-SEC authorization на критический write.
+TARGET PROFESSIONAL MODEL: задаёт Human Intent, ревьюит готовый Candidate Package (Добавить / Убрать / Требует уточнения), подтверждает Reviewed Candidate Package (Human Confirm), EOS-SEC authorization на критический write.
 
-Не: 175 checkbox, qty/crew на каждую routine-строку, ручной перенос между агентами, держать workflow в голове.
+Не: ручной сбор BOQ до миссии; qty/crew invent; ручной перенос между агентами; держать workflow в голове; «видеть только blocking exceptions» как целевой закон.
 
-Human Gate Constructor = **A scope/task + B exceptions**, не row-by-row.<br>
-MPCA-002 security machinery KEEP; предмет gate будет пересмотрен. Security code не менять «заодно».
+CURRENT / HISTORICAL RUNTIME HITL = exception wait. Не заменяет Human Review пакета.
+
+Канон: `CONSTRUCTOR_AGENT_ANATOMY.md`.
+MPCA-002 security machinery KEEP. Security code этим docs-only изменением не менять.
 
 ---
 

@@ -1,243 +1,209 @@
 # Monthly Plan Constructor Agent
 
-**Профессиональное название:** Агент формирования кандидатного состава месячного плана<br>
-**Код (текущая реализация):** `MONTHLY_PLAN_CONSTRUCTOR`<br>
-**Версия спецификации:** v0.1 target (этот документ)<br>
-**Реализация в коде:** MPCA-001 KEEP как deterministic ядро; MPCA-003 — эксперимент, не UX-закон.
+**Профессиональное название:** Цифровой сотрудник формирования кандидатного состава месячного плана
+**Код:** `MONTHLY_PLAN_CONSTRUCTOR`
+**Версия спецификации:** v1.0 target professional contract (2026-10-02)
+**Канон:** [CONSTRUCTOR_AGENT_ANATOMY.md](CONSTRUCTOR_AGENT_ANATOMY.md)
+**Authority:** 2 of 5 — операционный spec. Не конкурирует с Anatomy.
+
+Код, runtime, UI и данные этим изменением не меняются.
+
+---
+
+## Закон честности
+
+Разделы ниже описывают утверждённую целевую модель.
+Что уже доказано кодом — в § Current implementation.
+Не считать capability DONE только потому, что похожее поле существует.
+
+---
+
+## Единственная целевая цепочка
+
+```
+Human Intent
+  → Constructor Mission
+  → Constructor Agent
+  → Candidate Package
+  → Human Review Gate
+  → Reviewed Candidate Package
+  → Human Confirm
+  → Executability Agent
+```
+
+- Candidate Package = автономный результат Constructor до решения человека.
+- Human Review Gate = профессиональный review готового предложения.
+- Reviewed Candidate Package = target-артефакт после Human Review.
+- Human Confirm = обязательный decision gate перед передачей.
+- Executability Agent = единственный целевой следующий сотрудник.
+
+`Admission Agent` / Admission handoff — HISTORICAL / CURRENT LEGACY RUNTIME TERMINOLOGY / SUPERSEDED FOR TARGET PROFESSIONAL MODEL.
+
+`PERSISTED` ≠ receiver accepted. Constructor `COMPLETED` ≠ orchestration completed.
+Orchestrator auto-handoff — OUT OF SCOPE.
 
 ---
 
 ## 1. Mission
 
-Задача агента **не** показать человеку список BOQ.
+Constructor — цифровой сотрудник формирования кандидатного состава месяца.
 
-Задача:
+Его работа начинается не с заранее подготовленной человеком таблицы BOQ, а с формализованного намерения планирования.
 
-1. Получить производственную миссию месяца в заданном scope.
-2. Самостоятельно обработать **весь** объём данных этого scope.
-3. Исключить routine non-candidates.
-4. Выявить exceptions.
-5. Сформировать **candidate package**.
-6. Поднять человеку только вопросы, где требуется профессиональное решение.
-7. Подготовить structured handoff к Admission Agent.
+После получения Constructor Mission агент обязан самостоятельно обработать всю производственную реальность внутри выбранного scope.
 
-Это соответствует Page52 и [ARCHITECTURE_BASELINE.md](ARCHITECTURE_BASELINE.md).
+Он:
 
----
+1. Читает весь рабочий scope.
+2. Определяет physical remainder.
+3. Учитывает completed / no remainder / not required / overrun.
+4. Учитывает уже включённые строки текущего месяца.
+5. Находит доступный к новому включению объём.
+6. Связывает BOQ с facility/title, discipline, system, IWP и другими доступными измерениями.
+7. Получает labor norm, если существует надёжный источник.
+8. Фиксирует provenance нормы.
+9. Выявляет конфликты и аномалии.
+10. Формирует рекомендацию: `RECOMMEND_ADD` / `RECOMMEND_REMOVE` / `HUMAN_REVIEW_REQUIRED` (target, не runtime enum).
+11. Группирует проблемные позиции.
+12. Формирует Candidate Package.
+13. Представляет результат человеку через Human Review.
 
-## 2. ConstructorMission
-
-Цифровое **задание сотруднику**, не набор случайных UI filters.
-
-Концепт: `ConstructorMission` (имя может стать dataclass / graph input; schema runtime OPEN).
-
-Пример:
-
-```
-project:      PRJ_001_БХК
-month:        сентябрь-2026          # хранимый ключ продукта, не date.today()
-facility:     2041                   # титул / объект; или ALL
-discipline:   вентиляция             # или ALL
-system:       ALL
-iwp:          ALL
-queue:        <если задана человеком>
-```
-
-Человек сообщает область работы. Агент исполняет миссию внутри неё.
+Constructor сам формирует кандидатный состав.
+Человек не собирает BOQ-коды вручную до старта агента.
 
 ---
 
-## 3. MonthlyPlanningScope — future canonical
+## 2. Human Intent → Constructor Mission
 
-UI и Agent используют **один** business scope contract.
+Человек задаёт только рамки миссии:
 
-### Обязательные
+| Измерение | Допустимые значения |
+|-----------|---------------------|
+| project | конкретный проект (обязательно; ALL запрещён) |
+| month | хранимый ключ месяца (обязательно) |
+| queue | одно / несколько / ALL |
+| facility / title | одно / несколько / ALL |
+| discipline | одна / несколько / ALL |
+| system | одна / несколько / ALL |
+| IWP | одно / несколько / ALL |
 
-| Поле | Правило |
-|------|---------|
-| `project_code` | Конкретный проект. «Все» — не миссия. |
-| `month_key` | Хранимый ключ месяца (`сентябрь-2026`). Канонический `2026-09` через существующий `normalize_month_key`. Агент **не** угадывает месяц из часов машины. |
+Затем формирует намерение. Это создаёт формальную Constructor Mission.
 
-### Опциональные explicit scope
+Пустое optional поле = ALL внутри этого project+month.
+Заданное поле = обязанность сузить работу. Scope не расширяется.
 
-| Поле | Если не задано | Если задано |
-|------|----------------|-------------|
-| `facility_scope` | ALL внутри project/month | агент работает **только** в этих титулах/объектах |
-| `discipline_scope` | ALL | только эти дисциплины |
-| `system_scope` | ALL | только эти системы |
-| `iwp_scope` | ALL | только эти IWP |
-| `queue_scope` | ALL | только эта очередь, если человек её задал |
+Не входят в Mission Scope: статус витрины, свободный поиск BOQ, заранее выбранный список кодов.
 
-Пустое optional поле = ALL.<br>
-Заданное поле = **обязанность** сузить работу. Не игнорировать. Не «потом отфильтровать в UI».
-
-### Не относятся к Agent Mission Scope
-
-- статус витрины Page10B (`ДОСТУПНО` / `ВЫПОЛНЕНО` / …);
-- свободный поиск BOQ;
-- случайные presentation filters.
-
-Агент **сам** классифицирует completed / no remainder / available.<br>
-Человек не должен предварительно вырезать витрину, чтобы агент «правильно» посчитал.
+Durable Human Intent UX — target, не proven.
 
 ---
 
-## 4. Target lifecycle
+## 3. Target lifecycle
 
-```
-MISSION_RECEIVED
-  → LOAD_REALITY
-  → CLASSIFY_SCOPE
-  → BUILD_CANDIDATE_PACKAGE
-  → CHECK_EXCEPTIONS
-       ├─ exceptions > 0  → WAITING_FOR_HUMAN
-       │                      → APPLY_HUMAN_DECISION
-       │                      → REVALIDATE
-       │                      → BUILD_CANDIDATE_PACKAGE
-       └─ exceptions == 0 → PREPARE_HANDOFF
-                              → HANDOFF_READY
-                              → COMPLETED
-```
+Та же цепочка, что в начале документа. Не перескакивать от Reviewed Candidate Package к Executability Agent без Human Confirm.
 
-Любая невозможность доказать безопасное состояние критического действия:
-
-```
-FAILED / BLOCKED
-```
-
-по fail-closed (EOS-SEC).
-
-READ/ANALYZE/PROPOSE без записи плана не требует write-gate.<br>
-Запись product state — только после отдельного Human Gate + WriteAuthorization (MPCA-002 KEEP; live write не разрешён).
+Fail-closed: невозможность доказать безопасное состояние критического действия → FAILED / BLOCKED (EOS-SEC).
+Product writes по-прежнему запрещены в v0.1.
 
 ---
 
-## 5. What Constructor does automatically
+## 4. Два разных артефакта
 
-Constructor сам:
+### A. Candidate Package
 
-- читает актуальный scope **миссии** (не весь проект, если scope ужежен);
-- проверяет выполненный объём;
-- определяет физический остаток;
-- применяет подтверждённые корректировки (`not_required` и аналоги, уже существующие в продукте);
-- исключает completed;
-- исключает no remainder;
-- учитывает already planned;
-- проверяет duplicate / grain conflicts;
-- формирует candidate identifiers (`constructor_candidate_id` = PROJECT\|MONTH\|FACILITY\|DISCIPLINE\|BOQ, uppercase; столкновения fail-closed / показать, не скрыть);
-- классифицирует exceptions;
-- формирует candidate package;
-- пишет trace;
-- готовит handoff;
-- прикрепляет labor-norm metadata, **если** она доступна (не выдумывает).
+Автономный результат Constructor до решения человека.
 
-Routine candidates **не** требуют ручного подтверждения каждой строки.
+Может содержать `UNRESOLVED` labor. Такие позиции обязательны к показу.
+
+Содержит: найденных кандидатов, physical remainder, `available_to_add`, labor norm status/source/provenance, recommendations (target), exceptions, provenance.
+
+### B. Reviewed Candidate Package
+
+Результат после Human Review. Target. NOT_IMPLEMENTED в текущем runtime.
+
+Содержит: только подтверждённые человеком позиции, подтверждённый quantity, разрешённую labor norm, provenance, human decision trace, причины исключения/изменения, blocking validation result.
+
+Included `UNRESOLVED` в Reviewed Candidate Package → HANDOFF BLOCKED.
+
+Только Reviewed Candidate Package после Human Confirm передаётся Executability Agent.
+
+Текущий runtime: Candidate Package struct есть без recommendation payload.
 
 ---
 
-## 6. Human responsibility
+## 5. Human Review Gate
 
-Человек:
+Constructor самостоятельно формирует полный Candidate Package.
+Человек не формирует кандидатов вручную с нуля.
+После работы Constructor человек получает готовый профессиональный результат и выполняет Human Review:
 
-- задаёт mission / scope;
-- сообщает новые факты;
-- подтверждает спорные изменения реальности (например физический объём «по ведомости 120, факт требует 85»);
-- решает exceptions;
-- принимает управленческие решения контура (не подмена Admission/Economic).
+- Добавить
+- Убрать
+- Требует уточнения
 
-Человек **не** должен:
+Допустимы массовые действия и фильтры: добавить все допустимые; показать только проблемные; показать только без нормы; фильтровать по title / discipline / system / IWP / status; убрать выбранные.
 
-- просматривать сотни routine BOQ как основной результат;
-- ставить 175 checkbox;
-- вручную переносить candidate rows;
-- по каждой обычной позиции вводить qty/crew только потому, что агент не продолжает сам;
-- вручную сообщать Admission, что сделал Constructor;
-- держать state workflow в памяти.
+Не описывать UX через checkbox.
 
-### Human Gate — архитектурно (код security не менять сейчас)
+Закон «человек видит только blocking exceptions» / «человек не просматривает routine candidates» снят как целевая профессия.
+HITL runtime v0.1 (interrupt на blocking exceptions) — historical/current implementation only. Не заменяет Human Review Gate.
 
-Не 175 поэлементных подтверждений.
+---
 
-- **A.** Подтверждение самой mission/scope (задание).
-- **B.** Подтверждение только исключений, где агент не имеет права решить.
+## 6. Labor Norm Gate — два разных закона
 
-Плюс EOS-SEC: критический write позже требует issuer-only approval / authorization.<br>
-Предмет approval ≠ «каждая routine-строка».
+Используется существующая taxonomy Candidate Package:
+
+```
+VALIDATED | PROVISIONAL | UNRESOLVED | NOT_AVAILABLE
+```
+
+Не вводить P50/P80 как production-семантику Constructor.
+
+### Закон 1 — Candidate discovery
+
+`LABOR_NORM_UNRESOLVED` не удаляет физического кандидата.
+Constructor обязан показать такого кандидата человеку.
+Candidate Package может содержать unresolved.
+
+### Закон 2 — Reviewed Candidate Package / final handoff
+
+Ни одна включённая позиция не может иметь `UNRESOLVED`.
+
+```
+UNRESOLVED candidate          = allowed
+UNRESOLVED included candidate → HANDOFF BLOCKED
+```
+
+Человек должен внести норму вручную, либо подтвердить допустимую предложенную, либо убрать позицию из итогового пакета.
+
+Constructor не становится LaborNormResolver. Текущий Exception Engine NON_BLOCKING / CONTINUE — закон discovery, не final gate. Final gate — NOT_IMPLEMENTED.
+
+Zero price ≠ нет физической работы.
 
 ---
 
 ## 7. Constructor and quantity
 
-Открытый, но обязательный нюанс.
-
-Constructor формирует **PHYSICAL CANDIDATE PACKAGE**.
-
-Если физический доступный остаток однозначно доказан, он может использовать его как:
-
-- `available_quantity` / candidate physical quantity.
-
-Constructor **не** подменяет Resource Agent и **не** объявляет эту величину окончательным feasible commitment месяца, если для этого нужны:
-
-- resource capacity;
-- admission readiness;
-- production limits;
-- economic constraints.
-
-Разделить всегда:
+Constructor формирует PHYSICAL CANDIDATE PACKAGE.
+Доказанный физический остаток может стать `available_to_add`. Это анализ, не выдумка.
+Constructor не объявляет эту величину окончательным feasible commitment месяца.
 
 | Понятие | Кто | Смысл |
 |---------|-----|--------|
-| AVAILABLE PHYSICAL QUANTITY | Constructor (из scope/остатка) | Что физически ещё можно планировать в этом grain |
-| FINAL COMMITTED QUANTITY | контур Admission → Resource → Economic → Decision → Паспорт | Что организация обязуется выполнить в месяце |
+| AVAILABLE PHYSICAL QUANTITY | Constructor | Что физически ещё можно планировать в этом grain |
+| REVIEWED QUANTITY | человек + Constructor gate | Что человек подтвердил к передаче |
+| FINAL COMMITTED QUANTITY | Executability → Resource → Economic → Decision | Что организация обязуется выполнить |
 
-Запрет MPCA-001 «не invent planned_qty / physical quantity» сохраняется: нельзя выдумать объём.<br>
-Использование доказанного остатка — анализ, не выдумка.<br>
-Спорный остаток — exception человеку, не тихая правка ведомости.
-
-Crew Constructor **не** выдумывает. Назначение звена — не routine constructor workflow. Resource / существующие product rules — отдельно.
-
-Zero price ≠ нет физической работы. `unit_price = 0` не выкидывает кандидата из physical package.
+Запрет: invent planned_qty / invent physical remainder.
+Спорный остаток → `HUMAN_REVIEW_REQUIRED`, не тихая правка ведомости.
+Crew Constructor не выдумывает.
 
 ---
 
-## 8. Labor norm — Constructor behavior
+## 8. Grain
 
-Missing internal P50 **не** удаляет physical candidate.
-
-Пример:
-
-```
-70 physical candidate works
-  52 HIGH-CONFIDENCE internal norm
-  11 provisional normative benchmark
-   7 labor norm unresolved
-```
-
-Эти 7 **остаются** в physical package с metadata:
-
-```
-LABOR_NORM_STATUS: VALIDATED | PROVISIONAL | UNRESOLVED
-```
-
-Дальше:
-
-- Admission проверяет физическую/организационную готовность;
-- Resource не финализирует capacity по UNRESOLVED и инициирует resolution / exception;
-- Economic показывает uncertainty;
-- человек получает только реально необходимый вопрос.
-
-Constructor не становится LaborNormResolver.<br>
-Он **использует** shared capability, если результат есть.
-
-Канон: [LABOR_NORM_RESOLUTION.md](LABOR_NORM_RESOLUTION.md).
-
-На **write** path MPCA-002 по-прежнему: missing P50 → `LABOR_NORM_MISSING`, zero writes. Это закон записи plan line, не закон существования physical candidate.
-
----
-
-## 9. Grain
-
-Candidate grain (KEEP из MPCA-001):
+KEEP из MPCA-001:
 
 ```
 constructor_candidate_id = PROJECT|MONTH|FACILITY|DISCIPLINE|BOQ
@@ -247,71 +213,91 @@ uppercase, fail-closed при коллизии. Не скрывать дубли
 
 ---
 
-## 10. Structured outputs
+## 9. Professional sources and tools
 
-Минимальный смысл пакета (имена полей runtime OPEN):
+```
+Agent Core
+  → Professional Tool Contracts
+  → Replaceable Data Adapters
+  → current storage implementation
+```
 
-- identity: agent_code, agent_version, run_id, mission, scope;
-- counts: scanned, package_size, excluded_*, exceptions;
-- candidate identifiers + physical quantities + labor_norm_status per item;
-- exceptions list (только реальные);
-- trace / audit (redacted, EOS-SEC);
-- handoff block: см. [ORCHESTRATION_AND_HANDOFF.md](ORCHESTRATION_AND_HANDOFF.md).
+Professional sources: Production Scope; Physical Remainder; Existing Month Plan; Adjustment; Labor Norm; System / Work Package Context.
 
-Главная поверхность человека — **итог + exceptions**, не полный dataframe.
+Professional tool contracts: `get_working_scope`, `get_physical_remainder`, `get_existing_month_plan`, `get_adjustments`, `get_system_context`, `get_work_package_context`, `get_labor_norm`, `get_execution_state`.
 
-Полный расчёт — «Показать расчёт агента» (audit).
+Имена Python tools, таблиц, views и UI-страниц — только § Current implementation / current adapter. Они не часть профессии.
 
 ---
 
-## 11. What current code actually does (2026-08-22)
+## 10. Autonomy Envelope
 
-### KEEP
+| Класс | Смысл |
+|-------|--------|
+| `AUTO` | делает сам |
+| `AUTO_WITH_TRACE` | сам + обязательный audit |
+| `HUMAN_REVIEW_REQUIRED` | подготовленный результат, человек должен увидеть |
+| `HUMAN_DECISION_REQUIRED` | без человека шаг не завершается — целевой уровень на выходе |
+| `FORBIDDEN` | никогда |
+
+AUTO / AUTO_WITH_TRACE: читать professional sources; нормализовать; remainder; исключать очевидные completed / no remainder / invalid headers; `available_to_add`; предлагать labor norm; conflicts; recommendations; Candidate Package.
+
+HUMAN_REVIEW_REQUIRED: спорные кандидаты; unresolved labor; data conflicts; нестандартные корректировки; аномальные quantities/norms.
+
+HUMAN_DECISION_REQUIRED: итоговое включение/исключение; ручная labor norm; подтверждение Reviewed Candidate Package; Human Confirm handoff к Executability Agent.
+
+FORBIDDEN: invent quantity; скрывать unresolved; менять BOQ master; менять договорные цены; утверждать месячное обязательство; фабриковать receiver acceptance; считать persisted = accepted; считать Constructor completed = orchestration completed; product writes; LLM как источник нормы или количества; передавать non-reviewed пакет; included UNRESOLVED в reviewed handoff.
+
+---
+
+## 11. Current implementation (честно)
+
+### KEEP / DONE в смысле domain
 
 Deterministic classify в `agents/monthly_plan_constructor/` (MPCA-001):
 
 - read scope / adjustments / plan lines через trusted read executor;
-- remainder / already planned;
-- exclusions completed / no remainder / already planned;
+- remainder / already planned в domain;
+- exclusions completed / no remainder / already planned / invalid / overrun;
 - HumanIssue;
+- Candidate Package struct;
 - no product write.
 
-### Deviation (proven)
+### PARTIAL
 
-Page10B (`render_constructor_agent_workbench`) передаёт в агент только:
+- mission dataclass + binder (ALL/multi) без Human Intent UX;
+- existing month plan: domain умеет; Shadow Phase A передаёт пустой план;
+- labor statuses на record; Shadow форсирует `UNRESOLVED`;
+- current adapter tools привязаны к текущему store;
+- legacy persist handoff без reviewed package.
 
-```
-project_code, stored_month_key
-```
+### NOT_IMPLEMENTED относительно этого контракта
 
-Фильтры титул / дисциплина / очередь / система / IWP применяются **после** вызова агента и **только** к ручной таблице BOQ (`apply_scope_filters`).
+- durable Human Intent;
+- recommendations `RECOMMEND_*`;
+- Human Review surface;
+- Reviewed Candidate Package;
+- labor norm blocking gate на included;
+- Human Confirm как package gate;
+- Executability Agent;
+- Django Human Surface;
+- Orchestrator launch.
 
-Чтение: `load_constructor_scope(project_code)` — `eq("project_code")`.
+### Current adapter (не профессия)
 
-Live: 447 scanned / 175 candidates на весь проект при выбранной вентиляции и титуле.
+Текущие Python names: `load_scope`, `load_adjustments`, `load_existing_month_plan_lines`.
+Они реализуют professional contracts, но не являются именами профессии.
 
-### Wrong human routine currently introduced
+CURRENT LEGACY RUNTIME: persist с Admission terminology. SUPERSEDED FOR TARGET PROFESSIONAL MODEL.
 
-MPCA-003 показывает 175 кандидатов как main workbench.<br>
-MPCA-002 моделирует `ApprovedPlanItem` с `approved_qty` + `approved_crew` на каждую строку.<br>
-`skill_prepare_handoff` ставит `admission_handoff_ready=False`, пока человек не выберет crew/qty.
+Историческое отклонение ручной витрины BOQ после вызова агента — не target. Не развивать ручной сбор BOQ как основной ритуал.
 
-Это **не** target.
-
-Не развивать новые UI-таблицы кандидатов.
+Полная таблица Target vs Current: Anatomy §24.
 
 ---
 
-## 12. KPI (Constructor)
+## 12. KPI
 
-См. [ARCHITECTURE_BASELINE.md](ARCHITECTURE_BASELINE.md) § Routine removal KPI.
+Целевые: coverage assigned mission; человек ревьюит подготовленное, а не собирает BOQ с нуля; remainder honesty; already-planned honesty; labor honesty; handoff honesty.
 
-Если агент обработал 447 и человек снова разбирает 175 — `routine_removal_percent` фактически уничтожен поверхностью, даже при `human_issues = 0`.
-
----
-
-## 13. Next proof
-
-Success = LangGraph (или эквивалентный workflow runtime) исполняет `ConstructorMission` в **заданном** scope и заканчивает `HANDOFF_READY` или `WAITING_FOR_HUMAN` **без** обязательной candidate table.
-
-Не success = ещё одна таблица на Page10B.
+Не KPI: «совпало с человеческим допуском прошлого месяца» без совпадения зерна миссии.

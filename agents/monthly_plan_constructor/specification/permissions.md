@@ -1,37 +1,70 @@
-# Permissions — MONTHLY_PLAN_CONSTRUCTOR v0.1
+# Permissions — MONTHLY_PLAN_CONSTRUCTOR
 
-## Автоматически разрешено
+**Версия контракта:** v1.0 target professional envelope (2026-10-02)
+**Канон:** `docs/agentic_architecture/CONSTRUCTOR_AGENT_ANATOMY.md`
+Код полномочий v0.1 не меняется этим документом.
 
-- читать scope / adjustments / existing plan lines;
-- нормализовать month_key и ключи scope;
-- рассчитывать remaining / available_to_add;
-- сравнивать и агрегировать already_planned;
-- классифицировать позиции;
-- исключать из proposal с reason_code;
-- формировать кандидатов и human_issues;
-- писать trace и business actions в объект run (не в DB).
+Пять классов: `AUTO` / `AUTO_WITH_TRACE` / `HUMAN_REVIEW_REQUIRED` / `HUMAN_DECISION_REQUIRED` / `FORBIDDEN`.
+Целевой уровень на выходе: **HUMAN_DECISION_REQUIRED**.
 
-## Запрещено в v0.1
+## AUTO / AUTO_WITH_TRACE
 
-- product INSERT / UPDATE / DELETE / UPSERT;
-- RPC mutation;
-- запись в `monthly_plan_lines_v2`;
-- запись в `monthly_scope_manual_adjustments`;
-- запись в `monthly_plan_constraints`;
-- перевод строк в `SENT_TO_ADMISSION`;
-- approve месяца;
-- force include;
+- читать professional sources через professional tool contracts (`get_working_scope`, `get_physical_remainder`, `get_existing_month_plan`, `get_adjustments`, `get_system_context`, `get_work_package_context`, `get_labor_norm`, `get_execution_state`);
+- нормализовать данные;
+- считать remainder;
+- исключать очевидные completed / no remainder / invalid headers;
+- определять `available_to_add`;
+- искать и предлагать labor norm (не invent);
+- выявлять conflicts / anomalies;
+- формировать recommendations (target);
+- создавать Candidate Package;
+- писать trace в объект run (не в product store).
+
+## HUMAN_REVIEW_REQUIRED
+
+- спорные кандидаты;
+- unresolved labor norm на discovery (кандидат остаётся видимым);
+- data conflicts;
+- нестандартные корректировки;
+- аномальные quantities / norms.
+
+## HUMAN_DECISION_REQUIRED
+
+- итоговое включение / исключение позиции;
+- ручная labor norm либо подтверждение предложенной;
+- подтверждение Reviewed Candidate Package;
+- Human Confirm запуска handoff к Executability Agent.
+
+Человек ревьюит подготовленный пакет массовыми решениями. Не собирает BOQ до миссии.
+
+## FORBIDDEN (включая v0.1 product writes)
+
+- invent quantity / planned_qty / physical remainder;
+- invent labor norm (в том числе LLM);
+- скрывать `UNRESOLVED`;
+- удалять физического кандидата только из-за `LABOR_NORM_UNRESOLVED`;
+- product INSERT / UPDATE / DELETE / UPSERT / RPC mutation;
+- запись плана, корректировок, ограничений, статусов допуска;
+- менять BOQ master;
+- менять договорные цены;
+- approve месяца / утверждать месячное обязательство;
+- force include в обход Human Review;
 - invent crew;
-- invent planned_qty;
-- invent physical quantity;
-- вызовы LLM (OpenAI / Anthropic / YandexGPT / GigaChat и др.).
+- вызовы LLM;
+- фабриковать receiver acceptance;
+- считать persisted handoff = получатель принял;
+- считать Constructor completed = orchestration completed;
+- передавать не-reviewed пакет;
+- included `UNRESOLVED` в Reviewed Candidate Package.
 
-## Future human-gated (описать, не реализовывать)
+## Current adapter (не профессия)
 
-- создание plan lines из кандидатов;
-- выбор / подтверждение `planned_qty`;
-- выбор `crew`;
+Текущие Python READ tools: `load_scope`, `load_adjustments`, `load_existing_month_plan_lines`.
+Write tools: none.
+
+## Future human-gated (описать, не реализовывать здесь)
+
+- создание plan lines из reviewed кандидатов;
 - force include после human decision;
-- отправка в Admission Agent;
-- approve month plan;
-- запись adjustment not_required.
+- запись adjustment `not_required`;
+- Orchestrator-driven launch / auto-handoff.

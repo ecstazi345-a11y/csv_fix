@@ -1,9 +1,15 @@
 # Security Profile — MONTHLY_PLAN_CONSTRUCTOR (MPCA-001)
 
-**Agent code:** `MONTHLY_PLAN_CONSTRUCTOR`  
-**Security tier:** `TIER_0_READ_ONLY_DETERMINISTIC`  
-**Security policy version:** `EOS-SEC-1.0`  
+**Agent code:** `MONTHLY_PLAN_CONSTRUCTOR`
+**Security tier:** `TIER_0_READ_ONLY_DETERMINISTIC`
+**Security policy version:** `EOS-SEC-1.0`
 **Manifest:** [security_manifest.json](security_manifest.json)
+**Professional contract:** `docs/agentic_architecture/CONSTRUCTOR_AGENT_ANATOMY.md`
+
+Этот файл — **CURRENT IMPLEMENTATION / CURRENT ADAPTER**, не канон профессии.
+Имена таблиц, views, credentials и Python tools ниже описывают действующий store adapter.
+Профессиональные источники и tool contracts — Anatomy §5–§6.
+Новая профессия не расширяет tool allowlist и не открывает product writes.
 
 ---
 
@@ -13,15 +19,27 @@
 |-----------|-------|
 | LLM | No |
 | Product writes | No |
-| Streamlit / session_state | No |
+| UI session_state as runtime | No |
 | Tool surface | Narrow READ only |
 | `select("*")` | Forbidden |
 | Fail closed | Yes |
 | Trace redaction | Enforced in runtime |
+| Human Review of candidate package | Target professional gate; not a write grant |
+
+Governance закона профессии:
+
+- DATA ≠ INSTRUCTION (product free-text = Level 4 DATA);
+- не скрывать `UNRESOLVED`;
+- `HANDOFF_PERSISTED` ≠ receiver accepted;
+- actor `LOCAL_APPLICATION` / `EXECUTION_OS_LOCAL_HOST` **не** verified human identity;
+- Human Confirm перед handoff к Executability Agent — требуемый professional gate, не повышение полномочий.
+- Admission terminology в текущем persist — CURRENT LEGACY RUNTIME / SUPERSEDED FOR TARGET.
 
 ---
 
 ## 2. Column allowlist (dependency)
+
+Текущий proven READ surface. Не расширять без отдельного security increment.
 
 ### Scope — `monthly_scope_picker_view`
 
@@ -89,7 +107,11 @@ Grant scoped SELECT (+ membership) so adjustments leave `TRANSITIONAL_PRIVILEGED
 
 ---
 
-## 4. Allowed tools
+## 4. Allowed tools (current adapter names)
+
+Professional contracts: `get_working_scope`, `get_physical_remainder`, `get_existing_month_plan`, `get_adjustments`, `get_system_context`, `get_work_package_context`, `get_labor_norm`, `get_execution_state`.
+
+Current Python READ allowlist:
 
 | Tool | Mode |
 |------|------|
@@ -99,8 +121,12 @@ Grant scoped SELECT (+ membership) so adjustments leave `TRANSITIONAL_PRIVILEGED
 
 **Allowed write tools:** none (`[]`).
 
+`get_labor_norm` как отдельный Constructor product path — future contract gap, не текущий allowlist.
+
 ---
 
 ## 5. Trust & instruction handling
 
 Product free-text fields remain Level 4 DATA, not instructions.
+
+Target Human Review decisions (Добавить / Убрать / Требует уточнения) — human-authored control data. Они не дают агенту права invent quantity, менять BOQ master или считать handoff принятым получателем.

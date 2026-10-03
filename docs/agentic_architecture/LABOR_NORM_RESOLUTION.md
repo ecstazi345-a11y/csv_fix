@@ -255,8 +255,13 @@ NORM_STATUS = UNRESOLVED
 
 Но:
 
-- physical candidate **не обязательно** блокируется;
+- physical candidate **не обязательно** блокируется (**discovery law**);
 - Resource / Economic readiness **может** быть `BLOCKED` / `INCOMPLETE`.
+
+**Constructor professional contract (2026-10-02), не меняя taxonomy этого документа:**
+`UNRESOLVED` candidate остаётся в Candidate Package и обязан быть показан человеку.
+`UNRESOLVED` **included** candidate в Reviewed Candidate Package → **HANDOFF BLOCKED**, пока человек не внесёт/подтвердит норму или не уберёт позицию.
+Канон: [CONSTRUCTOR_AGENT_ANATOMY.md](CONSTRUCTOR_AGENT_ANATOMY.md). P50/P80 в этом файле — язык target resolver, не production-семантика Constructor handoff.
 
 Unknown norm **не** становится silently zero.<br>
 Zero hours как «норма» без provenance запрещены.
@@ -326,13 +331,14 @@ Execution OS постепенно создаёт собственную корп
    7 UNRESOLVED
 ```
 
-Constructor **не** выкидывает 7 из physical package.
+Constructor **не** выкидывает 7 из **Candidate Package** (discovery law).
+Эти 7 обязаны быть показаны человеку в Human Review.
 
-Передаёт `labor_norm_status` по позициям и summary в handoff.
+Эти 7 **не** могут входить в Reviewed Candidate Package как included и **не** могут быть переданы Executability Agent как final reviewed handoff, пока человек не внесёт/подтвердит норму или не уберёт позицию (final handoff law).
 
-Resource инициирует resolution / exception по unresolved, если capacity нужно финализировать.<br>
-Economic показывает uncertainty.<br>
-Человек видит только необходимый вопрос, не 70 строк «поставьте норму руками».
+Resource инициирует resolution / exception по unresolved, если capacity нужно финализировать.
+Economic показывает uncertainty.
+Не прятать UNRESOLVED. Не читать этот пример как разрешение передать 7 unresolved следующему агенту.
 
 ---
 

@@ -146,7 +146,7 @@ AGENT ≠ STREAMLIT BUTTON CALLBACK
 AGENT ≠ CHATBOT
 ```
 
-Agent = независимый цифровой исполнитель, имеющий:
+Agent = независимый цифровой исполнитель (First-Class Digital Worker), имеющий:
 
 - mission
 - business scope
@@ -165,43 +165,61 @@ Agent = независимый цифровой исполнитель, имею
 
 Большие BOQ/candidate tables — **audit / evidence / drill-down**, не основная поверхность человека.
 
+```
+AGENT CORE MUST BE DATA-SOURCE INDEPENDENT.
+Professional Agent Core → Professional Tool Contracts → Replaceable Data Adapters
+  → current store / API / future on-prem sources
+```
+
+Профессия не зависит от конкретного view, UI page или API provider. Текущий shared store — adapter, не часть роли.
+
+Professional Logic ≠ Runtime ≠ Model. Durable runtime independent from UI. Capability ≠ Permission ≠ Authority.
+
 ---
 
 ## 4. Target digital organization
 
+Канон организации Digital Workforce: [DYNAMIS_PHYSICAL_EXECUTION_ARCHITECTURE_RU.md](../architecture/DYNAMIS_PHYSICAL_EXECUTION_ARCHITECTURE_RU.md). Этот baseline не конкурирует с ним.
+
+Целевая цепочка Monthly Planning:
+
 ```
-ОРКЕСТРАТОР МЕСЯЧНОГО ПЛАНИРОВАНИЯ
-  → Агент формирования кандидатного состава   (Constructor)
-  → Агент допуска                              (Admission)
-  → Агент ограничений                          (Constraints)
-  → Агент формирования производственной мощности (Resource / Capacity)
-  → Агент экономической оценки                 (Economic)
-  → Агент подготовки управленческого решения   (Decision pack)
-  → HUMAN MANAGEMENT GATE
-  → Паспорт месячного производственного обязательства
-  → Контур исполнения
+Human Intent
+  → Constructor Agent
+  → Candidate Package
+  → Human Review Gate
+  → Reviewed Candidate Package
+  → Human Confirm
+  → Executability Agent
+  → Commitment Agent
+  → Human Decision Gate
+  → Monthly Commitment / Passport
 ```
+
+Constructor формирует кандидатный состав.
+Executability объединяет Admission + Constraints.
+Commitment объединяет Resource Capacity + Economics + Management Recommendation.
+Human Decision Gate — финальная authority месячного обязательства.
+
+```
+ONE LARGE PROFESSIONAL RESPONSIBILITY = ONE DIGITAL WORKER
+```
+
+HISTORICAL / SUPERSEDED AS TARGET: Constructor → Admission → Constraint → Resource → Economics → Decision как отдельные целевые сотрудники.
+Admission terminology в current persist — CURRENT LEGACY RUNTIME, не target org.
 
 Оркестратор:
 
-- **не** dashboard;
-- **не** super-agent, который сам делает работу всех специалистов.
+- не dashboard;
+- не super-agent, который сам делает работу всех специалистов.
 
-Он:
+Он запускает, координирует, отслеживает зависимости, управляет повторными расчётами, останавливает workflow на Human Gate, продолжает после решения, создаёт handoff, контролирует завершённость контура.
+Orchestrator launch — TARGET, CURRENT NOT_IMPLEMENTED.
 
-- запускает;
-- координирует;
-- отслеживает зависимости;
-- управляет повторными расчётами;
-- останавливает workflow на Human Gate;
-- продолжает после решения;
-- создаёт handoff;
-- контролирует завершённость контура.
+Спецификации: Page52 (организационно) + DYNAMIS directive + этот baseline (технически).
+Первый детальный сотрудник: [MONTHLY_PLAN_CONSTRUCTOR_AGENT.md](MONTHLY_PLAN_CONSTRUCTOR_AGENT.md), паспорт [CONSTRUCTOR_AGENT_ANATOMY.md](CONSTRUCTOR_AGENT_ANATOMY.md).
 
-Спецификации специалистов: Page52 (организационно) + этот baseline (технически).<br>
-Первый детальный сотрудник: [MONTHLY_PLAN_CONSTRUCTOR_AGENT.md](MONTHLY_PLAN_CONSTRUCTOR_AGENT.md).
-
-Admission Agent package **ещё не существует**. Не имитировать его UI-кнопкой «В ДОПУСК» Page10B (`SENT_TO_ADMISSION` — существующий product write человека, не старт Admission Agent).
+Не имитировать следующего сотрудника UI-кнопкой product write человека.
 
 ---
 
@@ -209,9 +227,20 @@ Admission Agent package **ещё не существует**. Не имитир�
 
 **NO HIDDEN AGENT-TO-AGENT CHAT.**
 
-Agent A фиксирует structured result/state.<br>
-Orchestrator фиксирует transition.<br>
-Agent B получает **identifiers** и сам читает current reality из Supabase.
+```
+Source Digital Worker → typed business artifact → durable persistence
+  → authorized handoff → target role → receiver acknowledgement → next professional process
+```
+
+```
+HANDOFF_PERSISTED != RECEIVER_ACCEPTED
+RECEIVER_ACCEPTED != BUSINESS_APPROVED
+AGENT_COMPLETED != ORCHESTRATION_COMPLETED
+```
+
+Agent A фиксирует structured result/state.
+Orchestrator фиксирует transition.
+Agent B получает identifiers и сам читает current reality через свои adapters.
 
 Детали: [ORCHESTRATION_AND_HANDOFF.md](ORCHESTRATION_AND_HANDOFF.md).
 
@@ -407,7 +436,7 @@ Norm coverage:
   9 provisional
   4 unresolved
 
-Admission: RUNNING
+Admission: RUNNING   # historical mock; not target org (Executability is target)
 31 / 54 checked
 
 Human attention: 2
@@ -441,8 +470,8 @@ Constructor измеряет **свою** рутину, не финансову�
 - `labor_norm_coverage_percent`
 - `validated_norm_percent` / `provisional_norm_percent` / `unresolved_norm_percent`
 
-Не утверждать финансовую экономию, если она не доказана.<br>
-Экономика месячного обязательства — Admission → Resource → Economic → Decision.
+Не утверждать финансовую экономию, если она не доказана.
+Экономика месячного обязательства — ответственность Commitment Agent (target). HISTORICAL chain Admission → Resource → Economic → Decision как отдельные сотрудники — SUPERSEDED AS TARGET.
 
 ---
 
@@ -471,14 +500,13 @@ Mission:
 → builds candidate package
 → attaches labor norm provenance where available
 → unresolved labor norm does not erase physical candidate
-→ if business exceptions exist: WAITING_FOR_HUMAN
-→ otherwise: HANDOFF_READY
-→ structured handoff prepared for Admission Agent
+→ Human Review / Reviewed Candidate Package / Human Confirm — TARGET, CURRENT NOT_IMPLEMENTED
+→ structured handoff to Executability Agent — TARGET; current persist may still use Admission terminology (LEGACY)
 ```
 
-Без обязательного interaction с candidate dataframe.
+Без обязательного interaction с candidate dataframe как способом *собрать* состав.
 
-Admission Agent implementation: **NEXT AFTER runtime proof.**
+Executability Agent / Commitment Agent / Orchestrator: **NOT_IMPLEMENTED**. Не выдавать target за current.
 
 Этот checkpoint **не** устанавливает LangGraph, **не** меняет requirements, **не** пишет runtime.
 

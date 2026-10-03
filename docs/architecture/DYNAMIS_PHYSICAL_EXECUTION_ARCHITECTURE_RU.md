@@ -133,18 +133,51 @@ DYNAMIS управляет не страницами, таблицами и от
 
 ## 6. Исполнитель
 
-Исполнителем работы может быть:
+```
+WORK DOES NOT BELONG TO A HUMAN.
+```
 
-- человек  
-- цифровой сотрудник  
-- робот  
-- дрон  
-- автономная машина  
-- внешняя информационная система  
+Бизнес-смысл работы не зависит от типа исполнителя. Общий execution contract executor-neutral.
 
-**Архитектурный закон DYNAMIS:**
+Тип исполнителя:
 
-СОСТОЯНИЕ → ДОПУСК → РАБОТА → ИСПОЛНИТЕЛЬ → ОПЕРАЦИЯ → СОБЫТИЕ → ДОКАЗАТЕЛЬСТВО → ПРОВЕРКА → НОВОЕ СОСТОЯНИЕ → СЛЕДУЮЩАЯ РАБОТА
+- HUMAN
+- DIGITAL_WORKER
+- ROBOT
+- DRONE
+- AUTONOMOUS_MACHINE
+- EXTERNAL_SYSTEM
+
+Целевая цепочка:
+
+```
+PHYSICAL OBJECT
+  → PROVEN STATE
+  → REQUIRED WORK
+  → RIGHT TO ACT
+  → ELIGIBLE EXECUTOR
+  → MISSION / OPERATION
+  → EXECUTION EVENT
+  → EVIDENCE
+  → VALIDATION
+  → NEW PROVEN STATE
+  → ACCEPTANCE
+  → COMMERCIAL RECOGNITION
+```
+
+Эквивалент в терминах требования:
+
+```
+REQUIREMENT → REQUIRED WORK → REQUIRED CAPABILITY → EXECUTABILITY
+  → ELIGIBLE EXECUTOR → AUTHORITY TO ACT → MISSION → OPERATION
+  → EXECUTION EVENT → EVIDENCE → VALIDATION → NEW PROVEN STATE
+```
+
+Поля вроде `employee_id` / foreman / crew допустимы в human adapter/domain.
+Они не делают человека обязательной сущностью общего execution contract.
+
+Не вводить сейчас: robot/drone registry, ROS, fleet manager, capability database, physical actuator API.
+Physical AI readiness без premature implementation.
 
 ---
 
@@ -241,7 +274,7 @@ Skills / tools / services / deterministic nodes остаются внутри а
 Сохраняются без ослабления:
 
 - Agent = First-Class Digital Worker
-- Professional Logic ≠ Runtime ≠ Model
+- Professional Logic ≠ Runtime ≠ Model ≠ Model Provider ≠ Compute Location
 - Durable runtime independent from UI
 - Capability ≠ Permission ≠ Authority
 - action-time authorization
@@ -256,6 +289,9 @@ Skills / tools / services / deterministic nodes остаются внутри а
 - Physical AI readiness without premature implementation
 - scale completed workflows, not number of agents
 - Build minimum now → preserve architecture for later
+- AGENT CORE MUST BE DATA-SOURCE INDEPENDENT (§13)
+- optional Model Capability Port → Replaceable Model Provider Adapter (§13); NeuralDeep = возможный будущий provider вычислений, не компонент ядра DYNAMIS
+- Constructor сегодня deterministic; LLM не входит в deterministic authority path
 
 ---
 
@@ -275,6 +311,20 @@ Professional Agent Core
 ```
 
 Профессиональная роль, Mission, Skills, Decision Logic, Authority и Artifacts не зависят от Airtable, Streamlit, конкретного view, конкретной UI page, конкретного API provider.
+
+То же для модели и вычислений:
+
+```
+Professional Agent Core
+  → optional Model Capability Port
+  → Replaceable Model Provider Adapter
+  → cloud / Russian inference / on-prem / local model
+```
+
+Digital Worker не зависит профессионально от OpenAI, NeuralDeep, Yandex, GigaChat, локальной модели, конкретного inference API, cloud provider или физического расположения GPU.
+Смена provider не требует смены professional role, business rules, persistent state, permissions/authority, typed artifacts, orchestration, audit, security policy.
+
+Не создавать сейчас ModelProvider code, NeuralDeep adapter, LLM в Constructor. Constructor: deterministic, llm_enabled=false.
 
 Текущие tables/views — implementation adapters, не часть профессии.
 Смена data foundation должна менять преимущественно adapters/tools, а не профессию агента.
@@ -401,6 +451,10 @@ CURRENT:
 - Commitment Agent не реализован
 - Orchestrator не реализован
 - новая сквозная physical data foundation не реализована
+- universal provenance table не реализована
+- ModelProvider / NeuralDeep adapter не реализованы; Constructor deterministic
+- contract event module не реализован
+- robot / drone / fleet runtime не реализован
 
 TARGET:
 
@@ -413,5 +467,72 @@ TARGET:
 - HUMAN / DIGITAL WORKER / ROBOT / DRONE / AUTONOMOUS MACHINE as executor types
 
 Не выдавать target за current implementation.
+
+---
+
+## 20. Authoritative provenance (semantic contract)
+
+Единый reusable semantic pattern, не universal table и не миграция существующих domains:
+
+```
+VALUE / REQUIREMENT / DECISION / RULE
+  → SOURCE
+  → DOCUMENT
+  → REVISION
+  → CLAUSE / LOCATION
+  → EFFECTIVE PERIOD
+  → PROVENANCE
+```
+
+Для критичного инженерного, производственного, коммерческого или договорного решения должна быть возможность ответить: откуда значение; какой документ; какая редакция; какой пункт/лист/позиция; когда источник вступил в силу и когда перестал; чем заменён; как данные попали в DYNAMIS.
+
+Текущие `snapshot_id`, `source_document`, `revision`, `source_page`, `labor_norm_resolution_ref`, `evidence` и аналоги — domain-specific representations. В будущем маппятся на этот semantics. Не заставлять все сущности сразу иметь одинаковые поля.
+
+---
+
+## 21. Contract event — EXPERIMENT / FUTURE DOMAIN
+
+Не модуль и не current implementation.
+
+Будущий pattern (зафиксировать, не строить):
+
+```
+PHYSICAL / PROJECT EVENT
+  → CONTRACTUAL BASIS
+  → TRIGGER DATE
+  → CONTRACTUAL CLOCK
+  → DEADLINE
+  → RESPONSIBLE ROLE
+  → NOTICE
+  → DELIVERY EVIDENCE
+  → RIGHT PRESERVATION STATUS
+```
+
+Перед реализацией — проверка на 3–5 реальных событиях проекта (нет РД; изменение РД; нет фронта; задержка МТР; задержка/отказ признания объёма).
+Не утверждать автоматически «право требования сохранено / утрачено» как юридическую истину без формальной договорной модели.
+
+---
+
+## 22. World signal intake
+
+```
+WORLD SIGNAL
+  → IMPLICATION FOR DYNAMIS
+  → ALREADY COVERED?
+       YES → NOTHING
+       PARTIAL → ARCHITECTURE LAW / INTERFACE BOUNDARY
+       NO → REAL USE CASE?
+              NO → WATCH
+              YES → EXPERIMENT → PROOF → IMPLEMENT
+```
+
+```
+DO NOT PROGRAM NEWS.
+```
+
+Новая технология / компания / модель / robot / AI framework / provider не создаёт автоматически новую сущность DYNAMIS.
+Изменение допускается, только если усиливает реальный контур:
+
+STATE → ADMISSION / AUTHORITY → WORK → EXECUTOR → OPERATION → EVENT → EVIDENCE → VALIDATION → NEW STATE → ACCEPTANCE → COMMERCIAL RECOGNITION
 
 Конец reference-документа.

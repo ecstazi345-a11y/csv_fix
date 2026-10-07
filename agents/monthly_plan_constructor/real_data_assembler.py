@@ -1,13 +1,19 @@
 """
-Increment 11A — run-scoped real-data CandidateAssembler adapter.
+Increment 11A / EXISTING-MONTH-PLAN-AWARENESS — run-scoped real-data
+CandidateAssembler adapter.
 
 Wires existing trusted reads + domain remainder truth into the existing
 CandidateAssembler port. Does not change Constructor profession or core
 contracts. ConstructorRealityRow remains identity-only.
 
-Blind Shadow Phase A: existing month plan lines are never read.
-already_planned_qty is therefore 0. That is experiment isolation, not a
-redefinition of production planning semantics.
+Existing monthly plan lines are authoritative operational state for the
+mission month. They are read once into the run-scoped snapshot via the
+narrow trusted capability execute_constructor_plan_lines_read
+(PUBLISHABLE_READ). Valid empty plan is allowed. Read/security failures
+fail closed — they are never silently treated as "no plan".
+
+Existing month plan is operational product state for the mission month,
+not a substitute for Human Review decisions.
 
 No product writes. No Supabase client. No global snapshot cache.
 """
@@ -34,7 +40,9 @@ from agents.monthly_plan_constructor.secure_read_tools import (
 )
 from security.agent_execution_context import AgentExecutionContext
 from security.trusted_read_executor import (
+    ToolPermissionError,
     execute_constructor_adjustments_read,
+    execute_constructor_plan_lines_read,
     execute_constructor_scope_read,
 )
 from utils.month_key import normalize_month_key
@@ -43,6 +51,7 @@ CODE_ASSEMBLER_BLOCKER = "REAL_DATA_ASSEMBLER_BLOCKER"
 CODE_SNAPSHOT_MISSING = "SNAPSHOT_MISSING"
 CODE_SNAPSHOT_MISMATCH = "SNAPSHOT_MISMATCH"
 CODE_ADJUSTMENTS_READ_FAILED = "ADJUSTMENTS_READ_FAILED"
+CODE_PLAN_LINES_READ_FAILED = "PLAN_LINES_READ_FAILED"
 CODE_DUPLICATE_CANDIDATE_ID = "DUPLICATE_CANDIDATE_ID"
 CODE_DOMAIN_BLOCKER = "DOMAIN_BLOCKER"
 
@@ -77,6 +86,7 @@ class _RunScopedSnapshot:
     identity_keys: tuple[tuple[str, ...], ...]
     scope_frame: pd.DataFrame
     adjustments_frame: pd.DataFrame
+    plan_frame: pd.DataFrame
 
 
 def _cell(raw: Mapping[str, Any], *names: str) -> str:
@@ -239,6 +249,7 @@ class RealDataShadowAdapter:
         self._snapshot: Optional[_RunScopedSnapshot] = None
         self._last_safe_scope_meta: dict[str, Any] = {}
         self._last_safe_adjustments_meta: dict[str, Any] = {}
+        self._last_safe_plan_meta: dict[str, Any] = {}
 
     def scope_reader(
         self,
@@ -264,6 +275,22 @@ class RealDataShadowAdapter:
             label="adjustments read",
         )
 
+        try:
+            plan_frame, plan_meta = execute_constructor_plan_lines_read(
+                context,
+                mission.month_key,
+            )
+        except ToolPermissionError as exc:
+            raise SecureReadError(
+                CODE_PLAN_LINES_READ_FAILED,
+                f"plan lines read denied: {exc}",
+            ) from exc
+        _raise_if_read_error(
+            plan_meta,
+            code=CODE_PLAN_LINES_READ_FAILED,
+            label="plan lines read",
+        )
+
         work = scope_frame.copy() if scope_frame is not None else pd.DataFrame()
         if "month_key" not in work.columns:
             work["month_key"] = mission.month_key
@@ -271,6 +298,7 @@ class RealDataShadowAdapter:
         records = scoped.to_dict(orient="records")
         identity_keys = tuple(_identity_from_mapping(row, mission) for row in records)
 
+        # Assign snapshot only after all authoritative reads succeed (fail-closed).
         self._snapshot = _RunScopedSnapshot(
             mission=mission,
             identity_keys=identity_keys,
@@ -280,9 +308,13 @@ class RealDataShadowAdapter:
                 if adjustments_frame is not None
                 else pd.DataFrame()
             ),
+            plan_frame=(
+                plan_frame.copy() if plan_frame is not None else pd.DataFrame()
+            ),
         )
         self._last_safe_scope_meta = _safe_read_meta(scope_meta)
         self._last_safe_adjustments_meta = _safe_read_meta(adjustments_meta)
+        self._last_safe_plan_meta = _safe_read_meta(plan_meta)
         return records
 
     def assemble_candidates(
@@ -311,7 +343,7 @@ class RealDataShadowAdapter:
         proposal = build_constructor_proposal(
             snapshot.scope_frame,
             snapshot.adjustments_frame,
-            pd.DataFrame(),
+            snapshot.plan_frame,
             scope.project_code,
             scope.month_key,
         )

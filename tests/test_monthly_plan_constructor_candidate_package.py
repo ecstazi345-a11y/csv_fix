@@ -159,6 +159,9 @@ class CandidatePackageBuilderTests(unittest.TestCase):
         self.assertEqual(package.candidates[0].labor_norm_status, LABOR_UNRESOLVED)
         self.assertEqual(package.labor_norm_summary.unresolved, 1)
         self.assertEqual(package.labor_norm_summary.validated, 0)
+        # Recommendation Layer applies only after labor resolution — unset at build.
+        self.assertIsNone(package.candidates[0].recommendation)
+        self.assertEqual(package.candidates[0].recommendation_reason_codes, ())
 
     def test_10_package_does_not_require_crew(self) -> None:
         package = _package()

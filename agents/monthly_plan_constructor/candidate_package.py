@@ -160,6 +160,10 @@ class CandidateRecord:
     available_to_add_qty is Candidate Available Physical Quantity.
     It is not resource-feasible qty and not approved commitment qty.
     No crew, labor_hours, labor_cost, or unit_price on this record.
+
+    recommendation / recommendation_reason_codes are unset (None / empty)
+    until authoritative labor resolution applies Recommendation Layer V1.
+    Do not invent a fake RECOMMEND_ADD at package construction time.
     """
 
     candidate_id: str
@@ -180,6 +184,8 @@ class CandidateRecord:
     labor_norm_status: str
     labor_norm_resolution_ref: Optional[str]
     source_snapshot_id: Optional[str]
+    recommendation: Optional[str] = None
+    recommendation_reason_codes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -284,6 +290,21 @@ def _normalize_candidate(
     labor_ref = _optional_text(data.get("labor_norm_resolution_ref"))
     snapshot = _optional_text(data.get("source_snapshot_id")) or source_snapshot_id
 
+    raw_recommendation = data.get("recommendation")
+    recommendation = _optional_text(raw_recommendation) or None
+    raw_reasons = data.get("recommendation_reason_codes")
+    if raw_reasons is None:
+        reason_codes: tuple[str, ...] = ()
+    elif isinstance(raw_reasons, tuple):
+        reason_codes = tuple(str(item) for item in raw_reasons)
+    elif isinstance(raw_reasons, list):
+        reason_codes = tuple(str(item) for item in raw_reasons)
+    else:
+        raise CandidatePackageError(
+            CODE_DATA_CONTRACT_BLOCKER,
+            "recommendation_reason_codes must be a tuple or list of strings",
+        )
+
     return CandidateRecord(
         candidate_id=_require_text(data.get("candidate_id"), "candidate_id"),
         project_code=_require_text(data.get("project_code"), "project_code"),
@@ -303,6 +324,8 @@ def _normalize_candidate(
         labor_norm_status=_labor_status(data.get("labor_norm_status")),
         labor_norm_resolution_ref=labor_ref or None,
         source_snapshot_id=snapshot,
+        recommendation=recommendation,
+        recommendation_reason_codes=reason_codes,
     )
 
 

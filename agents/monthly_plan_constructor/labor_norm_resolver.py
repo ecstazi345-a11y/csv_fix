@@ -24,6 +24,10 @@ from agents.monthly_plan_constructor.candidate_package import (
     CandidateRecord,
     LaborNormSummary,
 )
+from agents.monthly_plan_constructor.recommendation import (
+    RecommendationError,
+    apply_recommendation,
+)
 
 SCHEMA_VERSION = "1.0"
 
@@ -473,10 +477,11 @@ def resolve_labor_norms(
     evidence: Sequence[LaborNormEvidence],
 ) -> LaborNormResolutionSet:
     """
-    Attach labor-norm metadata to every candidate.
+    Attach labor-norm metadata to every candidate, then Recommendation Layer V1.
 
     Returns a new package via immutable replace. Original package is unchanged.
     Input candidate count equals output resolution count.
+    Recommendation is applied only after labor enrichment (never as a fake default).
     """
     if not isinstance(package, CandidatePackage):
         raise LaborNormResolverError(
@@ -502,13 +507,15 @@ def resolve_labor_norms(
     for candidate in package.candidates:
         resolution = _resolve_candidate(package.package_id, candidate, evidence_items)
         resolutions.append(resolution)
-        new_candidates.append(
-            replace(
-                candidate,
-                labor_norm_status=resolution.status,
-                labor_norm_resolution_ref=resolution.resolution_id,
-            )
+        labor_enriched = replace(
+            candidate,
+            labor_norm_status=resolution.status,
+            labor_norm_resolution_ref=resolution.resolution_id,
         )
+        try:
+            new_candidates.append(apply_recommendation(labor_enriched))
+        except RecommendationError as exc:
+            raise LaborNormResolverError(exc.code, str(exc)) from exc
 
     if len(resolutions) != len(package.candidates):
         raise LaborNormResolverError(

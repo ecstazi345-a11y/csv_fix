@@ -39,6 +39,7 @@ from agents.monthly_plan_constructor.exception_engine import (
     exception_from_failure,
     exceptions_from_labor_resolutions,
 )
+from agents.monthly_plan_constructor.human_confirm_contracts import HumanConfirmEvent
 from agents.monthly_plan_constructor.human_review_contracts import HumanReviewEvent
 from agents.monthly_plan_constructor.reviewed_candidate_package import (
     ReviewedCandidatePackage,
@@ -79,10 +80,15 @@ STATUS_REVALIDATING_REALITY = "REVALIDATING_REALITY"
 STATUS_WAITING_FOR_HUMAN_REVIEW = "WAITING_FOR_HUMAN_REVIEW"
 STATUS_APPLYING_HUMAN_REVIEW = "APPLYING_HUMAN_REVIEW"
 STATUS_REVIEWED_PACKAGE_READY = "REVIEWED_PACKAGE_READY"
+# RUNTIME-B professional Human Confirm gate → Constructor professional completion.
+STATUS_WAITING_FOR_HUMAN_CONFIRM = "WAITING_FOR_HUMAN_CONFIRM"
+STATUS_APPLYING_HUMAN_CONFIRM = "APPLYING_HUMAN_CONFIRM"
+STATUS_PROFESSIONAL_WORK_COMPLETED = "PROFESSIONAL_WORK_COMPLETED"
 
 COMPLETION_STATUSES = frozenset(
     {
         STATUS_READY_FOR_HANDOFF,
+        STATUS_PROFESSIONAL_WORK_COMPLETED,
         STATUS_FAILED,
     }
 )
@@ -91,6 +97,7 @@ PAUSE_STATUSES = frozenset(
     {
         STATUS_WAITING_FOR_HUMAN,
         STATUS_WAITING_FOR_HUMAN_REVIEW,
+        STATUS_WAITING_FOR_HUMAN_CONFIRM,
     }
 )
 
@@ -100,6 +107,8 @@ INVOCATION_STOP_STATUSES = frozenset(
         STATUS_WAITING_FOR_HUMAN,
         STATUS_WAITING_FOR_HUMAN_REVIEW,
         STATUS_REVIEWED_PACKAGE_READY,
+        STATUS_WAITING_FOR_HUMAN_CONFIRM,
+        STATUS_PROFESSIONAL_WORK_COMPLETED,
         STATUS_FAILED,
     }
 )
@@ -112,6 +121,7 @@ RESUME_ONLY_STATUSES = frozenset(
         STATUS_APPLYING_HUMAN_DECISION,
         STATUS_REVALIDATING_REALITY,
         STATUS_APPLYING_HUMAN_REVIEW,
+        STATUS_APPLYING_HUMAN_CONFIRM,
     }
 )
 
@@ -130,6 +140,9 @@ ACTIVE_STATUSES = frozenset(
         STATUS_WAITING_FOR_HUMAN_REVIEW,
         STATUS_APPLYING_HUMAN_REVIEW,
         STATUS_REVIEWED_PACKAGE_READY,
+        STATUS_WAITING_FOR_HUMAN_CONFIRM,
+        STATUS_APPLYING_HUMAN_CONFIRM,
+        STATUS_PROFESSIONAL_WORK_COMPLETED,
     }
 )
 
@@ -175,7 +188,15 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
             STATUS_FAILED,
         }
     ),
-    STATUS_REVIEWED_PACKAGE_READY: frozenset(),
+    STATUS_REVIEWED_PACKAGE_READY: frozenset({STATUS_WAITING_FOR_HUMAN_CONFIRM}),
+    STATUS_WAITING_FOR_HUMAN_CONFIRM: frozenset({STATUS_APPLYING_HUMAN_CONFIRM}),
+    STATUS_APPLYING_HUMAN_CONFIRM: frozenset(
+        {
+            STATUS_PROFESSIONAL_WORK_COMPLETED,
+            STATUS_FAILED,
+        }
+    ),
+    STATUS_PROFESSIONAL_WORK_COMPLETED: frozenset(),
     STATUS_FAILED: frozenset(),
 }
 
@@ -219,6 +240,7 @@ class ConstructorLifecycleState:
     exceptions: Optional[ConstructorExceptionSet] = None
     human_review_events: tuple[HumanReviewEvent, ...] = ()
     reviewed_package: Optional[ReviewedCandidatePackage] = None
+    human_confirm_events: tuple[HumanConfirmEvent, ...] = ()
     terminal_reason: Optional[str] = None
     error_code: Optional[str] = None
 
@@ -322,6 +344,9 @@ def _assert_status_invariants(state: ConstructorLifecycleState) -> None:
         STATUS_WAITING_FOR_HUMAN_REVIEW,
         STATUS_APPLYING_HUMAN_REVIEW,
         STATUS_REVIEWED_PACKAGE_READY,
+        STATUS_WAITING_FOR_HUMAN_CONFIRM,
+        STATUS_APPLYING_HUMAN_CONFIRM,
+        STATUS_PROFESSIONAL_WORK_COMPLETED,
     }:
         if state.scope is None:
             raise LifecycleError(
@@ -348,6 +373,9 @@ def _assert_status_invariants(state: ConstructorLifecycleState) -> None:
         STATUS_WAITING_FOR_HUMAN_REVIEW,
         STATUS_APPLYING_HUMAN_REVIEW,
         STATUS_REVIEWED_PACKAGE_READY,
+        STATUS_WAITING_FOR_HUMAN_CONFIRM,
+        STATUS_APPLYING_HUMAN_CONFIRM,
+        STATUS_PROFESSIONAL_WORK_COMPLETED,
     }:
         if state.reality_read is None:
             raise LifecycleError(
@@ -361,6 +389,9 @@ def _assert_status_invariants(state: ConstructorLifecycleState) -> None:
         STATUS_WAITING_FOR_HUMAN_REVIEW,
         STATUS_APPLYING_HUMAN_REVIEW,
         STATUS_REVIEWED_PACKAGE_READY,
+        STATUS_WAITING_FOR_HUMAN_CONFIRM,
+        STATUS_APPLYING_HUMAN_CONFIRM,
+        STATUS_PROFESSIONAL_WORK_COMPLETED,
     }:
         if state.package is None:
             raise LifecycleError(
@@ -373,6 +404,9 @@ def _assert_status_invariants(state: ConstructorLifecycleState) -> None:
         STATUS_WAITING_FOR_HUMAN_REVIEW,
         STATUS_APPLYING_HUMAN_REVIEW,
         STATUS_REVIEWED_PACKAGE_READY,
+        STATUS_WAITING_FOR_HUMAN_CONFIRM,
+        STATUS_APPLYING_HUMAN_CONFIRM,
+        STATUS_PROFESSIONAL_WORK_COMPLETED,
     }:
         if state.labor_resolutions is None:
             raise LifecycleError(
@@ -384,22 +418,36 @@ def _assert_status_invariants(state: ConstructorLifecycleState) -> None:
         STATUS_WAITING_FOR_HUMAN_REVIEW,
         STATUS_APPLYING_HUMAN_REVIEW,
         STATUS_REVIEWED_PACKAGE_READY,
+        STATUS_WAITING_FOR_HUMAN_CONFIRM,
+        STATUS_APPLYING_HUMAN_CONFIRM,
+        STATUS_PROFESSIONAL_WORK_COMPLETED,
     }:
         if state.exceptions is None:
             raise LifecycleError(
                 CODE_LIFECYCLE_CONTRACT_BLOCKER,
                 f"exceptions required for status {status}",
             )
-    if status == STATUS_REVIEWED_PACKAGE_READY:
+    if status in {
+        STATUS_REVIEWED_PACKAGE_READY,
+        STATUS_WAITING_FOR_HUMAN_CONFIRM,
+        STATUS_APPLYING_HUMAN_CONFIRM,
+        STATUS_PROFESSIONAL_WORK_COMPLETED,
+    }:
         if state.reviewed_package is None:
             raise LifecycleError(
                 CODE_LIFECYCLE_CONTRACT_BLOCKER,
-                "reviewed_package required for REVIEWED_PACKAGE_READY",
+                f"reviewed_package required for status {status}",
             )
         if int(state.reviewed_package.unresolved_count) > 0:
             raise LifecycleError(
                 CODE_LIFECYCLE_CONTRACT_BLOCKER,
-                "REVIEWED_PACKAGE_READY requires unresolved_count == 0",
+                f"{status} requires unresolved_count == 0",
+            )
+    if status == STATUS_PROFESSIONAL_WORK_COMPLETED:
+        if not state.human_confirm_events:
+            raise LifecycleError(
+                CODE_LIFECYCLE_CONTRACT_BLOCKER,
+                "human_confirm_events required for PROFESSIONAL_WORK_COMPLETED",
             )
 
 

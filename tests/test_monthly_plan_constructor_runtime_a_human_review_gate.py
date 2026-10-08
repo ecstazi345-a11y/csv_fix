@@ -52,6 +52,7 @@ from agents.monthly_plan_constructor.lifecycle import (
     STATUS_READY_FOR_HANDOFF,
     STATUS_REVIEWED_PACKAGE_READY,
     STATUS_WAITING_FOR_HUMAN,
+    STATUS_WAITING_FOR_HUMAN_CONFIRM,
     STATUS_WAITING_FOR_HUMAN_REVIEW,
     CandidateAssemblyResult,
     create_lifecycle_state,
@@ -345,12 +346,13 @@ class RuntimeAGraphTests(unittest.TestCase):
         )
         out2 = app.invoke(Command(resume=cmd), config)
         lifecycle = out2["lifecycle"]
-        self.assertEqual(lifecycle.status, STATUS_REVIEWED_PACKAGE_READY)
+        # RUNTIME-B: resolved review continues into Human Confirm wait.
+        self.assertEqual(lifecycle.status, STATUS_WAITING_FOR_HUMAN_CONFIRM)
         self.assertIsNotNone(lifecycle.reviewed_package)
         self.assertEqual(lifecycle.reviewed_package.unresolved_count, 0)
         self.assertEqual(lifecycle.reviewed_package.included_count, 1)
         self.assertNotEqual(lifecycle.status, STATUS_READY_FOR_HANDOFF)
-        self.assertNotIn("__interrupt__", out2)
+        self.assertIn("__interrupt__", out2)
 
     def test_05_stale_package_review_fail_closed(self) -> None:
         app, ctx, _ = self._build_app()
@@ -581,13 +583,14 @@ class RuntimeAGraphTests(unittest.TestCase):
             config,
         )
         ready = out2["lifecycle"]
-        self.assertEqual(ready.status, STATUS_REVIEWED_PACKAGE_READY)
+        # After resolved review, RUNTIME-B parks at Confirm wait with reviewed package.
+        self.assertEqual(ready.status, STATUS_WAITING_FOR_HUMAN_CONFIRM)
         self.assertIsNotNone(ready.reviewed_package)
         self.assertEqual(len(ready.human_review_events), 1)
 
         # Checkpoint restore (InMemorySaver get_state) — TEST_PROVEN, not live crash.
         restored = app.get_state(config).values["lifecycle"]
-        self.assertEqual(restored.status, STATUS_REVIEWED_PACKAGE_READY)
+        self.assertEqual(restored.status, STATUS_WAITING_FOR_HUMAN_CONFIRM)
         self.assertEqual(restored.run_id, run_id)
         self.assertEqual(restored.mission_id, MISSION_ID)
         self.assertEqual(restored.package.package_id, ready.package.package_id)
@@ -639,7 +642,7 @@ class RuntimeAGraphTests(unittest.TestCase):
         serde = build_constructor_jsonplus_serializer()
         tag, payload = serde.dumps_typed(ready)
         loaded = serde.loads_typed((tag, payload))
-        self.assertEqual(loaded.status, STATUS_REVIEWED_PACKAGE_READY)
+        self.assertEqual(loaded.status, STATUS_WAITING_FOR_HUMAN_CONFIRM)
         self.assertEqual(
             loaded.reviewed_package.reviewed_package_id,
             ready.reviewed_package.reviewed_package_id,

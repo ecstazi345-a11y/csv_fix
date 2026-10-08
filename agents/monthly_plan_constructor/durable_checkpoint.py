@@ -81,6 +81,20 @@ CONSTRUCTOR_MSGPACK_ALLOWLIST: tuple[ConstructorMsgpackAllowEntry, ...] = (
         "agents.monthly_plan_constructor.professional_review_resume",
         "ProfessionalHumanReviewResumeCommand",
     ),
+    # RUNTIME-B professional Human Confirm
+    ("agents.monthly_plan_constructor.human_confirm_contracts", "HumanConfirmEvent"),
+    (
+        "agents.monthly_plan_constructor.human_confirm_contracts",
+        "HumanConfirmDecision",
+    ),
+    (
+        "agents.monthly_plan_constructor.professional_confirm_resume",
+        "ProfessionalHumanConfirmWaitRequest",
+    ),
+    (
+        "agents.monthly_plan_constructor.professional_confirm_resume",
+        "ProfessionalHumanConfirmResumeCommand",
+    ),
 )
 
 

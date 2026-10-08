@@ -49,6 +49,9 @@ from agents.monthly_plan_constructor.lifecycle import (
     STATUS_WAITING_FOR_HUMAN_REVIEW,
     STATUS_APPLYING_HUMAN_REVIEW,
     STATUS_REVIEWED_PACKAGE_READY,
+    STATUS_WAITING_FOR_HUMAN_CONFIRM,
+    STATUS_APPLYING_HUMAN_CONFIRM,
+    STATUS_PROFESSIONAL_WORK_COMPLETED,
     CandidateAssemblyResult,
     ConstructorLifecycleState,
     LifecycleError,
@@ -762,11 +765,23 @@ class TestIncrement8StatusSemantics(unittest.TestCase):
 
         self.assertEqual(
             COMPLETION_STATUSES,
-            frozenset({STATUS_READY_FOR_HANDOFF, STATUS_FAILED}),
+            frozenset(
+                {
+                    STATUS_READY_FOR_HANDOFF,
+                    STATUS_PROFESSIONAL_WORK_COMPLETED,
+                    STATUS_FAILED,
+                }
+            ),
         )
         self.assertEqual(
             PAUSE_STATUSES,
-            frozenset({STATUS_WAITING_FOR_HUMAN, STATUS_WAITING_FOR_HUMAN_REVIEW}),
+            frozenset(
+                {
+                    STATUS_WAITING_FOR_HUMAN,
+                    STATUS_WAITING_FOR_HUMAN_REVIEW,
+                    STATUS_WAITING_FOR_HUMAN_CONFIRM,
+                }
+            ),
         )
         self.assertEqual(
             INVOCATION_STOP_STATUSES,
@@ -776,6 +791,8 @@ class TestIncrement8StatusSemantics(unittest.TestCase):
                     STATUS_WAITING_FOR_HUMAN,
                     STATUS_WAITING_FOR_HUMAN_REVIEW,
                     STATUS_REVIEWED_PACKAGE_READY,
+                    STATUS_WAITING_FOR_HUMAN_CONFIRM,
+                    STATUS_PROFESSIONAL_WORK_COMPLETED,
                     STATUS_FAILED,
                 }
             ),
@@ -788,6 +805,7 @@ class TestIncrement8StatusSemantics(unittest.TestCase):
                     STATUS_APPLYING_HUMAN_DECISION,
                     STATUS_REVALIDATING_REALITY,
                     STATUS_APPLYING_HUMAN_REVIEW,
+                    STATUS_APPLYING_HUMAN_CONFIRM,
                 }
             ),
         )

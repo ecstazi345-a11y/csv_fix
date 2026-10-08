@@ -61,8 +61,10 @@ from agents.monthly_plan_constructor.lifecycle import (
     STATUS_READY_FOR_HANDOFF,
     STATUS_REALITY_LOADED,
     STATUS_REVALIDATING_REALITY,
+    STATUS_PROFESSIONAL_WORK_COMPLETED,
     STATUS_REVIEWED_PACKAGE_READY,
     STATUS_WAITING_FOR_HUMAN,
+    STATUS_WAITING_FOR_HUMAN_CONFIRM,
     STATUS_WAITING_FOR_HUMAN_REVIEW,
     TERMINAL_STATUSES,
     CandidateAssembler,
@@ -73,6 +75,12 @@ from agents.monthly_plan_constructor.lifecycle import (
     advance_constructor_lifecycle,
     advance_constructor_reality_read_step,
     create_lifecycle_state,
+)
+from agents.monthly_plan_constructor.professional_confirm_resume import (
+    apply_professional_human_confirm,
+    build_professional_confirm_wait_request,
+    coerce_professional_confirm_resume_command,
+    enter_waiting_for_human_confirm,
 )
 from agents.monthly_plan_constructor.professional_review_resume import (
     apply_professional_human_review,
@@ -112,6 +120,8 @@ NODE_RESOLVE_LABOR = "resolve_labor"
 NODE_EVALUATE_EXCEPTIONS = "evaluate_exceptions"
 NODE_HUMAN_WAIT = "human_wait"
 NODE_HUMAN_REVIEW_WAIT = "human_review_wait"
+NODE_ENTER_HUMAN_CONFIRM = "enter_human_confirm"
+NODE_HUMAN_CONFIRM_WAIT = "human_confirm_wait"
 NODE_REVALIDATE_REALITY = "revalidate_reality"
 NODE_PERSIST_HANDOFF = "persist_handoff"
 
@@ -217,7 +227,12 @@ def _route_by_status(
         if handoff_enabled:
             return NODE_PERSIST_HANDOFF
         return END
+    # RUNTIME-B: resolved reviewed package enters professional Confirm wait.
     if status == STATUS_REVIEWED_PACKAGE_READY:
+        return NODE_ENTER_HUMAN_CONFIRM if hitl_enabled else END
+    if status == STATUS_WAITING_FOR_HUMAN_CONFIRM:
+        return NODE_HUMAN_CONFIRM_WAIT if hitl_enabled else END
+    if status == STATUS_PROFESSIONAL_WORK_COMPLETED:
         return END
     if status in INVOCATION_STOP_STATUSES:
         return END
@@ -432,6 +447,71 @@ def build_constructor_langgraph(
         )
         return {"lifecycle": updated}
 
+    def enter_human_confirm(state: ConstructorGraphState) -> ConstructorGraphState:
+        """REVIEWED_PACKAGE_READY → WAITING_FOR_HUMAN_CONFIRM (checkpointed before wait)."""
+        lifecycle = _require_status(
+            state,
+            STATUS_REVIEWED_PACKAGE_READY,
+            node_name=NODE_ENTER_HUMAN_CONFIRM,
+        )
+        return {
+            "lifecycle": enter_waiting_for_human_confirm(lifecycle, now=now),
+        }
+
+    def human_confirm_wait(state: ConstructorGraphState) -> ConstructorGraphState:
+        """
+        Professional Human Confirm wait node (RUNTIME-B).
+
+        Reuses LangGraph interrupt + checkpoint binding.
+        Valid Confirm → PROFESSIONAL_WORK_COMPLETED + optional RUN_COMPLETED
+        without handoff.
+        """
+        lifecycle = _require_status(
+            state,
+            STATUS_WAITING_FOR_HUMAN_CONFIRM,
+            node_name=NODE_HUMAN_CONFIRM_WAIT,
+        )
+        request = build_professional_confirm_wait_request(lifecycle, created_at=now)
+        resume_payload = interrupt(request)
+        command = coerce_professional_confirm_resume_command(resume_payload)
+        cfg = get_config()
+        configurable = cfg.get("configurable") or {}
+        thread_id = str(configurable.get("thread_id") or "").strip()
+        if thread_id != lifecycle.run_id:
+            raise HitlContractError(
+                CODE_HITL_CONTRACT_BLOCKER,
+                "thread_id must equal run_id",
+            )
+        runtime_ckpt = configurable.get("checkpoint_id")
+        resolved = resolve_current_checkpoint_id(
+            checkpointer,
+            thread_id=thread_id,
+            checkpoint_id=str(runtime_ckpt) if runtime_ckpt else None,
+        )
+        require_durable_resume_checkpoint(
+            expected_checkpoint_id=command.expected_checkpoint_id,
+            current_checkpoint_id=resolved,
+            context=context,
+        )
+        updated = apply_professional_human_confirm(
+            lifecycle,
+            command,
+            wait_request=request,
+            now=now,
+        )
+        if (
+            instrumentation is not None
+            and updated.status == STATUS_PROFESSIONAL_WORK_COMPLETED
+        ):
+            _emit_professional_run_completed(
+                lifecycle=updated,
+                instrumentation=instrumentation,
+                occurred_at=event_stamp or updated.updated_at,
+                node_name=NODE_HUMAN_CONFIRM_WAIT,
+                orchestration_run_id=orchestration_run_id,
+            )
+        return {"lifecycle": updated}
+
     def human_wait(state: ConstructorGraphState) -> ConstructorGraphState:
         """
         Thin HITL orchestration node.
@@ -562,6 +642,8 @@ def build_constructor_langgraph(
     if hitl_enabled:
         graph.add_node(NODE_HUMAN_WAIT, human_wait)
         graph.add_node(NODE_HUMAN_REVIEW_WAIT, human_review_wait)
+        graph.add_node(NODE_ENTER_HUMAN_CONFIRM, enter_human_confirm)
+        graph.add_node(NODE_HUMAN_CONFIRM_WAIT, human_confirm_wait)
         graph.add_node(NODE_REVALIDATE_REALITY, revalidate_reality)
     if handoff_enabled:
         graph.add_node(NODE_PERSIST_HANDOFF, persist_handoff)
@@ -573,6 +655,8 @@ def build_constructor_langgraph(
         NODE_EVALUATE_EXCEPTIONS: NODE_EVALUATE_EXCEPTIONS,
         NODE_HUMAN_WAIT: NODE_HUMAN_WAIT,
         NODE_HUMAN_REVIEW_WAIT: NODE_HUMAN_REVIEW_WAIT,
+        NODE_ENTER_HUMAN_CONFIRM: NODE_ENTER_HUMAN_CONFIRM,
+        NODE_HUMAN_CONFIRM_WAIT: NODE_HUMAN_CONFIRM_WAIT,
         NODE_REVALIDATE_REALITY: NODE_REVALIDATE_REALITY,
         END: END,
     }
@@ -596,6 +680,8 @@ def build_constructor_langgraph(
     if hitl_enabled:
         graph.add_conditional_edges(NODE_HUMAN_WAIT, route, path_map)
         graph.add_conditional_edges(NODE_HUMAN_REVIEW_WAIT, route, path_map)
+        graph.add_conditional_edges(NODE_ENTER_HUMAN_CONFIRM, route, path_map)
+        graph.add_conditional_edges(NODE_HUMAN_CONFIRM_WAIT, route, path_map)
         graph.add_conditional_edges(NODE_REVALIDATE_REALITY, route, path_map)
     if handoff_enabled:
         # persist_handoff leaves READY unchanged — a conditional edge would loop.
@@ -825,6 +911,59 @@ def _emit_run_advancing(
         status=EventStatus.OK,
         mission_id=lifecycle.mission_id,
         authorization_id=lifecycle.authorization_id,
+    )
+
+
+def _emit_professional_run_completed(
+    *,
+    lifecycle: ConstructorLifecycleState,
+    instrumentation: ConstructorRuntimeInstrumentation,
+    occurred_at: datetime,
+    node_name: str,
+    orchestration_run_id: Optional[str] = None,
+) -> None:
+    """
+    Emit RUN_COMPLETED for professional Human Confirm completion.
+
+    No handoff_id. No HANDOFF_PERSISTED. Distinguishes via stage_id / detail.
+    """
+    resume_n = _derive_resume_n(lifecycle)
+    package_id = (
+        lifecycle.reviewed_package.source_candidate_package_id
+        if lifecycle.reviewed_package is not None
+        else (lifecycle.package.package_id if lifecycle.package is not None else None)
+    )
+    # Reuse catalog stage RUN_COMPLETION; distinguish via semantic key + detail
+    # (no handoff_id). Do not invent a new observability stage catalog entry.
+    completed_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.RUN_COMPLETED,
+        stage_id="RUN_COMPLETION",
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=resume_n,
+        semantic_occurrence_key="professional-completion",
+        artifact_correlation_id=None,
+    )
+    instrumentation.emit(
+        key=completed_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Constructor professional work completed",
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        orchestration_run_id=orchestration_run_id,
+        handoff_id=None,
+        package_id=package_id,
+        detail={
+            "professional_status": lifecycle.status,
+            "completion_source": "HUMAN_CONFIRM",
+            "reviewed_package_id": (
+                lifecycle.reviewed_package.reviewed_package_id
+                if lifecycle.reviewed_package is not None
+                else ""
+            ),
+        },
     )
 
 

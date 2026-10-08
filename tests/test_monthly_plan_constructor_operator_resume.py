@@ -72,6 +72,7 @@ from agents.monthly_plan_constructor.lifecycle import (
     CODE_LIFECYCLE_CONTRACT_BLOCKER,
     STATUS_FAILED,
     STATUS_READY_FOR_HANDOFF,
+    STATUS_WAITING_FOR_HUMAN_REVIEW,
     STATUS_WAITING_FOR_HUMAN,
     CandidateAssemblyResult,
     ConstructorLifecycleState,
@@ -489,7 +490,7 @@ def test_valid_operator_resume_persists_before_apply_and_refreshes() -> None:
     assert store.answer_calls == 1
     assert req.interrupt_id in store.answers
     assert store.answers[req.interrupt_id].decision_id == "dec-11d-valid"
-    assert out2["lifecycle"].status == STATUS_READY_FOR_HANDOFF
+    assert out2["lifecycle"].status == STATUS_WAITING_FOR_HUMAN_REVIEW
     assert reader.calls > reads_after_wait
     types = _event_types(recorder, run_id)
     assert EventType.HUMAN_DECISION_RECEIVED in types
@@ -798,7 +799,8 @@ def test_identical_retry_safe_then_double_execution_blocked(tmp_path: Path) -> N
         hitl.record_answer(interrupt_id=req.interrupt_id, command=cmd)
         assert hitl.get_answer_for_interrupt(req.interrupt_id) is not None
         out2 = app.invoke(Command(resume=cmd), config)
-        assert out2["lifecycle"].status == STATUS_READY_FOR_HANDOFF
+        # After scope clarify, RUNTIME-A pauses at professional Human Review.
+        assert out2["lifecycle"].status == STATUS_WAITING_FOR_HUMAN_REVIEW
         first_reads = reader.calls
         assert first_reads >= 1
         resumed = [
@@ -809,11 +811,13 @@ def test_identical_retry_safe_then_double_execution_blocked(tmp_path: Path) -> N
         assert len(resumed) == 1
         second_error = None
         try:
+            # Replaying the *scope* HITL command into the professional review
+            # wait must fail closed (wrong payload / interrupt binding).
             app.invoke(Command(resume=cmd), config)
-        except (HitlContractError, LifecycleError) as exc:
+        except (HitlContractError, LifecycleError, TypeError, ValueError) as exc:
             second_error = exc
         held = app.get_state(config)
-        assert held.values["lifecycle"].status == STATUS_READY_FOR_HANDOFF
+        assert held.values["lifecycle"].status == STATUS_WAITING_FOR_HUMAN_REVIEW
         assert reader.calls == first_reads
         resumed_after = [
             event
@@ -821,11 +825,7 @@ def test_identical_retry_safe_then_double_execution_blocked(tmp_path: Path) -> N
             if event.event_type == EventType.RUN_RESUMED
         ]
         assert len(resumed_after) == 1
-        if second_error is not None:
-            assert getattr(second_error, "code", None) in {
-                CODE_HITL_CONTRACT_BLOCKER,
-                CODE_LIFECYCLE_CONTRACT_BLOCKER,
-            }
+        assert second_error is not None
     finally:
         hitl.close()
     assert not REAL_RUNTIME.exists()
@@ -1107,7 +1107,7 @@ def test_fresh_process_explicit_operator_resume(tmp_path: Path) -> None:
     assert result_b["pid"] != os.getpid()
     assert result_b["resume_invoked"] is True
     assert result_b["automatic_resume"] is False
-    assert result_b["lifecycle_status"] == STATUS_READY_FOR_HANDOFF
+    assert result_b["lifecycle_status"] == STATUS_WAITING_FOR_HUMAN_REVIEW
     assert result_b["hitl_answer_present"] is True
     assert result_b["hitl_decision_id"] == "dec-11d-fresh-b"
     assert result_b["authorization_id_b"] != result_a["authorization_id"]

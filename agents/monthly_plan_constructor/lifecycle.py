@@ -39,6 +39,10 @@ from agents.monthly_plan_constructor.exception_engine import (
     exception_from_failure,
     exceptions_from_labor_resolutions,
 )
+from agents.monthly_plan_constructor.human_review_contracts import HumanReviewEvent
+from agents.monthly_plan_constructor.reviewed_candidate_package import (
+    ReviewedCandidatePackage,
+)
 from agents.monthly_plan_constructor.labor_norm_resolver import (
     LaborNormEvidence,
     LaborNormResolutionSet,
@@ -71,6 +75,10 @@ STATUS_WAITING_FOR_HUMAN = "WAITING_FOR_HUMAN"
 STATUS_FAILED = "FAILED"
 STATUS_APPLYING_HUMAN_DECISION = "APPLYING_HUMAN_DECISION"
 STATUS_REVALIDATING_REALITY = "REVALIDATING_REALITY"
+# RUNTIME-A professional Human Review gate (not Confirm, not handoff completion).
+STATUS_WAITING_FOR_HUMAN_REVIEW = "WAITING_FOR_HUMAN_REVIEW"
+STATUS_APPLYING_HUMAN_REVIEW = "APPLYING_HUMAN_REVIEW"
+STATUS_REVIEWED_PACKAGE_READY = "REVIEWED_PACKAGE_READY"
 
 COMPLETION_STATUSES = frozenset(
     {
@@ -82,6 +90,7 @@ COMPLETION_STATUSES = frozenset(
 PAUSE_STATUSES = frozenset(
     {
         STATUS_WAITING_FOR_HUMAN,
+        STATUS_WAITING_FOR_HUMAN_REVIEW,
     }
 )
 
@@ -89,6 +98,8 @@ INVOCATION_STOP_STATUSES = frozenset(
     {
         STATUS_READY_FOR_HANDOFF,
         STATUS_WAITING_FOR_HUMAN,
+        STATUS_WAITING_FOR_HUMAN_REVIEW,
+        STATUS_REVIEWED_PACKAGE_READY,
         STATUS_FAILED,
     }
 )
@@ -100,6 +111,7 @@ RESUME_ONLY_STATUSES = frozenset(
     {
         STATUS_APPLYING_HUMAN_DECISION,
         STATUS_REVALIDATING_REALITY,
+        STATUS_APPLYING_HUMAN_REVIEW,
     }
 )
 
@@ -115,6 +127,9 @@ ACTIVE_STATUSES = frozenset(
         STATUS_FAILED,
         STATUS_APPLYING_HUMAN_DECISION,
         STATUS_REVALIDATING_REALITY,
+        STATUS_WAITING_FOR_HUMAN_REVIEW,
+        STATUS_APPLYING_HUMAN_REVIEW,
+        STATUS_REVIEWED_PACKAGE_READY,
     }
 )
 
@@ -133,6 +148,7 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     ),
     STATUS_LABOR_RESOLVED: frozenset(
         {
+            STATUS_WAITING_FOR_HUMAN_REVIEW,
             STATUS_READY_FOR_HANDOFF,
             STATUS_WAITING_FOR_HUMAN,
             STATUS_FAILED,
@@ -151,6 +167,15 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
             STATUS_FAILED,
         }
     ),
+    STATUS_WAITING_FOR_HUMAN_REVIEW: frozenset({STATUS_APPLYING_HUMAN_REVIEW}),
+    STATUS_APPLYING_HUMAN_REVIEW: frozenset(
+        {
+            STATUS_WAITING_FOR_HUMAN_REVIEW,
+            STATUS_REVIEWED_PACKAGE_READY,
+            STATUS_FAILED,
+        }
+    ),
+    STATUS_REVIEWED_PACKAGE_READY: frozenset(),
     STATUS_FAILED: frozenset(),
 }
 
@@ -192,6 +217,8 @@ class ConstructorLifecycleState:
     package: Optional[CandidatePackage] = None
     labor_resolutions: Optional[LaborNormResolutionSet] = None
     exceptions: Optional[ConstructorExceptionSet] = None
+    human_review_events: tuple[HumanReviewEvent, ...] = ()
+    reviewed_package: Optional[ReviewedCandidatePackage] = None
     terminal_reason: Optional[str] = None
     error_code: Optional[str] = None
 
@@ -292,6 +319,9 @@ def _assert_status_invariants(state: ConstructorLifecycleState) -> None:
         STATUS_LABOR_RESOLVED,
         STATUS_READY_FOR_HANDOFF,
         STATUS_REVALIDATING_REALITY,
+        STATUS_WAITING_FOR_HUMAN_REVIEW,
+        STATUS_APPLYING_HUMAN_REVIEW,
+        STATUS_REVIEWED_PACKAGE_READY,
     }:
         if state.scope is None:
             raise LifecycleError(
@@ -315,6 +345,9 @@ def _assert_status_invariants(state: ConstructorLifecycleState) -> None:
         STATUS_PACKAGE_BUILT,
         STATUS_LABOR_RESOLVED,
         STATUS_READY_FOR_HANDOFF,
+        STATUS_WAITING_FOR_HUMAN_REVIEW,
+        STATUS_APPLYING_HUMAN_REVIEW,
+        STATUS_REVIEWED_PACKAGE_READY,
     }:
         if state.reality_read is None:
             raise LifecycleError(
@@ -325,23 +358,48 @@ def _assert_status_invariants(state: ConstructorLifecycleState) -> None:
         STATUS_PACKAGE_BUILT,
         STATUS_LABOR_RESOLVED,
         STATUS_READY_FOR_HANDOFF,
+        STATUS_WAITING_FOR_HUMAN_REVIEW,
+        STATUS_APPLYING_HUMAN_REVIEW,
+        STATUS_REVIEWED_PACKAGE_READY,
     }:
         if state.package is None:
             raise LifecycleError(
                 CODE_LIFECYCLE_CONTRACT_BLOCKER,
                 f"package required for status {status}",
             )
-    if status in {STATUS_LABOR_RESOLVED, STATUS_READY_FOR_HANDOFF}:
+    if status in {
+        STATUS_LABOR_RESOLVED,
+        STATUS_READY_FOR_HANDOFF,
+        STATUS_WAITING_FOR_HUMAN_REVIEW,
+        STATUS_APPLYING_HUMAN_REVIEW,
+        STATUS_REVIEWED_PACKAGE_READY,
+    }:
         if state.labor_resolutions is None:
             raise LifecycleError(
                 CODE_LIFECYCLE_CONTRACT_BLOCKER,
                 f"labor_resolutions required for status {status}",
             )
-    if status == STATUS_READY_FOR_HANDOFF:
+    if status in {
+        STATUS_READY_FOR_HANDOFF,
+        STATUS_WAITING_FOR_HUMAN_REVIEW,
+        STATUS_APPLYING_HUMAN_REVIEW,
+        STATUS_REVIEWED_PACKAGE_READY,
+    }:
         if state.exceptions is None:
             raise LifecycleError(
                 CODE_LIFECYCLE_CONTRACT_BLOCKER,
-                "exceptions required for READY_FOR_HANDOFF",
+                f"exceptions required for status {status}",
+            )
+    if status == STATUS_REVIEWED_PACKAGE_READY:
+        if state.reviewed_package is None:
+            raise LifecycleError(
+                CODE_LIFECYCLE_CONTRACT_BLOCKER,
+                "reviewed_package required for REVIEWED_PACKAGE_READY",
+            )
+        if int(state.reviewed_package.unresolved_count) > 0:
+            raise LifecycleError(
+                CODE_LIFECYCLE_CONTRACT_BLOCKER,
+                "REVIEWED_PACKAGE_READY requires unresolved_count == 0",
             )
 
 
@@ -729,7 +787,15 @@ def advance_constructor_lifecycle(
         except ExceptionEngineError as exc:
             return _fail_engine_contract(state, exc, at=stamp)
 
-        state = replace(state, exceptions=exc_set, updated_at=stamp)
+        # Keep package.exception_summary aligned with authoritative exception set
+        # so ReviewedCandidatePackage reconciliation can succeed later.
+        synced_package = replace(state.package, exception_summary=exc_set.summary)
+        state = replace(
+            state,
+            package=synced_package,
+            exceptions=exc_set,
+            updated_at=stamp,
+        )
         if not is_ready_for_handoff(state):
             # Labor path should only produce NON_BLOCKING; if somehow blocking, fail closed.
             blocking = state.exceptions.blocking() if state.exceptions else ()
@@ -761,12 +827,16 @@ def advance_constructor_lifecycle(
                 terminal_reason="readiness predicate failed",
             )
 
+        # RUNTIME-A: professional Human Review gate before Confirm / handoff.
         return _append_transition(
             state,
-            to_status=STATUS_READY_FOR_HANDOFF,
+            to_status=STATUS_WAITING_FOR_HUMAN_REVIEW,
             at=stamp,
             source_capability=SOURCE_LIFECYCLE,
-            note="ready for future handoff (eligibility only)",
+            note="awaiting professional Human Review",
+            trigger_code="HUMAN_REVIEW",
+            error_code="HUMAN_REVIEW",
+            terminal_reason="awaiting professional Human Review",
         )
 
     raise LifecycleError(

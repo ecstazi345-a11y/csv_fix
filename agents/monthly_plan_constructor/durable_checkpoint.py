@@ -58,6 +58,29 @@ CONSTRUCTOR_MSGPACK_ALLOWLIST: tuple[ConstructorMsgpackAllowEntry, ...] = (
     ("agents.monthly_plan_constructor.hitl_contracts", "ConstructorHumanDecisionRequest"),
     ("agents.monthly_plan_constructor.hitl_contracts", "ConstructorResumeCommand"),
     ("agents.monthly_plan_constructor.hitl_contracts", "ScopeSummary"),
+    # RUNTIME-A professional Human Review / Reviewed Package
+    ("agents.monthly_plan_constructor.human_review_contracts", "HumanReviewEvent"),
+    ("agents.monthly_plan_constructor.human_review_contracts", "HumanReviewDecision"),
+    (
+        "agents.monthly_plan_constructor.reviewed_candidate_package",
+        "ReviewedCandidatePackage",
+    ),
+    (
+        "agents.monthly_plan_constructor.reviewed_candidate_package",
+        "ReviewedCandidateRecord",
+    ),
+    (
+        "agents.monthly_plan_constructor.reviewed_candidate_package",
+        "ReviewedDisposition",
+    ),
+    (
+        "agents.monthly_plan_constructor.professional_review_resume",
+        "ProfessionalHumanReviewWaitRequest",
+    ),
+    (
+        "agents.monthly_plan_constructor.professional_review_resume",
+        "ProfessionalHumanReviewResumeCommand",
+    ),
 )
 
 

@@ -46,6 +46,7 @@ from agents.monthly_plan_constructor.lifecycle import (
     STATUS_READY_FOR_HANDOFF,
     STATUS_REALITY_LOADED,
     STATUS_WAITING_FOR_HUMAN,
+    STATUS_WAITING_FOR_HUMAN_REVIEW,
     CandidateAssemblyResult,
     ConstructorLifecycleState,
     LifecycleError,
@@ -291,7 +292,7 @@ class TestLangGraphVersion(unittest.TestCase):
 class TestNormalPath(unittest.TestCase):
     def test_full_path_ready(self) -> None:
         state = _run_graph(evidence=[_history()])
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         self.assertTrue(is_ready_for_handoff(state))
         self.assertEqual(
             [t.to_status for t in state.transitions],
@@ -300,7 +301,7 @@ class TestNormalPath(unittest.TestCase):
                 STATUS_REALITY_LOADED,
                 STATUS_PACKAGE_BUILT,
                 "LABOR_RESOLVED",
-                STATUS_READY_FOR_HANDOFF,
+                STATUS_WAITING_FOR_HUMAN_REVIEW,
             ],
         )
 
@@ -379,12 +380,12 @@ class TestEdgeCases(unittest.TestCase):
             assembler=StubAssembler(candidates=[], scanned_count=0),
             evidence=(),
         )
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         self.assertEqual(state.package.candidate_count, 0)  # type: ignore[union-attr]
 
     def test_all_labor_unresolved_ready(self) -> None:
         state = _run_graph(evidence=())
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         self.assertEqual(
             state.exceptions.exceptions[0].exception_code,  # type: ignore[union-attr]
             CODE_LABOR_NORM_UNRESOLVED,
@@ -593,7 +594,7 @@ class TestIncrement8HitlLangGraph(unittest.TestCase):
             build_decision_request_from_lifecycle,
         )
         from agents.monthly_plan_constructor.lifecycle import (
-            STATUS_READY_FOR_HANDOFF,
+            STATUS_WAITING_FOR_HUMAN_REVIEW,
         )
 
         run_id = "run-inc8-hitl-graph"
@@ -647,7 +648,9 @@ class TestIncrement8HitlLangGraph(unittest.TestCase):
         )
         out2 = app.invoke(Command(resume=cmd), config)
         lifecycle = out2["lifecycle"]
-        self.assertEqual(lifecycle.status, STATUS_READY_FOR_HANDOFF)
+        # After scope clarify + labor, RUNTIME-A stops at professional review wait.
+        self.assertEqual(lifecycle.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
+        self.assertIn("__interrupt__", out2)
         self.assertGreaterEqual(reader.calls, 1)
         # Replay before interrupt causes a second upsert call, same id.
         self.assertGreaterEqual(store.open_calls, 2)

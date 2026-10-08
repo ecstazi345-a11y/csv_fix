@@ -46,6 +46,9 @@ from agents.monthly_plan_constructor.lifecycle import (
     STATUS_READY_FOR_HANDOFF,
     STATUS_REALITY_LOADED,
     STATUS_WAITING_FOR_HUMAN,
+    STATUS_WAITING_FOR_HUMAN_REVIEW,
+    STATUS_APPLYING_HUMAN_REVIEW,
+    STATUS_REVIEWED_PACKAGE_READY,
     CandidateAssemblyResult,
     ConstructorLifecycleState,
     LifecycleError,
@@ -288,7 +291,7 @@ class TestStateContract(unittest.TestCase):
 class TestNormalPath(unittest.TestCase):
     def test_full_path_ready(self) -> None:
         state = _run(evidence=[_history()])
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         self.assertTrue(is_ready_for_handoff(state))
         statuses = [t.to_status for t in state.transitions]
         self.assertEqual(
@@ -298,7 +301,7 @@ class TestNormalPath(unittest.TestCase):
                 STATUS_REALITY_LOADED,
                 STATUS_PACKAGE_BUILT,
                 STATUS_LABOR_RESOLVED,
-                STATUS_READY_FOR_HANDOFF,
+                STATUS_WAITING_FOR_HUMAN_REVIEW,
             ],
         )
 
@@ -325,14 +328,14 @@ class TestNormalPath(unittest.TestCase):
             scanned_count=2,
         )
         state = _run(assembler=assembler, evidence=[_history()])
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         codes = {e.exception_code for e in state.exceptions.exceptions}  # type: ignore[union-attr]
         self.assertEqual(codes, {CODE_LABOR_NORM_UNRESOLVED})
         self.assertTrue(state.exceptions.handoff_allowed())  # type: ignore[union-attr]
 
     def test_all_unresolved_continues(self) -> None:
         state = _run(evidence=())
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         self.assertEqual(
             state.exceptions.exceptions[0].exception_code,  # type: ignore[union-attr]
             CODE_LABOR_NORM_UNRESOLVED,
@@ -345,7 +348,7 @@ class TestZeroCandidate(unittest.TestCase):
         reader = RecordingReader(rows=[])
         assembler = StubAssembler(candidates=[], scanned_count=0)
         state = _run(reader=reader, assembler=assembler, evidence=())
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         self.assertEqual(state.package.candidate_count, 0)  # type: ignore[union-attr]
         self.assertEqual(state.labor_resolutions.resolutions, ())  # type: ignore[union-attr]
         self.assertTrue(is_ready_for_handoff(state))
@@ -483,7 +486,7 @@ class TestReadiness(unittest.TestCase):
     def test_labor_only_non_blocking_ready(self) -> None:
         state = _run(evidence=())
         self.assertTrue(is_ready_for_handoff(state))
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
 
     def test_blocking_exception_not_ready(self) -> None:
         state = _run(project_code="")
@@ -519,7 +522,7 @@ class TestAssemblerBoundary(unittest.TestCase):
         assembler = StubAssembler()
         state = _run(assembler=assembler, evidence=[_history()])
         self.assertEqual(assembler.calls, 1)
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
 
     def test_no_mpca_domain_import(self) -> None:
         source = Path("agents/monthly_plan_constructor/lifecycle.py").read_text(
@@ -634,7 +637,7 @@ class TestAdvanceOneStage(unittest.TestCase):
             state = _advance(state)
         state = _advance(state, evidence=[_history()])
         state = _advance(state, evidence=[_history()])
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         self.assertTrue(is_ready_for_handoff(state))
 
     def test_terminal_cannot_advance_ready(self) -> None:
@@ -676,18 +679,26 @@ class TestAdvanceOneStage(unittest.TestCase):
         state = create_lifecycle_state(mission_id=MISSION_ID, created_at=FIXED_AT)
         for _ in range(5):
             state = _advance(state, reader=reader, assembler=assembler, evidence=())
-            if state.status in {STATUS_READY_FOR_HANDOFF, STATUS_FAILED, STATUS_WAITING_FOR_HUMAN}:
+            if state.status in {
+                STATUS_WAITING_FOR_HUMAN_REVIEW,
+                STATUS_FAILED,
+                STATUS_WAITING_FOR_HUMAN,
+            }:
                 break
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         self.assertEqual(state.package.candidate_count, 0)  # type: ignore[union-attr]
 
     def test_advance_all_unresolved_ready(self) -> None:
         state = create_lifecycle_state(mission_id=MISSION_ID, created_at=FIXED_AT)
         for _ in range(5):
             state = _advance(state, evidence=())
-            if state.status in {STATUS_READY_FOR_HANDOFF, STATUS_FAILED, STATUS_WAITING_FOR_HUMAN}:
+            if state.status in {
+                STATUS_WAITING_FOR_HUMAN_REVIEW,
+                STATUS_FAILED,
+                STATUS_WAITING_FOR_HUMAN,
+            }:
                 break
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         self.assertEqual(
             state.exceptions.exceptions[0].exception_code,  # type: ignore[union-attr]
             CODE_LABOR_NORM_UNRESOLVED,
@@ -700,7 +711,7 @@ class TestAdvanceOneStage(unittest.TestCase):
             state = _advance(state, evidence=[_history()])
             self.assertGreaterEqual(len(state.transitions), prev_len)
             prev_len = len(state.transitions)
-            if state.status == STATUS_READY_FOR_HANDOFF:
+            if state.status == STATUS_WAITING_FOR_HUMAN_REVIEW:
                 break
         self.assertEqual(state.transitions[0].from_status, STATUS_CREATED)
 
@@ -716,7 +727,7 @@ class TestAdvanceOneStage(unittest.TestCase):
         reader = RecordingReader()
         evidence = [_history()]
         while state.status not in {
-            STATUS_READY_FOR_HANDOFF,
+            STATUS_WAITING_FOR_HUMAN_REVIEW,
             STATUS_WAITING_FOR_HUMAN,
             STATUS_FAILED,
         }:
@@ -753,13 +764,18 @@ class TestIncrement8StatusSemantics(unittest.TestCase):
             COMPLETION_STATUSES,
             frozenset({STATUS_READY_FOR_HANDOFF, STATUS_FAILED}),
         )
-        self.assertEqual(PAUSE_STATUSES, frozenset({STATUS_WAITING_FOR_HUMAN}))
+        self.assertEqual(
+            PAUSE_STATUSES,
+            frozenset({STATUS_WAITING_FOR_HUMAN, STATUS_WAITING_FOR_HUMAN_REVIEW}),
+        )
         self.assertEqual(
             INVOCATION_STOP_STATUSES,
             frozenset(
                 {
                     STATUS_READY_FOR_HANDOFF,
                     STATUS_WAITING_FOR_HUMAN,
+                    STATUS_WAITING_FOR_HUMAN_REVIEW,
+                    STATUS_REVIEWED_PACKAGE_READY,
                     STATUS_FAILED,
                 }
             ),
@@ -768,7 +784,11 @@ class TestIncrement8StatusSemantics(unittest.TestCase):
         self.assertEqual(
             RESUME_ONLY_STATUSES,
             frozenset(
-                {STATUS_APPLYING_HUMAN_DECISION, STATUS_REVALIDATING_REALITY}
+                {
+                    STATUS_APPLYING_HUMAN_DECISION,
+                    STATUS_REVALIDATING_REALITY,
+                    STATUS_APPLYING_HUMAN_REVIEW,
+                }
             ),
         )
 

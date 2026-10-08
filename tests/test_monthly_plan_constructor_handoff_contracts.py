@@ -179,6 +179,19 @@ def _history() -> LaborNormEvidence:
 
 
 def _ready(**overrides: object) -> ConstructorLifecycleState:
+    """
+    Legacy handoff fixture.
+
+    Professional RUNTIME-A stops at WAITING_FOR_HUMAN_REVIEW. Handoff contract
+    tests still require READY_FOR_HANDOFF status (legacy path not executed by
+    the professional graph). Force status after a full professional advance.
+    """
+    from dataclasses import replace as dc_replace
+
+    from agents.monthly_plan_constructor.lifecycle import (
+        STATUS_WAITING_FOR_HUMAN_REVIEW,
+    )
+
     kwargs: dict[str, object] = {
         "context": _context(),
         "project_code": PROJECT,
@@ -191,7 +204,10 @@ def _ready(**overrides: object) -> ConstructorLifecycleState:
         "now": FIXED_AT,
     }
     kwargs.update(overrides)
-    return run_constructor_lifecycle(**kwargs)  # type: ignore[arg-type]
+    state = run_constructor_lifecycle(**kwargs)  # type: ignore[arg-type]
+    if state.status != STATUS_WAITING_FOR_HUMAN_REVIEW:
+        return state
+    return dc_replace(state, status=STATUS_READY_FOR_HANDOFF)
 
 
 def _build(state: ConstructorLifecycleState, **kwargs: object):

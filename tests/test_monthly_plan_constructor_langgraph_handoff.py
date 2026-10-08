@@ -45,9 +45,11 @@ from agents.monthly_plan_constructor.lifecycle import (
     STATUS_FAILED,
     STATUS_READY_FOR_HANDOFF,
     STATUS_WAITING_FOR_HUMAN,
+    STATUS_WAITING_FOR_HUMAN_REVIEW,
     CandidateAssemblyResult,
     ConstructorLifecycleState,
     create_lifecycle_state,
+    is_ready_for_handoff,
 )
 from agents.monthly_plan_constructor.mission_scope import ConstructorMissionScope
 from agents.monthly_plan_constructor.secure_read_tools import (
@@ -290,7 +292,7 @@ class TestNoStoreBackwardCompat(unittest.TestCase):
             lg, "persist_constructor_handoff", wraps=lg.persist_constructor_handoff
         ) as spy:
             state = _run(handoff_store=None)
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         self.assertEqual(spy.call_count, 0)
         self.assertIsInstance(state, ConstructorLifecycleState)
         self.assertNotIsInstance(state, tuple)
@@ -310,6 +312,7 @@ class TestNoStoreBackwardCompat(unittest.TestCase):
 
 class TestHappyPathPersist(unittest.TestCase):
     def test_persist_called_once_and_lifecycle_stays_ready(self) -> None:
+        """RUNTIME-A: professional path stops before Confirm; legacy handoff not executed."""
         from agents.monthly_plan_constructor import langgraph_runtime as lg
 
         store = InMemoryHandoffStore()
@@ -317,22 +320,11 @@ class TestHappyPathPersist(unittest.TestCase):
             lg, "persist_constructor_handoff", wraps=lg.persist_constructor_handoff
         ) as spy:
             state = _run(handoff_store=store)
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
-        self.assertEqual(spy.call_count, 1)
-        self.assertEqual(len(store), 1)
-        self.assertEqual(store.put_calls, 1)
-        artifact = store.artifacts()[0]
-        self.assertEqual(artifact.source_run_id, state.run_id)
-        self.assertEqual(artifact.mission_id, state.mission_id)
-        self.assertEqual(artifact.project_code, state.scope.project_code)  # type: ignore[union-attr]
-        self.assertEqual(artifact.month_key, state.scope.month_key)  # type: ignore[union-attr]
-        self.assertEqual(artifact.scope, state.scope)
-        self.assertEqual(
-            artifact.candidate_package_reference,
-            state.package.as_reference(),  # type: ignore[union-attr]
-        )
-        self.assertEqual(artifact.snapshot_id, state.reality_read.snapshot_id)  # type: ignore[union-attr]
-        self.assertEqual(artifact.snapshot_id, state.package.provenance.snapshot_id)  # type: ignore[union-attr]
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
+        self.assertEqual(spy.call_count, 0)
+        self.assertEqual(len(store), 0)
+        self.assertEqual(store.put_calls, 0)
+        self.assertTrue(is_ready_for_handoff(state))
 
     def test_empty_package_ready_persists(self) -> None:
         store = InMemoryHandoffStore()
@@ -342,13 +334,10 @@ class TestHappyPathPersist(unittest.TestCase):
             assembler=StubAssembler(candidates=[], scanned_count=0),
             evidence=(),
         )
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         self.assertEqual(state.package.candidate_count, 0)  # type: ignore[union-attr]
-        self.assertEqual(len(store), 1)
-        artifact = store.artifacts()[0]
-        self.assertEqual(artifact.candidate_count, 0)
-        self.assertEqual(artifact.candidate_ids, ())
-        self.assertEqual(artifact.snapshot_id, state.reality_read.snapshot_id)  # type: ignore[union-attr]
+        self.assertEqual(len(store), 0)
+        self.assertEqual(store.put_calls, 0)
 
     def test_graph_state_schema_unchanged(self) -> None:
         from typing import get_type_hints
@@ -391,17 +380,17 @@ class TestWaitAndFailedDoNotPersist(unittest.TestCase):
 
 class TestStoreOutcomes(unittest.TestCase):
     def test_idempotent_replay_completes_ready(self) -> None:
+        # RUNTIME-A: professional path never reaches legacy handoff persist.
         store = ReplaySameStore()
         state = _run(handoff_store=store)
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
-        self.assertEqual(store.put_calls, 1)
-        self.assertIsInstance(store.last, ConstructorHandoff)
-        self.assertEqual(store.last.source_run_id, state.run_id)  # type: ignore[union-attr]
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
+        self.assertEqual(store.put_calls, 0)
+        self.assertIsNone(store.last)
 
     def test_immutability_conflict_propagates(self) -> None:
-        with self.assertRaises(ConstructorHandoffStoreError) as caught:
-            _run(handoff_store=ConflictStore())
-        self.assertEqual(caught.exception.code, CODE_HANDOFF_IMMUTABILITY_CONFLICT)
+        # Conflict store is never consulted on the professional review path.
+        state = _run(handoff_store=ConflictStore())
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
 
     def test_malformed_store_response_fail_closed(self) -> None:
         class BadStore:
@@ -411,14 +400,12 @@ class TestStoreOutcomes(unittest.TestCase):
             def put_if_absent(self, handoff: ConstructorHandoff):
                 return {"created": True, "stored_handoff": handoff}
 
-        with self.assertRaises(ConstructorHandoffStoreError) as caught:
-            _run(handoff_store=BadStore())
-        self.assertEqual(caught.exception.code, CODE_HANDOFF_STORE_CONTRACT_BLOCKER)
+        state = _run(handoff_store=BadStore())
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
 
     def test_persistence_exception_not_swallowed(self) -> None:
-        with self.assertRaises(RuntimeError) as caught:
-            _run(handoff_store=BoomStore())
-        self.assertEqual(str(caught.exception), "store exploded")
+        state = _run(handoff_store=BoomStore())
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
 
 
 class TestBoundaries(unittest.TestCase):
@@ -500,8 +487,9 @@ class TestBoundaries(unittest.TestCase):
         )
         config = {"configurable": {"thread_id": run_id}}
         out = app.invoke({"lifecycle": initial}, config)
-        self.assertEqual(out["lifecycle"].status, STATUS_READY_FOR_HANDOFF)
-        self.assertEqual(len(store), 1)
+        self.assertEqual(out["lifecycle"].status, STATUS_WAITING_FOR_HUMAN_REVIEW)
+        self.assertEqual(len(store), 0)
+        self.assertIn("__interrupt__", out)
         snap = app.get_state(config)
         self.assertIn("lifecycle", snap.values)
         for key in snap.values:
@@ -509,7 +497,7 @@ class TestBoundaries(unittest.TestCase):
         self.assertNotIn("handoff", snap.values)
         self.assertNotIn("persist_result", snap.values)
         self.assertIsInstance(snap.values["lifecycle"], ConstructorLifecycleState)
-        self.assertEqual(snap.values["lifecycle"].status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(snap.values["lifecycle"].status, STATUS_WAITING_FOR_HUMAN_REVIEW)
 
 
 class TestHitlFreshSnapshotHandoff(unittest.TestCase):
@@ -574,17 +562,15 @@ class TestHitlFreshSnapshotHandoff(unittest.TestCase):
         )
         out2 = app.invoke(Command(resume=cmd), config)
         lifecycle = out2["lifecycle"]
-        self.assertEqual(lifecycle.status, STATUS_READY_FOR_HANDOFF)
+        # After scope clarify: professional Human Review wait (no legacy handoff).
+        self.assertEqual(lifecycle.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         self.assertGreater(reader.calls, reads_at_wait)
-        self.assertEqual(len(handoff_store), 1)
-        artifact = handoff_store.artifacts()[0]
-        self.assertEqual(artifact.snapshot_id, lifecycle.reality_read.snapshot_id)
-        self.assertEqual(artifact.snapshot_id, lifecycle.package.provenance.snapshot_id)
-        self.assertEqual(artifact.source_run_id, lifecycle.run_id)
+        self.assertEqual(len(handoff_store), 0)
         self.assertEqual(hitl_store.answer_calls, 1)
+        self.assertIn("__interrupt__", out2)
         held = app.get_state(config)
         self.assertNotIn("handoff", held.values)
-        self.assertEqual(held.values["lifecycle"].status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(held.values["lifecycle"].status, STATUS_WAITING_FOR_HUMAN_REVIEW)
 
 
 if __name__ == "__main__":

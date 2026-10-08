@@ -61,7 +61,9 @@ from agents.monthly_plan_constructor.lifecycle import (
     STATUS_READY_FOR_HANDOFF,
     STATUS_REALITY_LOADED,
     STATUS_REVALIDATING_REALITY,
+    STATUS_REVIEWED_PACKAGE_READY,
     STATUS_WAITING_FOR_HUMAN,
+    STATUS_WAITING_FOR_HUMAN_REVIEW,
     TERMINAL_STATUSES,
     CandidateAssembler,
     ConstructorLifecycleState,
@@ -71,6 +73,11 @@ from agents.monthly_plan_constructor.lifecycle import (
     advance_constructor_lifecycle,
     advance_constructor_reality_read_step,
     create_lifecycle_state,
+)
+from agents.monthly_plan_constructor.professional_review_resume import (
+    apply_professional_human_review,
+    build_professional_review_wait_request,
+    coerce_professional_review_resume_command,
 )
 from agents.monthly_plan_constructor.mission_scope import ScopeValue
 from agents.monthly_plan_constructor.runtime_instrumentation import (
@@ -104,6 +111,7 @@ NODE_BUILD_PACKAGE = "build_package"
 NODE_RESOLVE_LABOR = "resolve_labor"
 NODE_EVALUATE_EXCEPTIONS = "evaluate_exceptions"
 NODE_HUMAN_WAIT = "human_wait"
+NODE_HUMAN_REVIEW_WAIT = "human_review_wait"
 NODE_REVALIDATE_REALITY = "revalidate_reality"
 NODE_PERSIST_HANDOFF = "persist_handoff"
 
@@ -195,6 +203,8 @@ def _route_by_status(
         return NODE_EVALUATE_EXCEPTIONS
     if status == STATUS_WAITING_FOR_HUMAN:
         return NODE_HUMAN_WAIT if hitl_enabled else END
+    if status == STATUS_WAITING_FOR_HUMAN_REVIEW:
+        return NODE_HUMAN_REVIEW_WAIT if hitl_enabled else END
     if status == STATUS_REVALIDATING_REALITY:
         if not hitl_enabled:
             raise LifecycleError(
@@ -206,6 +216,8 @@ def _route_by_status(
     if status == STATUS_READY_FOR_HANDOFF:
         if handoff_enabled:
             return NODE_PERSIST_HANDOFF
+        return END
+    if status == STATUS_REVIEWED_PACKAGE_READY:
         return END
     if status in INVOCATION_STOP_STATUSES:
         return END
@@ -374,6 +386,52 @@ def build_constructor_langgraph(
             )
         }
 
+    def human_review_wait(state: ConstructorGraphState) -> ConstructorGraphState:
+        """
+        Professional Human Review wait node (RUNTIME-A).
+
+        Reuses LangGraph interrupt + checkpoint binding.
+        Does not use generic CLARIFY_SCOPE / ABORT_RUN.
+        Does not emit RUN_COMPLETED or persist legacy handoff.
+        """
+        lifecycle = _require_status(
+            state,
+            STATUS_WAITING_FOR_HUMAN_REVIEW,
+            node_name=NODE_HUMAN_REVIEW_WAIT,
+        )
+        request = build_professional_review_wait_request(lifecycle, created_at=now)
+        resume_payload = interrupt(request)
+        command = coerce_professional_review_resume_command(resume_payload)
+        cfg = get_config()
+        configurable = cfg.get("configurable") or {}
+        thread_id = str(configurable.get("thread_id") or "").strip()
+        if thread_id != lifecycle.run_id:
+            raise HitlContractError(
+                CODE_HITL_CONTRACT_BLOCKER,
+                "thread_id must equal run_id",
+            )
+        # Mirror generic HITL: resolve against thread root ns (""), never the
+        # interrupt-local checkpoint_ns (human_review_wait:<task_id>), which
+        # would make list()/get_tuple miss the durable interrupt checkpoint.
+        runtime_ckpt = configurable.get("checkpoint_id")
+        resolved = resolve_current_checkpoint_id(
+            checkpointer,
+            thread_id=thread_id,
+            checkpoint_id=str(runtime_ckpt) if runtime_ckpt else None,
+        )
+        require_durable_resume_checkpoint(
+            expected_checkpoint_id=command.expected_checkpoint_id,
+            current_checkpoint_id=resolved,
+            context=context,
+        )
+        updated = apply_professional_human_review(
+            lifecycle,
+            command,
+            wait_request=request,
+            now=now,
+        )
+        return {"lifecycle": updated}
+
     def human_wait(state: ConstructorGraphState) -> ConstructorGraphState:
         """
         Thin HITL orchestration node.
@@ -503,6 +561,7 @@ def build_constructor_langgraph(
     graph.add_node(NODE_EVALUATE_EXCEPTIONS, evaluate_exceptions)
     if hitl_enabled:
         graph.add_node(NODE_HUMAN_WAIT, human_wait)
+        graph.add_node(NODE_HUMAN_REVIEW_WAIT, human_review_wait)
         graph.add_node(NODE_REVALIDATE_REALITY, revalidate_reality)
     if handoff_enabled:
         graph.add_node(NODE_PERSIST_HANDOFF, persist_handoff)
@@ -513,6 +572,7 @@ def build_constructor_langgraph(
         NODE_RESOLVE_LABOR: NODE_RESOLVE_LABOR,
         NODE_EVALUATE_EXCEPTIONS: NODE_EVALUATE_EXCEPTIONS,
         NODE_HUMAN_WAIT: NODE_HUMAN_WAIT,
+        NODE_HUMAN_REVIEW_WAIT: NODE_HUMAN_REVIEW_WAIT,
         NODE_REVALIDATE_REALITY: NODE_REVALIDATE_REALITY,
         END: END,
     }
@@ -535,6 +595,7 @@ def build_constructor_langgraph(
     graph.add_conditional_edges(NODE_EVALUATE_EXCEPTIONS, route, path_map)
     if hitl_enabled:
         graph.add_conditional_edges(NODE_HUMAN_WAIT, route, path_map)
+        graph.add_conditional_edges(NODE_HUMAN_REVIEW_WAIT, route, path_map)
         graph.add_conditional_edges(NODE_REVALIDATE_REALITY, route, path_map)
     if handoff_enabled:
         # persist_handoff leaves READY unchanged — a conditional edge would loop.

@@ -32,6 +32,7 @@ from agents.monthly_plan_constructor.lifecycle import (
     STATUS_REALITY_LOADED,
     STATUS_REVALIDATING_REALITY,
     STATUS_WAITING_FOR_HUMAN,
+    STATUS_WAITING_FOR_HUMAN_REVIEW,
     CandidateAssemblyResult,
     LifecycleError,
     advance_constructor_lifecycle,
@@ -494,7 +495,7 @@ class TestRevalidate(unittest.TestCase):
         assembler = StubAssembler()
         state = reality
         while state.status not in {
-            STATUS_READY_FOR_HANDOFF,
+            STATUS_WAITING_FOR_HUMAN_REVIEW,
             STATUS_FAILED,
             STATUS_WAITING_FOR_HUMAN,
         }:
@@ -508,7 +509,7 @@ class TestRevalidate(unittest.TestCase):
                 scope_reader=RecordingReader(),
                 now=FIXED_AT,
             )
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         self.assertGreaterEqual(assembler.calls, 1)
 
 

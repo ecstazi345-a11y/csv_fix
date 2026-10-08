@@ -280,8 +280,10 @@ class ConstructorManagedLauncherTests(unittest.TestCase):
         final_store = self._read_store()
         try:
             final_run = final_store.get_run(result.agent_run.run_id)
-            self.assertEqual(final_run.operational_status, OperationalStatus.COMPLETED)
-            self.assertIsNotNone(final_run.completed_at)
+            # RUNTIME-A: professional path stops before Confirm / handoff;
+            # RUN_COMPLETED must not be emitted → operational status stays RUNNING.
+            self.assertEqual(final_run.operational_status, OperationalStatus.RUNNING)
+            self.assertIsNone(final_run.completed_at)
             self.assertEqual(final_run.authorization_id, self.captured_authorization_id)
         finally:
             final_store.close()

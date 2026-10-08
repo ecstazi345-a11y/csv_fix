@@ -11,7 +11,10 @@ import unittest
 from datetime import datetime, timezone
 from typing import Any
 
-from agents.monthly_plan_constructor.candidate_package import LABOR_UNRESOLVED
+from agents.monthly_plan_constructor.candidate_package import (
+    LABOR_UNRESOLVED,
+    LABOR_VALIDATED,
+)
 from agents.monthly_plan_constructor.durable_checkpoint import (
     build_constructor_jsonplus_serializer,
 )
@@ -24,15 +27,32 @@ from agents.monthly_plan_constructor.hitl_resume import (
     apply_constructor_resume_command,
     build_decision_request_from_lifecycle,
 )
+from agents.monthly_plan_constructor.human_review_contracts import (
+    HumanReviewDecision,
+    build_human_review_event,
+)
+from agents.monthly_plan_constructor.labor_norm_resolver import (
+    BASIS_OBSERVED_PRODUCTIVITY,
+    HOURS_VALIDATED_PRODUCTIVE_DIRECT,
+    LaborNormEvidence,
+    SOURCE_PROJECT_HISTORY,
+)
 from agents.monthly_plan_constructor.lifecycle import (
     STATUS_CREATED,
     STATUS_PACKAGE_BUILT,
     STATUS_READY_FOR_HANDOFF,
+    STATUS_REVIEWED_PACKAGE_READY,
     STATUS_WAITING_FOR_HUMAN,
+    STATUS_WAITING_FOR_HUMAN_REVIEW,
     CandidateAssemblyResult,
     ConstructorLifecycleState,
     create_lifecycle_state,
     run_constructor_lifecycle,
+)
+from agents.monthly_plan_constructor.professional_review_resume import (
+    ProfessionalHumanReviewResumeCommand,
+    apply_professional_human_review,
+    build_professional_review_wait_request,
 )
 from agents.monthly_plan_constructor.mission_scope import ConstructorMissionScope
 from agents.monthly_plan_constructor.secure_read_tools import ConstructorRealityRead
@@ -218,12 +238,95 @@ class TestLifecycleRoundTrips(unittest.TestCase):
             run_id=RUN_ID,
             now=FIXED_AT,
         )
-        self.assertEqual(state.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(state.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         restored, size = _roundtrip(state)
-        self.assertEqual(restored.status, STATUS_READY_FOR_HANDOFF)
+        self.assertEqual(restored.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
         self.assertIsNotNone(restored.package)
         self.assertIsNotNone(restored.labor_resolutions)
-        print(f"READY_SIZE={size}")
+        print(f"REVIEW_WAIT_SIZE={size}")
+
+    def test_reviewed_package_ready_roundtrip(self) -> None:
+        """Gap A: REVIEWED_PACKAGE_READY + history + reviewed package serde."""
+
+        class ValidatedAssembler:
+            def __call__(self, reality_read, scope) -> CandidateAssemblyResult:
+                return CandidateAssemblyResult(
+                    candidates=(_candidate_dict(labor_norm_status=LABOR_VALIDATED),),
+                    scanned_count=1,
+                )
+
+        evidence = LaborNormEvidence(
+            evidence_id="ev-serde-validated",
+            candidate_id=CANDIDATE_ID,
+            source_type=SOURCE_PROJECT_HISTORY,
+            labor_hours_per_unit=1.42,
+            unit="м2",
+            source_reference="project-history-run",
+            source_version="2026-08",
+            planning_use_status=LABOR_VALIDATED,
+            basis=BASIS_OBSERVED_PRODUCTIVITY,
+            hours_quality=HOURS_VALIDATED_PRODUCTIVE_DIRECT,
+            executed_quantity_validated=True,
+        )
+        waiting = run_constructor_lifecycle(
+            context=_context(),
+            project_code=PROJECT,
+            month_key=MONTH,
+            assemble_candidates=ValidatedAssembler(),
+            labor_evidence=(evidence,),
+            scope_reader=RecordingReader(),
+            mission_id=MISSION_ID,
+            run_id=RUN_ID,
+            now=FIXED_AT,
+        )
+        self.assertEqual(waiting.status, STATUS_WAITING_FOR_HUMAN_REVIEW)
+        wait_req = build_professional_review_wait_request(waiting, created_at=FIXED_AT)
+        event = build_human_review_event(
+            review_event_id="serde-rev-1",
+            run_id=RUN_ID,
+            mission_id=MISSION_ID,
+            package_id=waiting.package.package_id,  # type: ignore[union-attr]
+            candidate_id=CANDIDATE_ID,
+            decision=HumanReviewDecision.ADD,
+            actor_id="operator-1",
+            reviewed_at=FIXED_AT,
+        )
+        ready = apply_professional_human_review(
+            waiting,
+            ProfessionalHumanReviewResumeCommand(
+                schema_version="1.0",
+                interrupt_id=wait_req.interrupt_id,
+                run_id=RUN_ID,
+                review_events=(event,),
+                answered_at=FIXED_AT,
+            ),
+            wait_request=wait_req,
+            now=FIXED_AT,
+        )
+        self.assertEqual(ready.status, STATUS_REVIEWED_PACKAGE_READY)
+        restored, size = _roundtrip(ready)
+        self.assertEqual(restored.status, STATUS_REVIEWED_PACKAGE_READY)
+        self.assertEqual(restored.run_id, RUN_ID)
+        self.assertEqual(restored.mission_id, MISSION_ID)
+        self.assertEqual(
+            restored.reviewed_package.reviewed_package_id,  # type: ignore[union-attr]
+            ready.reviewed_package.reviewed_package_id,  # type: ignore[union-attr]
+        )
+        self.assertEqual(
+            restored.reviewed_package.source_candidate_package_id,  # type: ignore[union-attr]
+            ready.package.package_id,  # type: ignore[union-attr]
+        )
+        self.assertEqual(len(restored.human_review_events), 1)
+        self.assertEqual(
+            restored.human_review_events[0].review_event_id,
+            "serde-rev-1",
+        )
+        self.assertIsNotNone(restored.exceptions)
+        self.assertEqual(
+            len(restored.exceptions.exceptions),  # type: ignore[union-attr]
+            len(ready.exceptions.exceptions),  # type: ignore[union-attr]
+        )
+        print(f"REVIEWED_READY_SIZE={size}")
 
     def test_no_unsafe_objects_in_state(self) -> None:
         state = run_constructor_lifecycle(

@@ -9092,8 +9092,9 @@ CURRENT CONSTRUCTOR STATUS (HONEST)
 | Human Review runtime | **DONE** |
 | Human Confirm runtime | **DONE** |
 | Checkpoint restart semantics | **TEST_PROVEN** |
-| Live process kill/restart | **NOT YET PROVEN** |
-| Real-data full E2E after RUNTIME-A/B | **NOT YET PROVEN** |
+| Live process restart Level 2 | **PROVEN** (clean new-interpreter restore) |
+| Unclean crash recovery Level 3 | **NOT TESTED** |
+| Full Constructor live proof | **IN PROGRESS** (Phases 0–4A PASS) |
 | Professional observability detail | **GAP** |
 | Control Room professional visualization | **GAP** |
 | Constructor V0.1 | **NOT YET FROZEN** |
@@ -9101,39 +9102,192 @@ CURRENT CONSTRUCTOR STATUS (HONEST)
 | Executability Agent integration | **NOT STARTED** |
 | Admission Agent | **NOT STARTED** |
 
-Do **not** overclaim: `LIVE_PROCESS_RESTART_PROVEN`, professional Control Room complete, DYNAMIS Execution Fabric fully implemented, Constructor V0.1 frozen.
+Do **not** overclaim: unclean crash recovery proven, professional Control Room complete, DYNAMIS Execution Fabric fully implemented, Constructor V0.1 frozen, full live proof complete.
+
+============================================================
+CHECKPOINT — 2026-10-08
+FULL CONSTRUCTOR LIVE PROOF
+PROGRESS THROUGH PHASE 4A
+STATUS:
+IN PROGRESS
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **LIVE PROOF IN PROGRESS**
+
+**Purpose:** record authoritative live-proof progress before machine switch. Documentation only. **No second Human Review. No Human Confirm. No code/tests/product changes.**
+
+BRANCH: `wip/increment-11c-persistent-shadow-stores`<br>
+PUSHED BASE BEFORE THIS DOC: `e084f44265f590f822f553b97c6fe8e591946dc0`
+
+------------------------------------------------------------
+FULL CONSTRUCTOR LIVE PROOF = IN PROGRESS
+------------------------------------------------------------
+
+| Phase | Result |
+|------|--------|
+| PHASE 0 — read-only mission probe | **PASS** |
+| PHASE 1 — Process A autonomous run to Human Review wait | **PASS** |
+| PHASE 2 — Process B new-interpreter restore (Level 2) | **PASS / PROVEN** |
+| PHASE 3 — Human Review / correction loop | **PASS / PROVEN** |
+| PHASE 4A — clarification probe BOQ 2041-01-22-02 | **PASS** |
+| Second Human Review | **NOT STARTED** |
+| Human Confirm | **NOT REACHED** |
+| PROFESSIONAL_WORK_COMPLETED / RUN_COMPLETED | **NO** |
+| Constructor V0.1 freeze | **NOT FROZEN** |
+| Full live proof | **NOT COMPLETE** |
+
+------------------------------------------------------------
+PHASE 0 = PASS
+------------------------------------------------------------
+
+Real mission:
+
+- project: `PRJ_001_БХК`
+- month: `октябрь-2026`
+- facility: `16160-13`
+- discipline: `Вентиляция`
+
+Real candidate count = **2**
+
+------------------------------------------------------------
+PHASE 1 = PASS
+------------------------------------------------------------
+
+- `run_id`: `run-e1bed671-8ec6-42a4-a96d-c01865434baa`
+- `mission_id`: `live-proof-mission-20261008T152235Z-40e1f516`
+- `candidate_package_id`: `f2545f20-4db7-4aa7-821f-c9b3da9dd403`
+- autonomous runtime reached `WAITING_FOR_HUMAN_REVIEW`
+- no automatic human decision
+- no handoff
+- no `RUN_COMPLETED`
+- no product writes
+
+------------------------------------------------------------
+PHASE 2 = PASS
+LIVE PROCESS RESTART LEVEL 2 = PROVEN
+------------------------------------------------------------
+
+- new Python process restored same run / mission / package / wait
+- restore from durable checkpoint only
+- no rebuild from reality
+- observability event count **18 → 18**
+- no duplicate semantic events
+- unclean crash recovery **NOT TESTED**
+
+------------------------------------------------------------
+PHASE 3 = PASS
+HUMAN REVIEW / CORRECTION LOOP = PROVEN
+------------------------------------------------------------
+
+Human decisions (user-authorized live-proof actor `human-owner-live-proof`):
+
+- BOQ `2041-01-22-02` → `REQUIRES_CLARIFICATION`
+- BOQ `2041-01-27-02` → `REMOVE`
+
+`reviewed_package_id`:
+`4167aa7d8e54825fba432d5855334581242a48c494b9009144c608fba843deba`
+
+Result:
+
+- `INCLUDED` **0**
+- `EXCLUDED` **1**
+- `UNRESOLVED` **1**
+- returned to `WAITING_FOR_HUMAN_REVIEW` (correction loop / wait ordinal **2**)
+- Human Confirm **NOT** reached
+- `RUN_COMPLETED` **NO**
+- handoff **NO**
+- product write **NO**
+
+------------------------------------------------------------
+PHASE 4A = PASS
+CLARIFICATION PROBE — BOQ 2041-01-22-02
+------------------------------------------------------------
+
+Read-only probe (no resume, no new HumanReviewEvent, no runtime mutation):
+
+| Field | Value |
+|------|--------|
+| source quantity | **16.08 m²** |
+| manual executed before system | **7.0 m²** |
+| planning remaining | **9.08 m²** |
+| already planned | **9.07 m²** |
+| available (float) | **0.00999999999999801** |
+| exact Decimal result | **0.01 m²** |
+
+Classification: **AUTHORITATIVE_DATA_INSUFFICIENT**
+
+Important:
+
+- **0.01 m² is NOT the same floating-point residual as candidate 2.**
+- Candidate 1: exact **0.01** at stored precision, but remaining is accounting-derived from `manual_executed_before_system` and is **not** a measured/verified physical remainder.
+- Current data cannot prove real executable physical work vs accounting/rounding leftover.
+- Labor remains: **UNRESOLVED**
+- ADD would professionally resolve: **NO**
+- Recommended Human decision remains: **REQUIRES_CLARIFICATION**
+- Existing quantity tolerance law: **NONE**
+- Existing minimum executable quantity law: **NONE**
+
+------------------------------------------------------------
+CURRENT LIVE WAIT (AUTHORITATIVE)
+------------------------------------------------------------
+
+| Binding | Value |
+|------|--------|
+| `run_id` | `run-e1bed671-8ec6-42a4-a96d-c01865434baa` |
+| lifecycle | `WAITING_FOR_HUMAN_REVIEW` |
+| `interrupt_id` | `eos-int-d0901509cfb68e231ee38be2eac63972` |
+| `wait_ordinal` | **2** |
+| `expected_checkpoint_id` | `1f1c3390-2d00-6e89-8006-b5a400751a02` |
+| `reviewed_package_id` | `4167aa7d8e54825fba432d5855334581242a48c494b9009144c608fba843deba` |
+
+**NEXT STEP:** second Human Review only after clarification of BOQ `2041-01-22-02`.
+
+Constructor V0.1: **NOT FROZEN**<br>
+Full live proof: **NOT COMPLETE**
+
+------------------------------------------------------------
+OPEN FINDINGS
+------------------------------------------------------------
+
+**FINDING 1** — BOQ `2041-01-27-02`
+
+Floating-point residual ≈ `2.22e-15` admitted as candidate.
+Possible future epsilon / tolerance rule.
+Status: **OPEN / NOT FIXED.**
+
+**FINDING 2** — BOQ `2041-01-22-02`
+
+Exact **0.01 m²** accounting remainder, but physical executability is not proven.
+Possible future quantity provenance / physical remaining verification / minimum executable quantity law.
+Status: **OPEN / NOT FIXED.**
+
+------------------------------------------------------------
+RUNTIME PORTABILITY (MACHINE SWITCH WARNING)
+------------------------------------------------------------
+
+Current live run is stored **locally** in:
+
+- `.runtime/shadow/constructor/checkpoints.sqlite`
+- `.runtime/shadow/constructor/hitl.sqlite`
+- `.runtime/shadow/constructor/observability.sqlite`
+
+These files **MUST NOT** be committed.
+
+Git preserves code + documentation, **NOT** the active local run.
+
+On another computer tomorrow, the live run will **not** automatically exist unless those local runtime files are copied by an explicit offline procedure outside Git.
 
 ------------------------------------------------------------
 NEXT
 ------------------------------------------------------------
 
-**FULL CONSTRUCTOR LIVE PROOF**
-
-Target chain:
-
-Human Mission
-→ autonomous real-data work
-→ `WAITING_FOR_HUMAN_REVIEW`
-→ real Human Review resume
-→ `ReviewedCandidatePackage`
-→ `WAITING_FOR_HUMAN_CONFIRM`
-→ real Human Confirm resume
-→ `PROFESSIONAL_WORK_COMPLETED`
-→ `RUN_COMPLETED`
-
-Must include:
-
-- actual process stop/restart
-- resume from durable checkpoint
-- replay / idempotency
-- stale input rejection
-- operational truth verification
-- real mission / real data
-- no fake handoff
-
-After live proof: professional observability + Control Room visualization.
-Then: Constructor V0.1 freeze.
-**No second agent before this.**
+1. Clarify BOQ `2041-01-22-02` (0.01 m²) under Human Authority.
+2. Second Human Review resume against wait ordinal **2** (same machine / restored runtime DBs).
+3. If package becomes confirmable: Human Confirm → `PROFESSIONAL_WORK_COMPLETED` → `RUN_COMPLETED` without handoff for this mission shape.
+4. Optional later: unclean crash recovery (Level 3); professional observability + Control Room visualization.
+5. Then: Constructor V0.1 freeze.
+**No second agent before Constructor V0.1 freeze.**
 
 **NO PRODUCT BUSINESS WRITES** in this documentation checkpoint.
 **NO CODE / TESTS / DB / SUPABASE CHANGES** in this documentation checkpoint.
+**NO `.runtime/*.sqlite` IN GIT.**

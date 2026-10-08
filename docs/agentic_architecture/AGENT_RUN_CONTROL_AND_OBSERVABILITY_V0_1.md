@@ -419,9 +419,10 @@ Closed `operational_status` enum:
 
 | Token | Plane | Meaning |
 |-------|--------|---------|
-| `READY_FOR_HANDOFF` | Professional lifecycle | Constructor eligibility. Not “run finished”. Persist does not change it. |
+| `READY_FOR_HANDOFF` | Professional lifecycle | Legacy handoff eligibility. Not “run finished”. Persist does not change it. |
+| `PROFESSIONAL_WORK_COMPLETED` | Professional lifecycle | Constructor professional work completed after Human Confirm. Not handoff. Not orchestration completion. |
 | `HANDOFF_READY` | Handoff artifact | `ConstructorHandoff.status`. Not a lifecycle status. |
-| `COMPLETED` (`RUN_COMPLETED` event) | Operational | Managed execution finished under §8. |
+| `COMPLETED` (`RUN_COMPLETED` event) | Operational | Managed execution finished under §8 (legacy handoff **or** professional Human Confirm). |
 
 Control Room **primary** badge is durable `operational_status` when the observability store is reachable. Professional `lifecycle_status` is secondary / engineering.
 
@@ -455,19 +456,73 @@ Do **not** map launcher return, `STAGE_STARTED`, node name, or stage label to op
 
 For a **managed** Control Room / Orchestrator Constructor run:
 
-`operational_status = COMPLETED` and event `RUN_COMPLETED` are allowed **only when all** of the following are true:
+`operational_status = COMPLETED` and event `RUN_COMPLETED` are allowed **only when** the Constructor run completed through **one valid Constructor completion route**, and the operational completion event was **durably recorded** (Class A — §17).
+
+### Two valid successful completion routes
+
+#### A. Legacy handoff route
 
 1. Professional lifecycle reached `READY_FOR_HANDOFF`.
 2. Required `ConstructorHandoff` was successfully **built**.
 3. Required handoff persistence returned `CREATED` or `IDEMPOTENT_REPLAY`.
-4. The operational completion event was **durably recorded** (Class A — §17).
+4. `RUN_COMPLETED` was durably recorded (typed `handoff_id` set on this route).
 
-If required handoff persistence fails:
+If required handoff persistence fails on this route:
 
 - `HANDOFF_PERSIST_FAILED` **must** be durably recorded (Class A — §17).
 - `RUN_COMPLETED` is forbidden.
 - Managed run may transition to durable operational `FAILED` **only if** `HANDOFF_PERSIST_FAILED` itself was durably persisted.
 - If the observability persist of that Class A event also fails, apply §17 observability-unavailable semantics. Do **not** claim durable `FAILED` / `RUN_FAILED`.
+
+#### B. Professional Human Confirm route
+
+1. Professional lifecycle reached `REVIEWED_PACKAGE_READY` with `unresolved_count == 0`.
+2. Runtime entered `WAITING_FOR_HUMAN_CONFIRM` (Human Confirm gate).
+3. Valid structured external `HumanConfirmEvent` was applied (`APPLYING_HUMAN_CONFIRM`).
+4. Professional lifecycle reached `PROFESSIONAL_WORK_COMPLETED`.
+5. `RUN_COMPLETED` was durably recorded with:
+   - typed `handoff_id = None`
+   - **no** fabricated `HANDOFF_PERSISTED`
+
+`REVIEWED_PACKAGE_READY` and `WAITING_FOR_HUMAN_CONFIRM` are **not** completion. Human Confirm is required for this route.
+
+### What `RUN_COMPLETED` means
+
+`RUN_COMPLETED` means only:
+
+> the Constructor run completed through one valid Constructor completion route.
+
+`RUN_COMPLETED` alone does **not** mean:
+
+- `HANDOFF_PERSISTED`
+- receiver accepted / ACK
+- target agent started
+- ownership transferred
+- Executability accepted
+- monthly commitment approved
+- Passport approved
+- orchestration completed
+
+### Authoritative completion distinction
+
+Correctness is derived from structured authoritative state/events — not free-form `detail`.
+
+Professional Human Confirm completion evidence includes:
+
+- lifecycle status = `PROFESSIONAL_WORK_COMPLETED`
+- absence of `HANDOFF_PERSISTED` for this completion
+- typed `handoff_id = None`
+- structured semantic occurrence identity where applicable
+
+Legacy handoff completion remains distinguishable by actual handoff build/persist events and typed `handoff_id`.
+
+### What `HANDOFF_PERSISTED` means
+
+`HANDOFF_PERSISTED` means only that the handoff artifact was durably persisted.
+
+It does **not** mean receiver acceptance, receiver ACK, target run existence, ownership transfer, or orchestration completion.
+
+Professional Human Confirm completion **must not** fabricate handoff.
 
 Legacy invoke with `handoff_store=None` may still exist for Increment 7/9 compatibility. That path is **not** a fully managed Increment 10 run. Control Room must not present it as `COMPLETED` with a fake handoff.
 
@@ -532,7 +587,7 @@ Agent-neutral immutable type: **`ObservabilityEvent`**.
 
 ### `detail`
 
-Bounded + structured + redacted mapping — §11.
+Bounded + structured + redacted mapping — §11. Non-authoritative explanatory metadata only.
 
 ### Invariants
 
@@ -554,9 +609,15 @@ Bounded + structured + redacted mapping — §11.
 - JSON-compatible
 - deterministic where applicable (canonical key order for digests if used)
 
+### Authority law
+
+`detail` is **non-authoritative**. It may explain or present an event (for example `completion_source = HUMAN_CONFIRM`).
+
+Correctness and operational projection **MUST NOT** depend on parsing free-form `detail` keys. Authoritative distinction uses typed fields, closed `EventType`, professional lifecycle status, and related structured contracts — §7 / §8 / §19.
+
 ### May contain
 
-counts; safe status; error code; safe reason; safe identifiers; duration_ms; summary; decision code; persist outcome (`CREATED` / `IDEMPOTENT_REPLAY`); exception severity/code (not row dumps).
+counts; safe status; error code; safe reason; safe identifiers; duration_ms; summary; decision code; persist outcome (`CREATED` / `IDEMPOTENT_REPLAY`); exception severity/code (not row dumps); explanatory completion hints that do not become authority.
 
 ### Must not contain
 

@@ -12,23 +12,29 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
-- **Progress:** **10 / 10** — **TECHNICAL COMPLETION**
-- **DONE:** [1] Mission Scope Contract · [2] Candidate Package Artifact · [3] Secure Read Tool Adapters · [4] Labor Norm Resolver · [5] Exception Engine · [6] Pure Python Lifecycle · [7] LangGraph Runtime · [8] Durable HITL / Resume · [9] Structured Handoff · [10] Managed Runtime + Observability + Control Room + Human Decision + Digital Organization + Full Live Proof · [10.1] Agent-Neutral Observability Foundation · [10.2] Run Control · [10.3A–E] Runtime Instrumentation · **Operational Truth Fix** · **10.4 Durable Observability Store** · **10.5 Separate-Process Durability Proof** · **ConstructorManagedRuntimeLauncher** · **10.6 AgentControlRoomQueryPort** · **10.7 Control Room Core** · **10.8 / 10.8A / 10.8B** HITL architecture + read contract + live execution visualization · **10.9 / 10.9A / 10.9B** Handoff observability + Digital Organization · **10.10** Full managed live-run proof · **10.10A** Clock / Replay Audit + Release Guard · **11A** Real-Data Candidate Assembler / Quantity Preservation · **11B** Shadow Runtime Composition Root · **11C.1** Shadow Runtime Root + SQLite Dependency Gate · **11C.2** Durable SQLite Checkpointer · **11C.3** Persistent HITL Store · **11C.4** Persistent Handoff Store · **11C.5** Integrated Reopen / Restart Proof · **11D** Bounded Operator / Resume Path
-- **NEXT:** Constructor Shadow Preparation / Real September Shadow — architectural expansion **FROZEN UNTIL SHADOW RESULTS**. Do **not** start Admission implementation
-- **Operator resume HEAD:** `cb8a1b6fb779b1f723b4db1034c61c5105cfde5b` (11D bounded operator / resume path on `wip/increment-11c-persistent-shadow-stores`)
-- **Recovery code HEAD:** `3a1e0fffe5e20417f1befa937a6effeaab51a1b2` (11C.5 integrated reopen / restart proof; 11D does not replace it)
+- **Progress:** **10 / 10** technical base + **professional Human Review/Confirm runtime**
+- **DONE:** Increments 1–10 / 11A–11D as before · **RUNTIME-A** Human Review Gate in Constructor runtime · **RUNTIME-B** Human Confirm Gate + professional completion
+- **NEXT:** **FULL CONSTRUCTOR LIVE PROOF** — real mission / real data / real process stop-restart / Human Review + Human Confirm resume / `PROFESSIONAL_WORK_COMPLETED` → `RUN_COMPLETED` without fake handoff. Do **not** start Admission / second agent before this.
+- **RUNTIME-A commit:** `6fadb815d7970111e033386cb188a6e9393e148d`
+- **RUNTIME-B commit:** `51062f4b7f889800e7207da995635767904b940f`
+- **HEAD:** `51062f4b7f889800e7207da995635767904b940f` (`wip/increment-11c-persistent-shadow-stores`)
+- **Professional contracts:** **COMPLETE**
+- **Professional runtime:** **COMPLETE THROUGH HUMAN CONFIRM**
+- **Human Review runtime:** **DONE**
+- **Human Confirm runtime:** **DONE**
+- **Checkpoint restart semantics:** **TEST_PROVEN**
+- **Live process kill/restart:** **NOT YET PROVEN**
+- **Real-data full E2E after RUNTIME-A/B:** **NOT YET PROVEN**
+- **Professional observability detail:** **GAP**
+- **Control Room professional visualization:** **GAP**
+- **Constructor V0.1:** **NOT YET FROZEN**
+- **ARCHITECTURAL REUSE PROOF #1:** **PASS**
+- **ARCHITECTURAL REUSE PROOF #2:** **PASS**
 - **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1–10.9B DONE · **10.10 DONE** · **10.10A DONE** · Increment 10 overall **FUNCTIONALLY COMPLETE**
-- **Shadow composition:** **11A DONE** · **11B DONE** · **11C DONE** · **11C.1 DONE** · **11C.2 DONE** · **11C.3 DONE** · **11C.4 DONE** · **11C.5 DONE** · **11D DONE**
-- **Constructor Runtime v0.1:** **READY_FOR_SHADOW**
-- **Agent Runtime program:** **v0.1 READY FOR SHADOW VALIDATION** — not platform-wide production completion
-- **Constructor freeze law:** v0.1 is **TECHNICALLY COMPLETE** — no opportunistic new Constructor features. 11A/11B/11C.1/11C.2/11C.3/11C.4/11C.5/11D are external composition / runtime infrastructure, not a new Constructor profession. Architectural expansion is **FROZEN UNTIL SHADOW RESULTS**.
+- **Shadow composition:** **11A DONE** · **11B DONE** · **11C DONE** · **11C.1–11C.5 DONE** · **11D DONE**
 - **Professional Passport:** **DONE**
-- **Constructor Professional Passport v1.0:** `398893197bdd6de9aacfda06de468b0769c520f7`
-- **Reusable Professional Passport Template:** **DONE**
-- **Template commit:** `34ce628430b9234624486ec32fdc7ed19a88e3c3`
-- **Real September Shadow run:** **NOT STARTED**
+- **Real September Shadow run:** **NOT STARTED** (superseded sequencing: live professional proof first)
 - **Admission Agent:** **NOT STARTED**
-- **DURABLE_RESTART:** **ACCEPTABLE_ENVIRONMENT_EXCEPTION** (not PASS / not FAIL / not REGRESSION)
 Historical checkpoints below are append-only and are **not** rewritten.
 
 ---
@@ -8963,3 +8969,171 @@ Shadow remains **blind**:
 **NO PRODUCT BUSINESS WRITES** in this documentation checkpoint.
 
 Increment 11A: **DONE** · Increment 11B: **DONE** · Increment 11C.1: **DONE** · Increment 11C.2: **DONE** · Increment 11C.3: **DONE** · Increment 11C.4: **DONE** · Increment 11C.5: **DONE** · Increment 11D: **DONE** · Constructor Runtime v0.1: **READY_FOR_SHADOW** · Constructor: **10 / 10**
+
+============================================================
+CHECKPOINT — 2026-10-08 — CONSTRUCTOR RUNTIME-A/B
+HUMAN REVIEW + HUMAN CONFIRM + DOCUMENTATION SYNC
+============================================================
+
+PROGRAM:
+Monthly Planning Agentic Orchestration
+
+AGENT:
+MONTHLY_PLAN_CONSTRUCTOR
+
+BRANCH:
+`wip/increment-11c-persistent-shadow-stores`
+
+HEAD:
+`51062f4b7f889800e7207da995635767904b940f`
+
+RUNTIME-A COMMIT:
+`6fadb815d7970111e033386cb188a6e9393e148d`
+
+RUNTIME-B COMMIT:
+`51062f4b7f889800e7207da995635767904b940f`
+
+------------------------------------------------------------
+PROFESSIONAL RUNTIME STATES (CURRENT)
+------------------------------------------------------------
+
+- `WAITING_FOR_HUMAN_REVIEW`
+- `APPLYING_HUMAN_REVIEW`
+- `REVIEWED_PACKAGE_READY` — **not** completion
+- `WAITING_FOR_HUMAN_CONFIRM` — **not** completion
+- `APPLYING_HUMAN_CONFIRM`
+- `PROFESSIONAL_WORK_COMPLETED` — professional terminal after Human Confirm
+
+Human Confirm is required for the professional completion path.
+No direct `REVIEWED_PACKAGE_READY` → completion.
+
+------------------------------------------------------------
+COMPLETION ROUTES (OPERATIONAL TRUTH)
+------------------------------------------------------------
+
+A. LEGACY HANDOFF ROUTE
+
+`READY_FOR_HANDOFF` → durable handoff persistence → `RUN_COMPLETED`
+
+B. PROFESSIONAL HUMAN-CONFIRM ROUTE
+
+`REVIEWED_PACKAGE_READY`
+→ `WAITING_FOR_HUMAN_CONFIRM`
+→ `HumanConfirmEvent`
+→ `PROFESSIONAL_WORK_COMPLETED`
+→ `RUN_COMPLETED`
+with `handoff_id = None` and **no** `HANDOFF_PERSISTED`
+
+`RUN_COMPLETED` means only that the Constructor run completed through one valid Constructor completion route.
+
+`RUN_COMPLETED` alone does **not** mean: `HANDOFF_PERSISTED`, receiver accepted, ownership transferred, Executability accepted, monthly commitment approved, Passport approved, or orchestration completed.
+
+`HANDOFF_PERSISTED` means only durable handoff persistence — not receiver ACK / ownership / orchestration.
+
+Authoritative distinction uses lifecycle status, typed `handoff_id`, presence/absence of handoff events, and structured semantic occurrence identity. Observability `detail` remains non-authoritative (§11 / AGENT_RUN_CONTROL).
+
+AGENT_RUN_CONTROL §8 synchronized in this documentation checkpoint.
+
+------------------------------------------------------------
+ARCHITECTURAL REUSE PROOF #1 — PASS
+------------------------------------------------------------
+
+Human Review was connected to the existing digital-worker infrastructure without:
+
+- second runtime
+- second HITL engine
+- new DB
+- new persistence engine
+- new security subsystem
+- new managed launcher
+
+Reused: LangGraph runtime · durable checkpoint · HITL infrastructure · security boundary · managed launcher.
+
+Meaning: a professional capability can attach to the common Digital Worker Platform as specialization.
+
+------------------------------------------------------------
+ARCHITECTURAL REUSE PROOF #2 — PASS
+------------------------------------------------------------
+
+Human Confirm reused:
+
+- runtime
+- checkpoint
+- HITL infrastructure
+- professional resume pattern
+- lifecycle extension pattern
+- security boundary
+- managed launcher
+
+No new core infrastructure · no second runtime · no second HITL engine · no new DB · no new persistence engine.
+
+Classification: **SPECIALIZATION EXTENSION** — not **NEW INFRASTRUCTURE**.
+
+------------------------------------------------------------
+DIGITAL WORKFORCE PLATFORM PRINCIPLE (EMERGING)
+------------------------------------------------------------
+
+Supported by two implementation proofs (#1 and #2):
+
+> Common digital-worker infrastructure is built once.
+> Professional capabilities are attached as specializations
+> unless a genuinely new capability class requires new infrastructure.
+
+This does **not** claim the whole platform is frozen or production-complete.
+
+------------------------------------------------------------
+CURRENT CONSTRUCTOR STATUS (HONEST)
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| Professional contracts | **COMPLETE** |
+| Professional runtime | **COMPLETE THROUGH HUMAN CONFIRM** |
+| Human Review runtime | **DONE** |
+| Human Confirm runtime | **DONE** |
+| Checkpoint restart semantics | **TEST_PROVEN** |
+| Live process kill/restart | **NOT YET PROVEN** |
+| Real-data full E2E after RUNTIME-A/B | **NOT YET PROVEN** |
+| Professional observability detail | **GAP** |
+| Control Room professional visualization | **GAP** |
+| Constructor V0.1 | **NOT YET FROZEN** |
+| Receiver ACK / ownership transfer | **NOT DONE** |
+| Executability Agent integration | **NOT STARTED** |
+| Admission Agent | **NOT STARTED** |
+
+Do **not** overclaim: `LIVE_PROCESS_RESTART_PROVEN`, professional Control Room complete, DYNAMIS Execution Fabric fully implemented, Constructor V0.1 frozen.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+**FULL CONSTRUCTOR LIVE PROOF**
+
+Target chain:
+
+Human Mission
+→ autonomous real-data work
+→ `WAITING_FOR_HUMAN_REVIEW`
+→ real Human Review resume
+→ `ReviewedCandidatePackage`
+→ `WAITING_FOR_HUMAN_CONFIRM`
+→ real Human Confirm resume
+→ `PROFESSIONAL_WORK_COMPLETED`
+→ `RUN_COMPLETED`
+
+Must include:
+
+- actual process stop/restart
+- resume from durable checkpoint
+- replay / idempotency
+- stale input rejection
+- operational truth verification
+- real mission / real data
+- no fake handoff
+
+After live proof: professional observability + Control Room visualization.
+Then: Constructor V0.1 freeze.
+**No second agent before this.**
+
+**NO PRODUCT BUSINESS WRITES** in this documentation checkpoint.
+**NO CODE / TESTS / DB / SUPABASE CHANGES** in this documentation checkpoint.

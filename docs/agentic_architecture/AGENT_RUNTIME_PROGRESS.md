@@ -12,21 +12,26 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
-- **Progress:** **10 / 10** technical base + **professional Human Review/Confirm runtime**
-- **DONE:** Increments 1–10 / 11A–11D as before · **RUNTIME-A** Human Review Gate in Constructor runtime · **RUNTIME-B** Human Confirm Gate + professional completion
-- **NEXT:** **FULL CONSTRUCTOR LIVE PROOF** — real mission / real data / real process stop-restart / Human Review + Human Confirm resume / `PROFESSIONAL_WORK_COMPLETED` → `RUN_COMPLETED` without fake handoff. Do **not** start Admission / second agent before this.
+- **Progress:** **10 / 10** technical base + **professional Human Review/Confirm runtime** + **full professional live proof**
+- **DONE:** Increments 1–10 / 11A–11D as before · **RUNTIME-A** Human Review Gate in Constructor runtime · **RUNTIME-B** Human Confirm Gate + professional completion · **FULL PROFESSIONAL LIVE PROOF** (`run-119f4976-8d57-464d-b4d1-629a4128302d`)
+- **NEXT:** remaining before Constructor V0.1 freeze: professional Control Room / Human Surface visualization · short final defect/deferred review · final Constructor V0.1 freeze checkpoint · Constructor Professional Passport AS BUILT V0.1 after freeze. **No second professional agent before Constructor freeze.**
 - **RUNTIME-A commit:** `6fadb815d7970111e033386cb188a6e9393e148d`
 - **RUNTIME-B commit:** `51062f4b7f889800e7207da995635767904b940f`
-- **HEAD:** `51062f4b7f889800e7207da995635767904b940f` (`wip/increment-11c-persistent-shadow-stores`)
+- **HEAD:** `733b643c8e899379441363ca018f20eac9b337fd` (`wip/increment-11c-persistent-shadow-stores`) — live proof executed on this code; this documentation checkpoint is not yet committed
 - **Professional contracts:** **COMPLETE**
 - **Professional runtime:** **COMPLETE THROUGH HUMAN CONFIRM**
 - **Human Review runtime:** **DONE**
 - **Human Confirm runtime:** **DONE**
-- **Checkpoint restart semantics:** **TEST_PROVEN**
-- **Live process kill/restart:** **NOT YET PROVEN**
-- **Real-data full E2E after RUNTIME-A/B:** **NOT YET PROVEN**
+- **Full professional path:** **LIVE PROVEN**
+- **Human Review process restart:** **LIVE PROVEN**
+- **Human Confirm process restart:** **LIVE PROVEN**
+- **Durable checkpoint recovery:** **LIVE PROVEN**
+- **Unclean crash recovery:** **NOT TESTED**
+- **Same-wait Confirm idempotency:** **TEST-PROVEN**, not separately live-proven
+- **Post-completion stale confirm replay:** **LIVE PROVEN SAFE STALE REJECTION**
 - **Professional observability detail:** **GAP**
 - **Control Room professional visualization:** **GAP**
+- **Constructor V0.1 backend / runtime live proof:** **COMPLETE**
 - **Constructor V0.1:** **NOT YET FROZEN**
 - **ARCHITECTURAL REUSE PROOF #1:** **PASS**
 - **ARCHITECTURAL REUSE PROOF #2:** **PASS**
@@ -9291,3 +9296,203 @@ NEXT
 **NO PRODUCT BUSINESS WRITES** in this documentation checkpoint.
 **NO CODE / TESTS / DB / SUPABASE CHANGES** in this documentation checkpoint.
 **NO `.runtime/*.sqlite` IN GIT.**
+
+============================================================
+CHECKPOINT — 2026-10-09
+FULL CONSTRUCTOR LIVE PROOF
+STATUS:
+BACKEND / RUNTIME LIVE PROOF COMPLETE
+CONSTRUCTOR V0.1:
+NOT FROZEN
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · STATUS: **BACKEND / RUNTIME LIVE PROOF COMPLETE · NOT FROZEN**
+
+**Purpose:** record the completed real-runtime professional live proof and the replay classification. Documentation only. **No new Constructor run. No replay. No production code, tests, database, runtime stores, Supabase, Control Room, requirements, or .env changes.**
+
+BRANCH: `wip/increment-11c-persistent-shadow-stores`<br>
+CODE HEAD AT PROOF: `733b643c8e899379441363ca018f20eac9b337fd`
+
+The 2026-10-08 checkpoint remains the in-progress record of `run-e1bed671-8ec6-42a4-a96d-c01865434baa` on the previous machine. That local runtime is not this proof. The authoritative completed run is the fresh run below.
+
+------------------------------------------------------------
+AUTHORITATIVE LIVE RUN
+------------------------------------------------------------
+
+| Binding | Value |
+|------|--------|
+| `run_id` | `run-119f4976-8d57-464d-b4d1-629a4128302d` |
+| `mission_id` | `live-proof-mission-20261009T112532Z-9e64c943` |
+| project | `PRJ_001_БХК` |
+| month | `октябрь-2026` |
+| facility | `16160-13` |
+| discipline | `Вентиляция` |
+| Candidate Package | `44b0e6d8-9f61-4076-93bb-644b773b74a6` |
+| Reviewed Package | `db6ef3ebdd7a53ab22c61ffc6b9dfac01941c1cf0bb94271ec02a5471d01f8fb` |
+| Human Confirm Event | `cfm-ea66c685c2d142538c8282e464db6a59` |
+| `RUN_COMPLETED` Event | `crt-evt-02f77309f767f93aed3e40853de81d3633fb7364ded8746e5c18f561fbfe72a1` |
+| final checkpoint | `1f1c3de5-3ea0-6dc3-8008-10931726e752` |
+| final lifecycle | `PROFESSIONAL_WORK_COMPLETED` |
+
+Human Review decisions, actor `human-owner-live-proof`:
+
+- BOQ `2041-01-22-02` → `REMOVE` (`rev-774a7e96354d4cd7838ac7299ac3d97d`)
+- BOQ `2041-01-27-02` → `REMOVE` (`rev-ed1c0866b4824b52be8c3ec5e7486ef3`)
+
+Reviewed result: included **0** · excluded **2** · unresolved **0**.
+
+------------------------------------------------------------
+FULL PROFESSIONAL PATH = LIVE PROVEN
+------------------------------------------------------------
+
+Real Project Reality
+→ Mission
+→ autonomous source/scope processing
+→ Candidate Package
+→ `WAITING_FOR_HUMAN_REVIEW`
+→ Human Review
+→ Reviewed Candidate Package
+→ `WAITING_FOR_HUMAN_CONFIRM`
+→ Human Confirm
+→ `PROFESSIONAL_WORK_COMPLETED`
+→ `RUN_COMPLETED`
+
+| Claim | Status |
+|------|--------|
+| Full professional path | **LIVE PROVEN** |
+| Human Review process restart | **LIVE PROVEN** |
+| Human Confirm process restart | **LIVE PROVEN** |
+| Durable checkpoint recovery | **LIVE PROVEN** |
+| `HumanConfirmEvent` exactly once | **LIVE PROVEN** |
+| `RUN_COMPLETED` exactly once | **LIVE PROVEN** |
+| Professional completion without handoff | **LIVE PROVEN** |
+| `HANDOFF_CREATED` | **0** |
+| `HANDOFF_PERSISTED` | **0** |
+| `handoff_id` | **NONE** |
+| Admission started | **NO** |
+| Executability started | **NO** |
+| Product data writes | **NO** |
+
+`RUN_COMPLETED` on this path has `completion_source = HUMAN_CONFIRM`, `stage_id = RUN_COMPLETION`, `node_name = human_confirm_wait`, and `handoff_id = null`. Semantic completion count = **1**.
+
+------------------------------------------------------------
+REPLAY / IDEMPOTENCY CLASSIFICATION
+------------------------------------------------------------
+
+**SAME-WAIT CONFIRM IDEMPOTENCY: TEST-PROVEN**
+
+Not live-proven as a separate durable graph replay.
+
+Existing law:
+
+same `confirm_event_id` + identical payload, within the current `WAITING_FOR_HUMAN_CONFIRM` sequence → the first semantic event is retained and the duplicate collapses.
+
+Conflicting payload or a second confirm identity → fail closed.
+
+**POST-COMPLETION STALE CONFIRM REPLAY: LIVE PROVEN SAFE STALE REJECTION**
+
+| Fact | Value |
+|------|--------|
+| old confirm-wait checkpoint | `1f1c3dd0-3cf9-6cec-8007-b448806e4000` |
+| current completed checkpoint | `1f1c3de5-3ea0-6dc3-8008-10931726e752` |
+| rejection | `require_durable_resume_checkpoint` |
+| reason | `expected_checkpoint_id mismatch` |
+
+After rejection the durable state stayed:
+
+- lifecycle `PROFESSIONAL_WORK_COMPLETED`
+- `HumanConfirmEvent` count **1**
+- `RUN_COMPLETED` count **1**
+- semantic completion count **1**
+- `HANDOFF_CREATED` **0**
+- `HANDOFF_PERSISTED` **0**
+- semantic mutation **NO**
+- architecture defect **NO**
+
+Law:
+
+A HUMAN DECISION IS BOUND TO A SPECIFIC DURABLE WAIT REALITY.
+A STALE DECISION MUST NOT BE REBOUND TO A NEWER REALITY.
+
+------------------------------------------------------------
+ORIGINAL REPLAY SCRIPT FINDING
+------------------------------------------------------------
+
+Original post-completion replay design: **PARTIALLY INCORRECT**
+
+It attempted to prove same-wait idempotency by replaying an old `WAITING_FOR_HUMAN_CONFIRM` checkpoint after the durable thread had already advanced to `PROFESSIONAL_WORK_COMPLETED`.
+
+These are different contracts:
+
+1. same-wait duplicate replay
+2. stale post-completion resume
+
+The runtime correctly enforced #2. This is not a Constructor failure.
+
+------------------------------------------------------------
+LIVE-PROOF HARNESS FINDING
+------------------------------------------------------------
+
+The initial Human Confirm proof script exited code **3** because its reporting check did not correctly unwrap stored observability detail.
+
+An independent checkpoint and observability read confirmed `completion_source = HUMAN_CONFIRM`.
+
+Classification: **LIVE-PROOF / REPORTING HARNESS DEFECT**
+
+This is not a professional runtime defect. Not fixed in this documentation increment.
+
+------------------------------------------------------------
+KNOWN DOMAIN FINDINGS / DEFERRED
+------------------------------------------------------------
+
+**A.** BOQ `2041-01-27-02` produced available quantity of approximately `2.22e-15` from a floating-point residual.
+
+Future requirement: explicit quantity epsilon / tolerance law.
+
+**B.** BOQ `2041-01-22-02` produced an exact accounting remainder of `0.01`. Current authoritative data cannot prove that this represents physically executable remaining work.
+
+Future requirements:
+
+- quantity provenance
+- physical remainder verification
+- minimum executable quantity / resolution law
+
+These are domain and data-quality improvements. Constructor is not changed for them in this increment.
+
+------------------------------------------------------------
+NOT PROVEN / NOT CLAIMED
+------------------------------------------------------------
+
+| Item | Status |
+|------|--------|
+| Unclean crash recovery | **NOT TESTED** |
+| Same-wait Confirm idempotency | **TEST-PROVEN**, not separately live-proven |
+| Receiver ACK | **NOT MODELED** |
+| Target agent run | **NOT MODELED** |
+| Ownership transfer | **NOT PROVEN** |
+| Admission acceptance | **NOT CLAIMED** |
+| Executability acceptance | **NOT CLAIMED** |
+| Monthly commitment approval | **NOT CLAIMED** |
+| Orchestration completion | **NOT CLAIMED** |
+
+------------------------------------------------------------
+ACCEPTANCE STATUS
+------------------------------------------------------------
+
+CONSTRUCTOR V0.1 BACKEND / RUNTIME LIVE PROOF: **COMPLETE**
+
+Constructor overall: **NOT FROZEN**
+
+Remaining before V0.1 Freeze:
+
+1. professional Control Room / Human Surface visualization
+2. short final defect/deferred review
+3. final Constructor V0.1 freeze checkpoint
+4. Constructor Professional Passport AS BUILT V0.1 after freeze
+
+No second professional agent before Constructor freeze.
+
+**NO PRODUCT BUSINESS WRITES** in this documentation checkpoint.
+**NO CODE / TESTS / DB / SUPABASE / RUNTIME STORE CHANGES** in this documentation checkpoint.
+**NO `.runtime/*.sqlite` IN GIT.**
+**NO NEW CONSTRUCTOR RUN. NO REPLAY.**

@@ -12,12 +12,14 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 
 - **Program:** Monthly Planning Agentic Orchestration
 - **Current agent:** MONTHLY_PLAN_CONSTRUCTOR
-- **Progress:** **10 / 10** technical base + **professional Human Review/Confirm runtime** + **full professional live proof**
-- **DONE:** Increments 1–10 / 11A–11D as before · **RUNTIME-A** Human Review Gate in Constructor runtime · **RUNTIME-B** Human Confirm Gate + professional completion · **FULL PROFESSIONAL LIVE PROOF** (`run-119f4976-8d57-464d-b4d1-629a4128302d`)
-- **NEXT:** remaining before Constructor V0.1 freeze: professional Control Room / Human Surface visualization · short final defect/deferred review · final Constructor V0.1 freeze checkpoint · Constructor Professional Passport AS BUILT V0.1 after freeze. **No second professional agent before Constructor freeze.**
+- **Progress:** **10 / 10** technical base + **professional Human Review/Confirm runtime** + **full professional live proof** + **row-level decisions** + **Human Surface V0.4–V0.6E**
+- **DONE:** Increments 1–10 / 11A–11D as before · **RUNTIME-A** Human Review Gate in Constructor runtime · **RUNTIME-B** Human Confirm Gate + professional completion · **FULL PROFESSIONAL LIVE PROOF** (`run-119f4976-8d57-464d-b4d1-629a4128302d`) · **ROW DECISIONS** (`4e80b33551856439129d45a110e0c9272c8499c2`) · **HUMAN SURFACE V0.4–V0.6E** (`e71b3405144df927788ba142af3d5babe2207c23`)
+- **NEXT:** investigate only `REALITY_LOADED` → `PACKAGE_BUILT` on the stalled September Human Surface run. Do not redesign Human Surface. After that fix, create one new October mission. Do not reuse `run-830bc0c5-5a10-4ab6-9a19-da822662e041`. Constructor is **NOT COMPLETE** and **NOT FROZEN**. **No second professional agent before Constructor freeze.**
 - **RUNTIME-A commit:** `6fadb815d7970111e033386cb188a6e9393e148d`
 - **RUNTIME-B commit:** `51062f4b7f889800e7207da995635767904b940f`
-- **HEAD:** `733b643c8e899379441363ca018f20eac9b337fd` (`wip/increment-11c-persistent-shadow-stores`) — live proof executed on this code; this documentation checkpoint is not yet committed
+- **ROW DECISION commit:** `4e80b33551856439129d45a110e0c9272c8499c2` (`4e80b33`)
+- **HUMAN SURFACE commit:** `e71b3405144df927788ba142af3d5babe2207c23` (`e71b340`)
+- **HEAD:** `e71b3405144df927788ba142af3d5babe2207c23` (`wip/increment-11c-persistent-shadow-stores`) — code only; this documentation checkpoint is not yet committed
 - **Professional contracts:** **COMPLETE**
 - **Professional runtime:** **COMPLETE THROUGH HUMAN CONFIRM**
 - **Human Review runtime:** **DONE**
@@ -30,9 +32,11 @@ Checkpoints **append-only**. Не переписывать предыдущие 
 - **Same-wait Confirm idempotency:** **TEST-PROVEN**, not separately live-proven
 - **Post-completion stale confirm replay:** **LIVE PROVEN SAFE STALE REJECTION**
 - **Professional observability detail:** **GAP**
-- **Control Room professional visualization:** **GAP**
-- **Constructor V0.1 backend / runtime live proof:** **COMPLETE**
-- **Constructor V0.1:** **NOT YET FROZEN**
+- **Control Room professional visualization:** **HUMAN SURFACE V0.4–V0.6E ACCEPTED IN CODE**. Live browser visual review: **NOT PROVEN**
+- **Constructor V0.1 backend / runtime live proof:** **COMPLETE** for the earlier narrow run only
+- **Constructor overall:** **NOT COMPLETE**
+- **Constructor V0.1:** **NOT FROZEN**
+- **Open runtime defect:** `REALITY_LOADED` → `PACKAGE_BUILT` on `run-830bc0c5-5a10-4ab6-9a19-da822662e041` (сентябрь-2026, 530 reality rows, package absent, row decisions 0)
 - **ARCHITECTURAL REUSE PROOF #1:** **PASS**
 - **ARCHITECTURAL REUSE PROOF #2:** **PASS**
 - **Increment 10 status:** 10.0 DONE · 10.A0 DONE · 10.A1 DONE · 10.1–10.9B DONE · **10.10 DONE** · **10.10A DONE** · Increment 10 overall **FUNCTIONALLY COMPLETE**
@@ -9495,4 +9499,159 @@ No second professional agent before Constructor freeze.
 **NO PRODUCT BUSINESS WRITES** in this documentation checkpoint.
 **NO CODE / TESTS / DB / SUPABASE / RUNTIME STORE CHANGES** in this documentation checkpoint.
 **NO `.runtime/*.sqlite` IN GIT.**
+**NO NEW CONSTRUCTOR RUN. NO REPLAY.**
+
+============================================================
+CHECKPOINT — 2026-10-12
+ROW DECISIONS + HUMAN SURFACE V0.4–V0.6E
+STATUS:
+CODE ACCEPTED
+CONSTRUCTOR:
+NOT COMPLETE
+NOT FROZEN
+============================================================
+
+PROGRAM: Monthly Planning Agentic Orchestration · CURRENT AGENT: MONTHLY_PLAN_CONSTRUCTOR · BRANCH: `wip/increment-11c-persistent-shadow-stores`
+
+Documentation only. No new Constructor run. No database change. `web/db.sqlite3` is not part of this checkpoint.
+
+------------------------------------------------------------
+CODE COMMITS
+------------------------------------------------------------
+
+| Commit | Message |
+|------|--------|
+| `4e80b33551856439129d45a110e0c9272c8499c2` (`4e80b33`) | `feat(agents): record constructor row-level decisions` |
+| `e71b3405144df927788ba142af3d5babe2207c23` (`e71b340`) | `feat(agents): complete constructor human surface workspace` |
+
+The second message means the Human Surface workspace is accepted. It does not mean Constructor is complete.
+
+------------------------------------------------------------
+ROW-LEVEL DECISIONS — ACCEPTED
+------------------------------------------------------------
+
+`4e80b33` records one decision for each source scope row.
+
+- `ConstructorRowDecisionRecord`
+- candidate / exclusion outcome
+- reason
+- invalid rows also receive a decision
+- `row_decisions` are included in the proposal
+- `row_decisions` pass through lifecycle
+- `row_decisions` are allowed in the durable checkpoint
+- the real-data assembler keeps decisions aligned with input rows
+- BOQ partition returns kept + dropped
+- the previous filter contract remains as a compatibility wrapper
+- Row Decision tests are accepted with that commit
+
+This layer does not finish Constructor.
+
+------------------------------------------------------------
+HUMAN SURFACE V0.4–V0.6E — ACCEPTED
+------------------------------------------------------------
+
+`e71b340` is the operator surface. It reuses the existing Constructor launcher. It does not write the product database.
+
+**V0.4.** Global Quick Command. Text and voice are input. Voice transcription is not connected. Parse → preview → explicit apply. Real Work Context selectors.
+
+**V0.5.** Full title identifiers. Mission Preview. Explicit ЗАПУСТИТЬ. Existing Constructor launcher/runtime is reused. Double-launch protection. `run_id` binding. No direct UI database write.
+
+**V0.6.** Project, Month, contour, employee, and assignment are required. Queue, title, discipline, system, and package are optional narrowing filters. A broad scope is one mission and one run. An empty optional filter stays unrestricted inside the remaining context.
+
+**V0.6A.** Queue is not sent to Constructor as `queue_scope`. Queue resolves through the authoritative work-context catalog into facilities. Selected titles intersect that facility set. An invalid queue/title combination fails closed.
+
+**V0.6B.** Active `run_id` and `mission_id` stay bound to the Human Surface launch. An older run cannot masquerade as the new one.
+
+**V0.6D.** Durable mission recovery after browser or session refresh. Session state is not authority. Only one matching unfinished Human Surface Constructor mission is restored. Ambiguity fails closed. Recovery never starts a new mission.
+
+**V0.6E.** These blocks stay visible:
+
+5. Результат работы
+6. Решение человека
+7. Итог
+8. Передать дальше
+9. Временный XLSX
+
+Raw source rows are not shown as the professional result. HITL actions stay disabled and read-only until a safe command port is connected. The temporary pre-admission XLSX is built only from the professional Constructor result. The XLSX action is disabled when that result is absent. The workbook has `00_Свод`, dynamic discipline sheets, `98_Требует_решения`, and `99_Исключено`. The hierarchy is Month → Project → Queue → Title → Discipline → System → Package → Work Item, then master, crew, and week columns. Master, crew, and week values are not fabricated. Strings that would start an Excel formula stay text.
+
+The XLSX is a temporary pre-admission production artifact. It is not an approved monthly commitment.
+
+Live browser visual review of Page 53: **NOT PROVEN**. Tests are not browser proof.
+
+------------------------------------------------------------
+PROFESSIONAL RESULT / CONTROL ROOM READ LAYER
+------------------------------------------------------------
+
+- Constructor professional result reader is read-only.
+- Query Port can read the professional result and the decision registry.
+- DTO and presentation contracts were added in `e71b340`.
+- Human Surface has no right to write Constructor persistence directly.
+- Raw source data is not the digital employee's work result.
+
+------------------------------------------------------------
+AUTHORITY
+------------------------------------------------------------
+
+VOICE/TEXT → PARSE → COMMAND DRAFT → HUMAN PREVIEW → HUMAN CONFIRMATION → SAFE COMMAND PORT → AUTHORITATIVE ACTION
+
+LLM IS NOT A SECURITY BOUNDARY.
+
+UI DOES NOT WRITE DATABASE DIRECTLY.
+
+Persistent session state is not execution authority.
+
+Recovery cannot create a run.
+
+------------------------------------------------------------
+LIVE STATE — SEPTEMBER RUN, NOT OCTOBER EVIDENCE
+------------------------------------------------------------
+
+Constructor: **NOT COMPLETE**. Constructor: **NOT FROZEN**.
+
+| Binding | Value |
+|------|--------|
+| `run_id` | `run-830bc0c5-5a10-4ab6-9a19-da822662e041` |
+| `mission_id` | `mission-hs-0fb900b75f850c2d21ae53aa` |
+| project | `PRJ_001_БХК` |
+| month | `сентябрь-2026` |
+| facilities | `16160-13`, `16160-17` |
+| lifecycle | `REALITY_LOADED` |
+| operational status | `RUNNING` |
+| reality rows | **530** |
+| Candidate Package | **NOT PRESENT** |
+| Row Decisions | **0** |
+| Professional result | **NOT AVAILABLE** |
+
+Do not reuse this September run as October evidence.
+
+The earlier narrow live proof (`run-119f4976-8d57-464d-b4d1-629a4128302d`) already showed that the Constructor backend can pass this path on a narrow mission. That proof is not this run.
+
+------------------------------------------------------------
+OPEN RUNTIME DEFECT
+------------------------------------------------------------
+
+`REALITY_LOADED` → `PACKAGE_BUILT`
+
+The next technical cycle investigates only why this broad Human Surface run, after loading 530 rows, does not advance:
+
+`REALITY_LOADED` → `PACKAGE_BUILT` → `LABOR_RESOLVED` → Row Decisions → `WAITING_FOR_HUMAN_REVIEW` → Professional Result
+
+Do not reopen Human Surface, Work Context, queue → facilities resolution, `run_id` binding, recovery, or the XLSX architecture.
+
+------------------------------------------------------------
+NEXT
+------------------------------------------------------------
+
+1. Commit this documentation checkpoint separately.
+2. Push the current WIP branch.
+3. Confirm local HEAD equals upstream.
+4. Leave the worktree clean except the allowed untracked `web/db.sqlite3`.
+5. Stop.
+
+The following work cycle fixes only `REALITY_LOADED` → `PACKAGE_BUILT`. After that fix, create one new October mission. Do not reuse the current September mission.
+
+**NO PRODUCT BUSINESS WRITES** in this documentation checkpoint.
+**NO CODE / TESTS / DB / SUPABASE / RUNTIME STORE CHANGES** in this documentation checkpoint.
+**NO `.runtime/*.sqlite` IN GIT.**
+**NO `web/db.sqlite3` IN GIT.**
 **NO NEW CONSTRUCTOR RUN. NO REPLAY.**

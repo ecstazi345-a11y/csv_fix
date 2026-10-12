@@ -299,3 +299,168 @@ class AgentRunSnapshot:
     timeline_events: tuple[AgentEventView, ...]
     events_complete: bool
     read_at: datetime
+
+
+class ProfessionalResultAvailability(str, Enum):
+    AVAILABLE = "AVAILABLE"
+    UNAVAILABLE = "UNAVAILABLE"
+    INCONSISTENT = "INCONSISTENT"
+
+
+@dataclass(frozen=True)
+class ConstructorCandidateResultView:
+    """One Constructor candidate as stored. Quantities are transcribed text, not a new unit law."""
+
+    candidate_id: str
+    boq_code: str
+    name: str
+    unit: str
+    remaining_qty: str
+    already_planned_qty: str
+    available_qty: str
+    labor_status: str
+    recommendation: str
+    exception_codes: tuple[str, ...]
+    human_review_decision: str
+    final_disposition: str
+    final_reason_code: str
+
+
+@dataclass(frozen=True)
+class ConstructorProfessionalResultView:
+    """Read-only Constructor professional result. Missing state is UNAVAILABLE, not invented."""
+
+    availability: ProfessionalResultAvailability
+    run_id: str
+    mission_id: str
+    professional_status: str
+    project_id: str
+    month: str
+    facility_id: str
+    discipline: str
+    source_candidate_package_id: str
+    reviewed_package_id: str
+    included_count: Optional[int]
+    excluded_count: Optional[int]
+    unresolved_count: Optional[int]
+    confirm_event_id: str
+    confirm_decision: str
+    confirm_actor_type: str
+    confirm_actor_id: str
+    path_statuses: tuple[str, ...]
+    candidates: tuple[ConstructorCandidateResultView, ...]
+    mission_scope_row_count: Optional[int] = None
+    mission_scope_source: str = ""
+    scanned_count: Optional[int] = None
+    excluded_completed_count: Optional[int] = None
+    excluded_no_remainder_count: Optional[int] = None
+    already_planned_count: Optional[int] = None
+    package_candidate_count: Optional[int] = None
+
+
+def _empty_constructor_professional_result(
+    availability: ProfessionalResultAvailability,
+) -> ConstructorProfessionalResultView:
+    return ConstructorProfessionalResultView(
+        availability=availability,
+        run_id="",
+        mission_id="",
+        professional_status="",
+        project_id="",
+        month="",
+        facility_id="",
+        discipline="",
+        source_candidate_package_id="",
+        reviewed_package_id="",
+        included_count=None,
+        excluded_count=None,
+        unresolved_count=None,
+        confirm_event_id="",
+        confirm_decision="",
+        confirm_actor_type="",
+        confirm_actor_id="",
+        path_statuses=(),
+        candidates=(),
+    )
+
+
+def unavailable_constructor_professional_result() -> ConstructorProfessionalResultView:
+    return _empty_constructor_professional_result(ProfessionalResultAvailability.UNAVAILABLE)
+
+
+def inconsistent_constructor_professional_result() -> ConstructorProfessionalResultView:
+    return _empty_constructor_professional_result(ProfessionalResultAvailability.INCONSISTENT)
+
+
+@dataclass(frozen=True)
+class ConstructorRowDecisionView:
+    """One stored Constructor row decision. Unknown quantities stay None."""
+
+    source_identity: str
+    source_order: int
+    boq_code: str
+    name: str
+    unit: str
+    system: Optional[str]
+    remaining_qty: Optional[str]
+    already_planned_qty: Optional[str]
+    available_qty: Optional[str]
+    outcome: str
+    reason_code: str
+    reason_text: str
+    requires_human: Optional[bool]
+    candidate_created: bool
+    candidate_id: str
+    facility: str = ""
+    discipline: str = ""
+    iwp: str = ""
+
+
+@dataclass(frozen=True)
+class ConstructorDecisionRegistryView:
+    """Read-only row-decision registry for one Constructor run."""
+
+    availability: ProfessionalResultAvailability
+    professional: ConstructorProfessionalResultView
+    total_count: int
+    outcome_counts: tuple[tuple[str, int], ...]
+    known_systems: tuple[str, ...]
+    attention_count: int
+    records: tuple[ConstructorRowDecisionView, ...]
+    selected: Optional[ConstructorRowDecisionView] = None
+
+
+def constructor_row_awaits_human_review(
+    record: ConstructorRowDecisionView,
+    professional: ConstructorProfessionalResultView,
+) -> bool:
+    """Use the later professional candidate state, not requires_human alone."""
+    if str(professional.professional_status or "").strip() != "WAITING_FOR_HUMAN_REVIEW":
+        return False
+    if record.outcome != "CANDIDATE" or not record.candidate_created:
+        return False
+    matched: Optional[ConstructorCandidateResultView] = None
+    for candidate in professional.candidates:
+        if record.candidate_id and candidate.candidate_id == record.candidate_id:
+            matched = candidate
+            break
+        if candidate.boq_code == record.boq_code:
+            matched = candidate
+    if matched is None:
+        return True
+    return not str(matched.human_review_decision or "").strip()
+
+
+def empty_constructor_decision_registry(
+    professional: ConstructorProfessionalResultView,
+) -> ConstructorDecisionRegistryView:
+    return ConstructorDecisionRegistryView(
+        availability=professional.availability,
+        professional=professional,
+        total_count=0,
+        outcome_counts=(),
+        known_systems=(),
+        attention_count=0,
+        records=(),
+        selected=None,
+    )

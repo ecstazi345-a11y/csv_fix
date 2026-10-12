@@ -16,6 +16,10 @@ import os
 from pathlib import Path
 from typing import Optional, Union
 
+from agents.control_room.constructor_professional_result_reader import (
+    ConstructorProfessionalResultReader,
+    sibling_checkpoint_path,
+)
 from agents.control_room.query_port import AgentControlRoomQueryPort
 from agents.observability.sqlite_store import SqliteObservabilityStore
 
@@ -66,4 +70,5 @@ def build_agent_control_room_query_port(
     """Construct SqliteObservabilityStore + AgentControlRoomQueryPort. Read-only."""
     db_path = resolve_observability_db_path(override_path=override_path)
     store = SqliteObservabilityStore(db_path)
-    return AgentControlRoomQueryPort(store)
+    reader = ConstructorProfessionalResultReader(sibling_checkpoint_path(db_path))
+    return AgentControlRoomQueryPort(store, professional_result_reader=reader)

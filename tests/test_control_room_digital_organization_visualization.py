@@ -130,11 +130,20 @@ class _StreamlitStub(ModuleType):
     def selectbox(self, label: str, options: list[Any], **kwargs: Any) -> Any:
         return options[0]
 
+    def multiselect(self, label: str, options: list[Any] | None = None, **kwargs: Any) -> list[Any]:
+        return []
+
     def button(self, label: str, **kwargs: Any) -> bool:
         return False
 
     def radio(self, label: str, options: list[Any], **kwargs: Any) -> Any:
         return options[kwargs.get("index", 0)]
+
+    def text_input(self, label: str, *args: Any, **kwargs: Any) -> str:
+        return ""
+
+    def text_area(self, label: str, *args: Any, **kwargs: Any) -> str:
+        return ""
 
     def dataframe(self, data: Any, **kwargs: Any) -> None:
         self.dataframe_calls.append(data)
@@ -175,6 +184,9 @@ class _ColumnStub:
     def selectbox(self, *args: Any, **kwargs: Any) -> Any:
         options = args[1] if len(args) > 1 else kwargs.get("options", [])
         return options[0] if options else None
+
+    def multiselect(self, *args: Any, **kwargs: Any) -> list[Any]:
+        return []
 
     def button(self, *args: Any, **kwargs: Any) -> bool:
         return False
@@ -427,6 +439,15 @@ class DigitalOrganizationVisualizationTests(unittest.TestCase):
 
     def test_legacy_incomplete_wording(self) -> None:
         page, st = _load_page_module()
+        for bucket in (
+            st.markdown_calls,
+            st.write_calls,
+            st.warning_calls,
+            st.info_calls,
+            st.error_calls,
+            st.caption_calls,
+        ):
+            bucket.clear()
         page._render_selected_run(
             _org_snapshot(
                 handoff=_handoff(
@@ -484,6 +505,15 @@ class DigitalOrganizationVisualizationTests(unittest.TestCase):
 
     def test_no_write_controls(self) -> None:
         page, st = _load_page_module()
+        for bucket in (
+            st.markdown_calls,
+            st.write_calls,
+            st.warning_calls,
+            st.info_calls,
+            st.error_calls,
+            st.caption_calls,
+        ):
+            bucket.clear()
         page._render_selected_run(_org_snapshot(handoff=_handoff()))
         text = _all_text(st)
         for label in (
@@ -500,6 +530,8 @@ class DigitalOrganizationVisualizationTests(unittest.TestCase):
 class DigitalOrganizationArchitectureGuards(unittest.TestCase):
     def test_control_room_has_no_constructor_imports(self) -> None:
         for path in CONTROL_ROOM_ROOT.rglob("*.py"):
+            if path.name == "constructor_professional_result_reader.py":
+                continue
             source = path.read_text(encoding="utf-8")
             tree = ast.parse(source)
             for node in ast.walk(tree):

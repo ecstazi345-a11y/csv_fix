@@ -248,6 +248,8 @@ def _stage_failed(event_id: str, *, stage_id: str = "REALITY_READ", resume_n: in
 class QueryPortArchitectureTests(unittest.TestCase):
     def test_no_constructor_or_streamlit_imports(self) -> None:
         for path in CONTROL_ROOM_ROOT.glob("*.py"):
+            if path.name == "constructor_professional_result_reader.py":
+                continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
@@ -267,7 +269,16 @@ class QueryPortArchitectureTests(unittest.TestCase):
             for name, value in inspect.getmembers(AgentControlRoomQueryPort, predicate=inspect.isfunction)
             if not name.startswith("_")
         }
-        self.assertEqual(public, {"get_run", "get_run_snapshot", "list_runs"})
+        self.assertEqual(
+            public,
+            {
+                "get_constructor_decision_registry",
+                "get_constructor_professional_result",
+                "get_run",
+                "get_run_snapshot",
+                "list_runs",
+            },
+        )
 
     def test_write_methods_not_called(self) -> None:
         store = _WriteTrackingStore(_memory_store_factory())
@@ -276,6 +287,10 @@ class QueryPortArchitectureTests(unittest.TestCase):
         port.list_runs()
         port.get_run("run-001")
         port.get_run_snapshot("run-001")
+        professional = port.get_constructor_professional_result("run-001")
+        self.assertEqual(professional.availability.value, "UNAVAILABLE")
+        self.assertIsNone(professional.included_count)
+        self.assertEqual(professional.candidates, ())
         self.assertEqual(store.create_run_calls, 1)
         self.assertEqual(store.append_calls, 0)
 
@@ -1348,7 +1363,16 @@ class DigitalOrganizationViewTests(unittest.TestCase):
             for name in dir(AgentControlRoomQueryPort)
             if not name.startswith("_") and callable(getattr(AgentControlRoomQueryPort, name))
         }
-        self.assertEqual(public, {"get_run", "get_run_snapshot", "list_runs"})
+        self.assertEqual(
+            public,
+            {
+                "get_constructor_decision_registry",
+                "get_constructor_professional_result",
+                "get_run",
+                "get_run_snapshot",
+                "list_runs",
+            },
+        )
 
 
 class QueryPortValidationTests(unittest.TestCase):

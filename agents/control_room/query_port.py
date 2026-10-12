@@ -8,7 +8,7 @@ Read-only. No writes. No LLM. No raw event detail.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Protocol
 
 from agents.control_room.derivations import (
     agent_run_to_detail,
@@ -21,7 +21,20 @@ from agents.control_room.derivations import (
     derive_professional_execution_path,
     derive_stage_view,
 )
-from agents.control_room.dtos import AgentRunDetail, AgentRunListView, AgentRunSnapshot, AgentRunSummary
+from agents.control_room.dtos import (
+    AgentRunDetail,
+    AgentRunListView,
+    AgentRunSnapshot,
+    AgentRunSummary,
+    ConstructorDecisionRegistryView,
+    ConstructorProfessionalResultView,
+    ConstructorRowDecisionView,
+    ProfessionalResultAvailability,
+    constructor_row_awaits_human_review,
+    empty_constructor_decision_registry,
+    unavailable_constructor_professional_result,
+    inconsistent_constructor_professional_result,
+)
 from agents.control_room.errors import (
     ControlRoomQueryBlockerError,
     ControlRoomRunNotFoundError,
@@ -45,13 +58,26 @@ DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = MAX_LIST_RUNS_LIMIT
 
 
+class ConstructorProfessionalResultReader(Protocol):
+    """Read-only Constructor checkpoint adapter. Page 53 must not call this directly."""
+
+    def read(self, *, run_id: str, agent_code: str) -> ConstructorProfessionalResultView:
+        ...
+
+
 class AgentControlRoomQueryPort:
     """Bounded read-only Control Room query surface over durable observability truth."""
 
-    def __init__(self, store: ObservabilityStore) -> None:
+    def __init__(
+        self,
+        store: ObservabilityStore,
+        *,
+        professional_result_reader: Optional[ConstructorProfessionalResultReader] = None,
+    ) -> None:
         if store is None:
             raise ControlRoomQueryBlockerError("ObservabilityStore is required")
         self._store = store
+        self._professional_result_reader = professional_result_reader
 
     def list_runs(
         self,
@@ -159,6 +185,124 @@ class AgentControlRoomQueryPort:
             events_complete=events_complete,
             read_at=read_at,
         )
+
+    def get_constructor_professional_result(self, run_id: str) -> ConstructorProfessionalResultView:
+        """Observability proves the run exists. The checkpoint adapter supplies professional state."""
+        normalized_run_id = _require_run_id(run_id)
+        if self._professional_result_reader is None:
+            return unavailable_constructor_professional_result()
+        try:
+            run = self._store.get_run(normalized_run_id)
+        except ObservabilityRunNotFoundError as exc:
+            raise ControlRoomRunNotFoundError(str(exc)) from exc
+        except ObservabilityStorageFailureError as exc:
+            raise ControlRoomStorageUnavailableError("storage unavailable") from exc
+        except ObservabilityStoreError as exc:
+            raise _translate_store_error(exc) from exc
+        try:
+            return self._professional_result_reader.read(
+                run_id=normalized_run_id,
+                agent_code=str(run.agent_code or ""),
+            )
+        except Exception:
+            return inconsistent_constructor_professional_result()
+
+    def get_constructor_decision_registry(
+        self,
+        run_id: str,
+        *,
+        outcome: Optional[str] = None,
+        system: Optional[str] = None,
+        text: Optional[str] = None,
+        attention_only: bool = False,
+        selected_identity: Optional[str] = None,
+    ) -> ConstructorDecisionRegistryView:
+        """Filtered read of stored row decisions. Does not run Constructor logic."""
+        professional = self.get_constructor_professional_result(run_id)
+        if professional.availability is not ProfessionalResultAvailability.AVAILABLE:
+            return empty_constructor_decision_registry(professional)
+        reader = self._professional_result_reader
+        loader = getattr(reader, "read_row_decisions", None)
+        if reader is None or not callable(loader):
+            return empty_constructor_decision_registry(professional)
+        try:
+            run = self._store.get_run(_require_run_id(run_id))
+            records = tuple(
+                loader(
+                    run_id=_require_run_id(run_id),
+                    agent_code=str(run.agent_code or ""),
+                )
+            )
+        except Exception:
+            return empty_constructor_decision_registry(
+                inconsistent_constructor_professional_result()
+            )
+        if any(not isinstance(item, ConstructorRowDecisionView) for item in records):
+            return empty_constructor_decision_registry(
+                inconsistent_constructor_professional_result()
+            )
+        counts: dict[str, int] = {}
+        systems: set[str] = set()
+        attention = 0
+        for record in records:
+            counts[record.outcome] = counts.get(record.outcome, 0) + 1
+            if record.system:
+                systems.add(record.system)
+            if constructor_row_awaits_human_review(record, professional):
+                attention += 1
+        filtered = _filter_row_decisions(
+            records,
+            professional,
+            outcome=_optional_text(outcome),
+            system=_optional_text(system),
+            text=_optional_text(text),
+            attention_only=bool(attention_only),
+        )
+        identity = _optional_text(selected_identity)
+        selected = None
+        if identity:
+            selected = next(
+                (item for item in records if item.source_identity == identity),
+                None,
+            )
+        return ConstructorDecisionRegistryView(
+            availability=ProfessionalResultAvailability.AVAILABLE,
+            professional=professional,
+            total_count=len(records),
+            outcome_counts=tuple(sorted(counts.items())),
+            known_systems=tuple(sorted(systems)),
+            attention_count=attention,
+            records=filtered,
+            selected=selected,
+        )
+
+
+def _filter_row_decisions(
+    records: tuple[ConstructorRowDecisionView, ...],
+    professional: ConstructorProfessionalResultView,
+    *,
+    outcome: Optional[str],
+    system: Optional[str],
+    text: Optional[str],
+    attention_only: bool,
+) -> tuple[ConstructorRowDecisionView, ...]:
+    needle = text.casefold() if text else ""
+    kept: list[ConstructorRowDecisionView] = []
+    for record in records:
+        if outcome and record.outcome != outcome:
+            continue
+        if system and (record.system or "") != system:
+            continue
+        if needle:
+            haystack = " ".join(
+                (record.boq_code, record.name, record.system or "")
+            ).casefold()
+            if needle not in haystack:
+                continue
+        if attention_only and not constructor_row_awaits_human_review(record, professional):
+            continue
+        kept.append(record)
+    return tuple(kept)
 
 
 def _require_run_id(run_id: str) -> str:

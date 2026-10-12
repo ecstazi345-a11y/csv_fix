@@ -157,18 +157,24 @@ def _v2_resolve_scope_status_row(row: pd.Series) -> str:
     return _v2_resolve_available_status(remaining, available, planned)
 
 
-def filter_invalid_v2_boq_rows(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+def partition_invalid_v2_boq_rows(
+    df: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Исключить пустые заголовки/разделы без цены, стоимости, остатка и объёма.
+    Split rows with the existing invalid-BOQ keep mask.
 
     KEEP if any of:
     - unit_price > 0
     - total_value > 0
     - remaining_qty > 0  (from planning_remaining_qty after normalize)
     - total_qty > 0  (real BOQ with project qty; may be COMPLETED with remaining=0)
+
+    The keep mask is unchanged. The dropped frame exists so each input row
+    can be recorded. It does not change who continues into the scan.
     """
-    if df.empty:
-        return df, 0
+    if df is None or df.empty:
+        empty = df if isinstance(df, pd.DataFrame) else pd.DataFrame()
+        return empty, empty.iloc[0:0].copy()
     unit_price = pd.to_numeric(df.get("unit_price"), errors="coerce").fillna(0.0)
     total_value = pd.to_numeric(df.get("total_value"), errors="coerce").fillna(0.0)
     # After normalize_v2_scope_df the view field is remaining_qty;
@@ -189,5 +195,23 @@ def filter_invalid_v2_boq_rows(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     valid_mask = (
         (unit_price > 0) | (total_value > 0) | (remaining > 0) | (total_qty > 0)
     )
-    excluded = int((~valid_mask).sum())
-    return df[valid_mask].reset_index(drop=True), excluded
+    return (
+        df[valid_mask].reset_index(drop=True),
+        df[~valid_mask].reset_index(drop=True),
+    )
+
+
+def filter_invalid_v2_boq_rows(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """
+    Исключить пустые заголовки/разделы без цены, стоимости, остатка и объёма.
+
+    KEEP if any of:
+    - unit_price > 0
+    - total_value > 0
+    - remaining_qty > 0  (from planning_remaining_qty after normalize)
+    - total_qty > 0  (real BOQ with project qty; may be COMPLETED with remaining=0)
+    """
+    kept, dropped = partition_invalid_v2_boq_rows(df)
+    if df is None or df.empty:
+        return kept, 0
+    return kept, int(len(dropped))

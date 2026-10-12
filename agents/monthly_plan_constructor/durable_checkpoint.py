@@ -39,6 +39,7 @@ CONSTRUCTOR_MSGPACK_ALLOWLIST: tuple[ConstructorMsgpackAllowEntry, ...] = (
     ("agents.monthly_plan_constructor.secure_read_tools", "ConstructorReadProvenance"),
     ("agents.monthly_plan_constructor.secure_read_tools", "ScopeReadCapabilities"),
     # candidate package
+    ("agents.monthly_plan_constructor.row_decision", "ConstructorRowDecisionRecord"),
     ("agents.monthly_plan_constructor.candidate_package", "CandidatePackage"),
     ("agents.monthly_plan_constructor.candidate_package", "CandidateRecord"),
     ("agents.monthly_plan_constructor.candidate_package", "CandidatePackageSummary"),

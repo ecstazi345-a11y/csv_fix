@@ -17,11 +17,21 @@ from agents.monthly_plan_constructor.contracts import (
     ExclusionRecord,
     HumanIssue,
 )
+from agents.monthly_plan_constructor.row_decision import (
+    OUTCOME_CANDIDATE,
+    OUTCOME_UNCLASSIFIED,
+    REASON_UNKNOWN,
+    known_quantity,
+    known_system,
+    observe_scope_row,
+    source_order_from_row,
+    validate_row_decisions,
+)
 from services.monthly_planning_boq_service import (
     _v2_apply_boq_availability_metrics,
     _v2_resolve_scope_status_row,
     _v2_safe_num,
-    filter_invalid_v2_boq_rows,
+    partition_invalid_v2_boq_rows,
 )
 from services.monthly_planning_scope_read_service import normalize_scope_raw_df
 from utils.month_key import normalize_month_key
@@ -406,12 +416,55 @@ def _exclusion_for_status(
     return None
 
 
+def _observe_classified_row(
+    row_decisions: Optional[list],
+    row: pd.Series,
+    *,
+    project_code: str,
+    facility: str,
+    discipline: str,
+    boq_code: str,
+    stored_month_key: str,
+    outcome: str,
+    reason_code: str,
+    reason_text: str,
+    requires_human: Optional[bool],
+    candidate_created: bool,
+) -> None:
+    """Record a row that already reached the existing classifier. No new rule."""
+    if row_decisions is None:
+        return
+    row_decisions.append(
+        observe_scope_row(
+            source_order=source_order_from_row(row),
+            project_code=project_code,
+            facility=facility,
+            discipline=discipline,
+            month_key=stored_month_key,
+            system=known_system(row.get("system")),
+            iwp=_safe_text(row.get("iwp")),
+            boq_code=boq_code,
+            boq_name=_safe_text(row.get("boq_name")),
+            unit=_safe_text(row.get("unit")),
+            remaining_qty=known_quantity(row.get("remaining_qty")),
+            already_planned_qty=known_quantity(row.get("already_planned_qty")),
+            available_qty=known_quantity(row.get("available_to_add_qty")),
+            outcome=outcome,
+            reason_code=reason_code,
+            reason_text=reason_text,
+            requires_human=requires_human,
+            candidate_created=candidate_created,
+        )
+    )
+
+
 def classify_scope_rows(
     scope_df: pd.DataFrame,
     *,
     project_code: str,
     stored_month_key: str,
     month_key_canonical: str,
+    row_decisions: Optional[list] = None,
 ) -> tuple[list[Candidate], list[ExclusionRecord], list[HumanIssue], dict[str, int]]:
     candidates: list[Candidate] = []
     exclusions: list[ExclusionRecord] = []
@@ -457,6 +510,20 @@ def classify_scope_rows(
                     evidence={"facility": facility, "discipline": discipline},
                 )
             )
+            _observe_classified_row(
+                row_decisions,
+                row,
+                project_code=proj,
+                facility=facility,
+                discipline=discipline,
+                boq_code=boq,
+                stored_month_key=stored_month_key,
+                outcome=REASON_INVALID,
+                reason_code=REASON_INVALID,
+                reason_text="Неполный ключ scope (project/boq).",
+                requires_human=False,
+                candidate_created=False,
+            )
             continue
 
         # Detect silent negative before clip semantics already applied in metrics.
@@ -496,6 +563,20 @@ def classify_scope_rows(
                 counts["excluded_invalid"] += 1
             else:
                 counts["excluded_other"] += 1
+            _observe_classified_row(
+                row_decisions,
+                row,
+                project_code=proj,
+                facility=facility,
+                discipline=discipline,
+                boq_code=boq,
+                stored_month_key=stored_month_key,
+                outcome=excl.reason_code,
+                reason_code=excl.reason_code,
+                reason_text=excl.reason_text,
+                requires_human=False,
+                candidate_created=False,
+            )
             continue
 
         available = _v2_safe_num(row.get("available_to_add_qty"))
@@ -545,10 +626,41 @@ def classify_scope_rows(
                 )
             )
             counts["conflicts"] += 1
+            _observe_classified_row(
+                row_decisions,
+                row,
+                project_code=proj,
+                facility=facility,
+                discipline=discipline,
+                boq_code=boq,
+                stored_month_key=stored_month_key,
+                outcome=OUTCOME_UNCLASSIFIED,
+                reason_code=REASON_UNKNOWN,
+                reason_text=(
+                    "Текущий pipeline не присвоил формальный исход этой строке. "
+                    "Зафиксированное замечание: CANDIDATE_EXCEEDS_AVAILABLE."
+                ),
+                requires_human=None,
+                candidate_created=False,
+            )
             continue
 
         candidates.append(candidate)
         counts["candidates"] += 1
+        _observe_classified_row(
+            row_decisions,
+            row,
+            project_code=proj,
+            facility=facility,
+            discipline=discipline,
+            boq_code=boq,
+            stored_month_key=stored_month_key,
+            outcome=OUTCOME_CANDIDATE,
+            reason_code=OUTCOME_CANDIDATE,
+            reason_text="Строка дошла до candidate level.",
+            requires_human=None,
+            candidate_created=True,
+        )
 
     return candidates, exclusions, issues, counts
 
@@ -623,6 +735,7 @@ def build_constructor_proposal(
                 "human_issues": len(human_issues),
             },
             "errors": errors,
+            "row_decisions": (),
             "meta": {
                 "not_required_applied_once": False,
                 "manual_executed_reapplied": False,
@@ -637,7 +750,41 @@ def build_constructor_proposal(
 
     normalized = normalize_scope_raw_df(raw_scope)
     normalized = _enrich_scope_context_columns(normalized, raw_scope)
-    kept, excluded_invalid = filter_invalid_v2_boq_rows(normalized)
+    if not normalized.empty:
+        normalized = normalized.copy()
+        normalized["_source_order"] = list(range(len(normalized)))
+    kept, dropped = partition_invalid_v2_boq_rows(normalized)
+    excluded_invalid = 0 if normalized.empty else int(len(dropped))
+    row_decisions: list = []
+    for _, dropped_row in dropped.iterrows():
+        # The filter already dropped this row before the scan.
+        # already_planned_qty on the normalized frame is a placeholder, not a plan total.
+        row_decisions.append(
+            observe_scope_row(
+                source_order=source_order_from_row(dropped_row),
+                project_code=_safe_text(dropped_row.get("project_code"))
+                or _safe_text(project_code),
+                facility=_safe_text(dropped_row.get("facility")),
+                discipline=_safe_text(dropped_row.get("discipline")),
+                month_key=stored_month_key,
+                system=known_system(dropped_row.get("system")),
+                iwp=_safe_text(dropped_row.get("iwp")),
+                boq_code=_safe_text(dropped_row.get("boq_code")),
+                boq_name=_safe_text(dropped_row.get("boq_name")),
+                unit=_safe_text(dropped_row.get("unit")),
+                remaining_qty=known_quantity(dropped_row.get("remaining_qty")),
+                already_planned_qty=None,
+                available_qty=None,
+                outcome=REASON_INVALID,
+                reason_code=REASON_INVALID,
+                reason_text=(
+                    "Пустая/невалидная BOQ-строка "
+                    "(нет цены, стоимости, остатка и объёма)."
+                ),
+                requires_human=False,
+                candidate_created=False,
+            )
+        )
 
     invalid_exclusions: list[ExclusionRecord] = []
     if excluded_invalid > 0 and not normalized.empty:
@@ -672,6 +819,11 @@ def build_constructor_proposal(
         project_code=project_code,
         stored_month_key=stored_month_key,
         month_key_canonical=canonical,
+        row_decisions=row_decisions,
+    )
+    row_decision_records = validate_row_decisions(
+        row_decisions,
+        scope_row_count=0 if normalized.empty else len(normalized),
     )
     exclusions = invalid_exclusions + exclusions
     counts["excluded_invalid"] = int(counts.get("excluded_invalid", 0)) + int(
@@ -701,6 +853,7 @@ def build_constructor_proposal(
         "human_issues": [i.to_dict() for i in human_issues],
         "counts": counts,
         "errors": errors,
+        "row_decisions": row_decision_records,
         "meta": {
             "not_required_applied_once": True,
             "manual_executed_reapplied": False,

@@ -21,13 +21,14 @@ No product writes. No Supabase client. No global snapshot cache.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping, Optional, Sequence
 
 import pandas as pd
 
 from agents.monthly_plan_constructor.candidate_package import LABOR_UNRESOLVED
 from agents.monthly_plan_constructor.domain import build_constructor_proposal
+from agents.monthly_plan_constructor.row_decision import ConstructorRowDecisionRecord
 from agents.monthly_plan_constructor.lifecycle import CandidateAssemblyResult
 from agents.monthly_plan_constructor.mission_scope import (
     ConstructorMissionScope,
@@ -222,6 +223,49 @@ def _map_domain_candidate(
     }
 
 
+def _stamp_row_decisions(
+    records: Sequence[Any],
+    scope: ConstructorMissionScope,
+    mapped_ids: Sequence[str],
+) -> tuple[ConstructorRowDecisionRecord, ...]:
+    """Attach the existing candidate id. Does not create a second id scheme."""
+    stamped: list[ConstructorRowDecisionRecord] = []
+    created_ids: list[str] = []
+    for record in records:
+        if not isinstance(record, ConstructorRowDecisionRecord):
+            raise RealDataAssemblerError(
+                CODE_ASSEMBLER_BLOCKER,
+                "row decision must be ConstructorRowDecisionRecord",
+            )
+        if not record.candidate_created:
+            if record.candidate_id is not None:
+                raise RealDataAssemblerError(
+                    CODE_ASSEMBLER_BLOCKER,
+                    "non-candidate row must not carry a candidate id",
+                )
+            stamped.append(record)
+            continue
+        grain = (
+            _norm_part(record.project_code or scope.project_code),
+            _norm_month(record.month_key or scope.month_key),
+            _norm_part(record.facility),
+            _norm_part(record.discipline),
+            _norm_part(record.system),
+            _norm_part(record.iwp),
+            "",
+            _norm_part(record.boq_code),
+        )
+        candidate_id = _candidate_id_from_grain(grain)
+        stamped.append(replace(record, candidate_id=candidate_id))
+        created_ids.append(candidate_id)
+    if created_ids != list(mapped_ids):
+        raise RealDataAssemblerError(
+            CODE_ASSEMBLER_BLOCKER,
+            "row decision candidates do not match the candidate list",
+        )
+    return tuple(stamped)
+
+
 def _require_proposal_ok(proposal: Mapping[str, Any]) -> None:
     errors = list(proposal.get("errors") or [])
     if errors or not proposal.get("ok"):
@@ -368,12 +412,31 @@ class RealDataShadowAdapter:
             mapped.append(payload)
 
         counts = proposal.get("counts") or {}
+        raw_decisions = proposal.get("row_decisions")
+        if not isinstance(raw_decisions, tuple):
+            raise RealDataAssemblerError(
+                CODE_ASSEMBLER_BLOCKER,
+                "proposal is missing row-level decision records",
+            )
+        if len(raw_decisions) != len(snapshot.scope_frame) or len(raw_decisions) != len(
+            reality_read.rows
+        ):
+            raise RealDataAssemblerError(
+                CODE_ASSEMBLER_BLOCKER,
+                "scope rows and row-level decision records differ",
+            )
+        row_decisions = _stamp_row_decisions(
+            raw_decisions,
+            scope,
+            [str(item["candidate_id"]) for item in mapped],
+        )
         return CandidateAssemblyResult(
             candidates=tuple(mapped),
             scanned_count=int(counts.get("scanned") or 0),
             excluded_completed_count=int(counts.get("excluded_completed") or 0),
             excluded_no_remainder_count=int(counts.get("excluded_no_remainder") or 0),
             already_planned_count=int(counts.get("excluded_already_planned") or 0),
+            row_decisions=row_decisions,
         )
 
     def __call__(

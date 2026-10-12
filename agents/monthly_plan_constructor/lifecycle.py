@@ -41,6 +41,7 @@ from agents.monthly_plan_constructor.exception_engine import (
 )
 from agents.monthly_plan_constructor.human_confirm_contracts import HumanConfirmEvent
 from agents.monthly_plan_constructor.human_review_contracts import HumanReviewEvent
+from agents.monthly_plan_constructor.row_decision import ConstructorRowDecisionRecord
 from agents.monthly_plan_constructor.reviewed_candidate_package import (
     ReviewedCandidatePackage,
 )
@@ -243,6 +244,7 @@ class ConstructorLifecycleState:
     human_confirm_events: tuple[HumanConfirmEvent, ...] = ()
     terminal_reason: Optional[str] = None
     error_code: Optional[str] = None
+    row_decisions: tuple[ConstructorRowDecisionRecord, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -254,6 +256,7 @@ class CandidateAssemblyResult:
     excluded_completed_count: int = 0
     excluded_no_remainder_count: int = 0
     already_planned_count: int = 0
+    row_decisions: tuple[ConstructorRowDecisionRecord, ...] = ()
 
 
 class CandidateAssembler(Protocol):
@@ -800,6 +803,7 @@ def advance_constructor_lifecycle(
             source_capability=SOURCE_CANDIDATE_PACKAGE,
             note="candidate package built",
             package=package,
+            row_decisions=tuple(assembly.row_decisions),
         )
 
     if status == STATUS_PACKAGE_BUILT:

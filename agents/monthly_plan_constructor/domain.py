@@ -54,6 +54,11 @@ REASON_ALREADY_PLANNED = "EXCLUDED_ALREADY_PLANNED"
 REASON_INVALID = "EXCLUDED_INVALID"
 REASON_OVERRUN = "EXCLUDED_OVERRUN"
 REASON_NOT_REQUIRED = "EXCLUDED_NOT_REQUIRED"
+# Row-local commercial inconsistency: already_planned exceeds physical remainder.
+# Distinct from EXCLUDED_OVERRUN (execution overrun) and EXCLUDED_ALREADY_PLANNED
+# (available exhausted under consistent quantities).
+REASON_INCONSISTENT_QUANTITIES = "EXCLUDED_INCONSISTENT_QUANTITIES"
+ISSUE_INCONSISTENT_QUANTITIES = "INCONSISTENT_QUANTITIES"
 
 
 def _safe_text(value: Any) -> str:
@@ -527,27 +532,64 @@ def classify_scope_rows(
             continue
 
         # Detect silent negative before clip semantics already applied in metrics.
+        # Row-local: classify and exclude this row; do not abort the whole package.
         raw_available = (
             _v2_safe_num(row.get("effective_required_qty"))
             - _v2_safe_num(row.get("executed_total_qty"))
             - _v2_safe_num(row.get("already_planned_qty"))
         )
         if raw_available < -1e-9 and _v2_safe_num(row.get("overrun_qty")) <= 0:
+            grain = planning_grain_key(proj, facility, discipline, boq)
+            scope_key = "|".join(grain)
+            planned_qty = _v2_safe_num(row.get("already_planned_qty"))
+            remaining_qty = _v2_safe_num(row.get("remaining_qty"))
             issues.append(
                 HumanIssue(
-                    code="INCONSISTENT_QUANTITIES",
+                    code=ISSUE_INCONSISTENT_QUANTITIES,
                     severity="BLOCKER",
                     message="already_planned превышает физический остаток.",
-                    scope_key=f"{proj}|{facility}|{discipline}|{boq}",
+                    scope_key=scope_key,
                     boq_code=boq,
                     evidence={
                         "raw_available_before_clip": raw_available,
-                        "already_planned_qty": _v2_safe_num(row.get("already_planned_qty")),
-                        "remaining_qty": _v2_safe_num(row.get("remaining_qty")),
+                        "already_planned_qty": planned_qty,
+                        "remaining_qty": remaining_qty,
                     },
                 )
             )
             counts["conflicts"] += 1
+            counts["excluded_other"] += 1
+            exclusions.append(
+                ExclusionRecord(
+                    scope_key=scope_key,
+                    boq_code=boq,
+                    facility=facility,
+                    discipline=discipline,
+                    reason_code=REASON_INCONSISTENT_QUANTITIES,
+                    reason_text=(
+                        "already_planned превышает физический остаток; "
+                        "строка исключена из Candidate Package без изменения исходных величин."
+                    ),
+                )
+            )
+            _observe_classified_row(
+                row_decisions,
+                row,
+                project_code=proj,
+                facility=facility,
+                discipline=discipline,
+                boq_code=boq,
+                stored_month_key=stored_month_key,
+                outcome=REASON_INCONSISTENT_QUANTITIES,
+                reason_code=REASON_INCONSISTENT_QUANTITIES,
+                reason_text=(
+                    "already_planned превышает физический остаток; "
+                    "строка исключена из Candidate Package без изменения исходных величин."
+                ),
+                requires_human=True,
+                candidate_created=False,
+            )
+            continue
 
         status = _safe_text(row.get("status")) or _v2_resolve_scope_status_row(row)
         excl = _exclusion_for_status(row, status)

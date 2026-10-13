@@ -271,6 +271,65 @@ class PreAdmissionExportTests(unittest.TestCase):
         self.assertNotIn("BOQ-REVIEW", excluded)
         self.assertNotIn("BOQ-OUT", review_text)
 
+    def test_inconsistent_quantities_go_to_excluded_not_production(self) -> None:
+        records = (
+            _record(1, "CANDIDATE", discipline="Вентиляция", boq="BOQ-OK"),
+            ConstructorRowDecisionView(
+                source_identity="2|16160-13|BOQ-BAD",
+                source_order=2,
+                boq_code="BOQ-BAD",
+                name="Несогласованный остаток",
+                unit="м2",
+                system="SYS-1",
+                remaining_qty="10",
+                already_planned_qty="15",
+                available_qty="0",
+                outcome="EXCLUDED_INCONSISTENT_QUANTITIES",
+                reason_code="EXCLUDED_INCONSISTENT_QUANTITIES",
+                reason_text=(
+                    "already_planned превышает физический остаток; "
+                    "строка исключена из Candidate Package без изменения исходных величин."
+                ),
+                requires_human=True,
+                candidate_created=False,
+                candidate_id="",
+                facility="16160-13",
+                discipline="Вентиляция",
+                iwp="",
+            ),
+        )
+        registry = _registry(records)
+        payload = build_pre_admission_workbook(
+            registry,
+            project="БХК",
+            month_display="октябрь 2026",
+            generated_at=datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc),
+        )
+        workbook = load_workbook(BytesIO(payload))
+        self.assertEqual(
+            workbook.sheetnames,
+            ["00_Свод", "01_Вентиляция", "99_Исключено"],
+        )
+        self.assertNotIn("98_Требует_решения", workbook.sheetnames)
+        production = workbook["01_Вентиляция"]
+        production_text = " ".join(
+            str(cell.value) for row in production.iter_rows() for cell in row if cell.value
+        )
+        self.assertIn("BOQ-OK", production_text)
+        self.assertNotIn("BOQ-BAD", production_text)
+        excluded = workbook["99_Исключено"]
+        excluded_text = " ".join(
+            str(cell.value) for row in excluded.iter_rows() for cell in row if cell.value
+        )
+        self.assertIn("BOQ-BAD", excluded_text)
+        self.assertIn("already_planned превышает физический остаток", excluded_text)
+        self.assertNotIn("EXCLUDED_INCONSISTENT_QUANTITIES", excluded_text)
+        # Source quantities stay on the read-model record unchanged.
+        bad = next(item for item in registry.records if item.boq_code == "BOQ-BAD")
+        self.assertEqual(bad.remaining_qty, "10")
+        self.assertEqual(bad.already_planned_qty, "15")
+        self.assertEqual(bad.available_qty, "0")
+
 
 if __name__ == "__main__":
     unittest.main()

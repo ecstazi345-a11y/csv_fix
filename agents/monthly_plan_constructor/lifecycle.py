@@ -25,6 +25,7 @@ from agents.monthly_plan_constructor.candidate_package import (
     build_candidate_package,
 )
 from agents.monthly_plan_constructor.exception_engine import (
+    CODE_DATA_CONTRACT_BLOCKER,
     CODE_ENGINE_CONTRACT_BLOCKER,
     ROUTE_FAIL_RUN,
     ROUTE_WAIT_HUMAN,
@@ -41,7 +42,10 @@ from agents.monthly_plan_constructor.exception_engine import (
 )
 from agents.monthly_plan_constructor.human_confirm_contracts import HumanConfirmEvent
 from agents.monthly_plan_constructor.human_review_contracts import HumanReviewEvent
-from agents.monthly_plan_constructor.row_decision import ConstructorRowDecisionRecord
+from agents.monthly_plan_constructor.row_decision import (
+    ConstructorRowDecisionRecord,
+    RowDecisionError,
+)
 from agents.monthly_plan_constructor.reviewed_candidate_package import (
     ReviewedCandidatePackage,
 )
@@ -550,17 +554,21 @@ def _map_domain_failure(
         CandidatePackageError,
         SecureReadError,
         LaborNormResolverError,
+        RowDecisionError,
     ],
     *,
     at: datetime,
+    failure_code: Optional[str] = None,
+    source_capability: Optional[str] = None,
+    details: Optional[dict[str, Any]] = None,
 ) -> ConstructorLifecycleState:
-    code = getattr(exc, "code", None)
+    code = failure_code or getattr(exc, "code", None)
     if not code:
         raise LifecycleError(
             CODE_LIFECYCLE_CONTRACT_BLOCKER,
             "domain error missing machine code",
         )
-    source = _source_for_error(exc)
+    source = source_capability or _source_for_error(exc)
     package_id = state.package.package_id if state.package is not None else None
     try:
         mapped = exception_from_failure(
@@ -569,6 +577,7 @@ def _map_domain_failure(
             reason=str(exc),
             package_id=package_id,
             observed_at=at,
+            details=details,
         )
         exc_set = build_exception_set([mapped], package_id=package_id)
     except ExceptionEngineError as engine_exc:
@@ -588,6 +597,47 @@ def _map_domain_failure(
         trigger_code=mapped.exception_code,
         source_capability=source,
         note="mapped domain failure",
+        exceptions=exc_set,
+        error_code=mapped.exception_code,
+        terminal_reason=str(exc),
+    )
+
+
+def _map_assembler_failure(
+    state: ConstructorLifecycleState,
+    exc: BaseException,
+    *,
+    at: datetime,
+) -> ConstructorLifecycleState:
+    """
+    Map known assembly / row-decision failures out of REALITY_LOADED.
+
+    Assembler machine codes are not ACTIVE_EXCEPTION_CODES; canonicalize to
+    DATA_CONTRACT_BLOCKER and preserve the original code in details.
+    Deterministic unrecoverable → FAILED (not WAITING_FOR_HUMAN).
+    """
+    original = str(getattr(exc, "code", None) or type(exc).__name__)
+    package_id = state.package.package_id if state.package is not None else None
+    try:
+        mapped = exception_from_failure(
+            CODE_DATA_CONTRACT_BLOCKER,
+            source_capability=SOURCE_CANDIDATE_PACKAGE,
+            reason=str(exc),
+            package_id=package_id,
+            observed_at=at,
+            details={"original_failure_code": original},
+        )
+        exc_set = build_exception_set([mapped], package_id=package_id)
+    except ExceptionEngineError as engine_exc:
+        return _fail_engine_contract(state, engine_exc, at=at)
+
+    return _append_transition(
+        state,
+        to_status=STATUS_FAILED,
+        at=at,
+        trigger_code=mapped.exception_code,
+        source_capability=SOURCE_CANDIDATE_PACKAGE,
+        note="mapped assembler failure",
         exceptions=exc_set,
         error_code=mapped.exception_code,
         terminal_reason=str(exc),
@@ -772,6 +822,11 @@ def advance_constructor_lifecycle(
                 CODE_LIFECYCLE_CONTRACT_BLOCKER,
                 "scope and reality_read required for PACKAGE_BUILT advance",
             )
+        # Lazy import avoids circular import with real_data_assembler.
+        from agents.monthly_plan_constructor.real_data_assembler import (
+            RealDataAssemblerError,
+        )
+
         try:
             assembly = assemble_candidates(state.reality_read, state.scope)
             if not isinstance(assembly, CandidateAssemblyResult):
@@ -796,6 +851,8 @@ def advance_constructor_lifecycle(
             raise
         except MissionScopeError as exc:
             return _map_domain_failure(state, exc, at=stamp)
+        except (RealDataAssemblerError, RowDecisionError) as exc:
+            return _map_assembler_failure(state, exc, at=stamp)
         return _append_transition(
             state,
             to_status=STATUS_PACKAGE_BUILT,

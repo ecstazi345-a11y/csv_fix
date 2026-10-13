@@ -27,7 +27,11 @@ from typing import Any, Mapping, Optional, Sequence
 import pandas as pd
 
 from agents.monthly_plan_constructor.candidate_package import LABOR_UNRESOLVED
-from agents.monthly_plan_constructor.domain import build_constructor_proposal
+from agents.monthly_plan_constructor.domain import (
+    ISSUE_INCONSISTENT_QUANTITIES,
+    REASON_INCONSISTENT_QUANTITIES,
+    build_constructor_proposal,
+)
 from agents.monthly_plan_constructor.row_decision import ConstructorRowDecisionRecord
 from agents.monthly_plan_constructor.lifecycle import CandidateAssemblyResult
 from agents.monthly_plan_constructor.mission_scope import (
@@ -266,19 +270,119 @@ def _stamp_row_decisions(
     return tuple(stamped)
 
 
+# Row-local blockers that may pass only when every instance is already
+# accounted for by an explicit non-candidate Row Decision.
+_ROW_LOCAL_ACCOUNTABLE_BLOCKERS = frozenset({ISSUE_INCONSISTENT_QUANTITIES})
+
+
+def _norm_issue_part(value: Any) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    text = str(value).strip()
+    if text.lower() in _EMPTY_TOKENS:
+        return ""
+    return text.upper()
+
+
+def _inconsistent_decision_keys(
+    decisions: Sequence[Any],
+) -> list[tuple[str, str, str, str]]:
+    """Consume-ready keys for EXCLUDED_INCONSISTENT_QUANTITIES row decisions."""
+    keys: list[tuple[str, str, str, str]] = []
+    for record in decisions:
+        if not isinstance(record, ConstructorRowDecisionRecord):
+            continue
+        if record.candidate_created:
+            continue
+        if (
+            str(record.outcome or "").strip().upper()
+            != REASON_INCONSISTENT_QUANTITIES
+            and str(record.reason_code or "").strip().upper()
+            != REASON_INCONSISTENT_QUANTITIES
+        ):
+            continue
+        keys.append(
+            (
+                _norm_issue_part(record.project_code),
+                _norm_issue_part(record.facility),
+                _norm_issue_part(record.discipline),
+                _norm_issue_part(record.boq_code),
+            )
+        )
+    return keys
+
+
+def _blocker_grain_key(issue: Mapping[str, Any]) -> Optional[tuple[str, str, str, str]]:
+    scope_key = str(issue.get("scope_key") or "").strip()
+    if scope_key:
+        parts = [_norm_issue_part(part) for part in scope_key.split("|")]
+        if len(parts) >= 4 and parts[3]:
+            return (parts[0], parts[1], parts[2], parts[3])
+    boq = _norm_issue_part(issue.get("boq_code"))
+    if not boq:
+        return None
+    # Incomplete grain cannot prove accounting — fail closed upstream.
+    return None
+
+
+def _row_local_blocker_accounted(
+    issue: Mapping[str, Any],
+    remaining_keys: list[tuple[str, str, str, str]],
+) -> bool:
+    key = _blocker_grain_key(issue)
+    if key is None:
+        return False
+    try:
+        remaining_keys.remove(key)
+    except ValueError:
+        return False
+    return True
+
+
 def _require_proposal_ok(proposal: Mapping[str, Any]) -> None:
+    """
+    Fail closed on package-level / unaccounted blockers.
+
+    Row-local INCONSISTENT_QUANTITIES blockers are tolerated only when each
+    is matched by an explicit EXCLUDED_INCONSISTENT_QUANTITIES row decision
+    that did not create a candidate. No silent bypass.
+    """
     errors = list(proposal.get("errors") or [])
     if errors or not proposal.get("ok"):
         raise RealDataAssemblerError(
             CODE_DOMAIN_BLOCKER,
             "build_constructor_proposal returned a non-OK result",
         )
+    decisions = proposal.get("row_decisions") or ()
+    if not isinstance(decisions, (tuple, list)):
+        raise RealDataAssemblerError(
+            CODE_DOMAIN_BLOCKER,
+            "proposal is missing row-level decision records for blocker accounting",
+        )
+    remaining_inconsistent = _inconsistent_decision_keys(decisions)
     for issue in proposal.get("human_issues") or []:
-        if str(issue.get("severity") or "").strip().upper() == "BLOCKER":
+        if not isinstance(issue, Mapping):
             raise RealDataAssemblerError(
                 CODE_DOMAIN_BLOCKER,
-                f"blocking domain issue {issue.get('code')}",
+                "blocking domain issue payload is not a mapping",
             )
+        if str(issue.get("severity") or "").strip().upper() != "BLOCKER":
+            continue
+        code = str(issue.get("code") or "").strip().upper()
+        if code in _ROW_LOCAL_ACCOUNTABLE_BLOCKERS:
+            if not _row_local_blocker_accounted(issue, remaining_inconsistent):
+                raise RealDataAssemblerError(
+                    CODE_DOMAIN_BLOCKER,
+                    (
+                        f"blocking domain issue {code} is not accounted for "
+                        "by an explicit non-candidate row decision"
+                    ),
+                )
+            continue
+        raise RealDataAssemblerError(
+            CODE_DOMAIN_BLOCKER,
+            f"blocking domain issue {issue.get('code')}",
+        )
 
 
 class RealDataShadowAdapter:

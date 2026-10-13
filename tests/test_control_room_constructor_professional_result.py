@@ -25,11 +25,13 @@ from agents.control_room.constructor_professional_result_reader import (
 )
 from agents.control_room.dtos import (
     ConstructorCandidateResultView,
+    ConstructorDecisionRegistryView,
     ConstructorProfessionalResultView,
     ConstructorRowDecisionView,
     ProfessionalResultAvailability,
 )
 from agents.control_room.presentation import (
+    constructor_decision_summary_tiles,
     constructor_exclusion_line,
     constructor_final_confirm_allowed,
     constructor_funnel_warnings,
@@ -37,6 +39,7 @@ from agents.control_room.presentation import (
     constructor_management_scale_lines,
     constructor_processing_scale_lines,
     constructor_quantity_display,
+    constructor_row_outcome_label,
     constructor_workspace_views,
     human_confirm_decision_ru,
     human_review_decision_ru,
@@ -720,6 +723,85 @@ class DecisionRegistryQueryTest(unittest.TestCase):
         attention = port.get_constructor_decision_registry("run-80", attention_only=True)
         self.assertEqual(len(attention.records), 2)
         self.assertTrue(all(item.outcome == "CANDIDATE" for item in attention.records))
+
+    def test_inconsistent_quantities_outcome_propagates_in_read_model(self) -> None:
+        stored = observe_scope_row(
+            source_order=0,
+            project_code="PRJ",
+            facility="16160-13",
+            discipline="ОВ",
+            month_key="октябрь-2026",
+            system="SYS-1",
+            iwp="",
+            boq_code="BOQ-INCONSISTENT",
+            boq_name="Несогласованные объёмы",
+            unit="м2",
+            remaining_qty=10.0,
+            already_planned_qty=15.0,
+            available_qty=0.0,
+            outcome="EXCLUDED_INCONSISTENT_QUANTITIES",
+            reason_code="EXCLUDED_INCONSISTENT_QUANTITIES",
+            reason_text=(
+                "already_planned превышает физический остаток; "
+                "строка исключена из Candidate Package без изменения исходных величин."
+            ),
+            requires_human=True,
+            candidate_created=False,
+        )
+        mapped = map_constructor_row_decisions(
+            type(
+                "Life",
+                (),
+                {
+                    "row_decisions": (stored,),
+                    "reality_read": type("Reality", (), {"row_count": 1})(),
+                },
+            )()
+        )
+        self.assertEqual(len(mapped), 1)
+        record = mapped[0]
+        self.assertEqual(record.outcome, "EXCLUDED_INCONSISTENT_QUANTITIES")
+        self.assertEqual(record.reason_code, "EXCLUDED_INCONSISTENT_QUANTITIES")
+        self.assertFalse(record.candidate_created)
+        self.assertNotEqual(record.outcome, "UNKNOWN")
+        self.assertEqual(record.remaining_qty, "10")
+        self.assertEqual(record.already_planned_qty, "15")
+        self.assertEqual(record.available_qty, "0")
+        label = constructor_row_outcome_label(record.outcome)
+        self.assertIn("already_planned превышает физический остаток", label)
+        self.assertNotEqual(label, "EXCLUDED_INCONSISTENT_QUANTITIES")
+        registry = ConstructorDecisionRegistryView(
+            availability=ProfessionalResultAvailability.AVAILABLE,
+            professional=ConstructorProfessionalResultView(
+                availability=ProfessionalResultAvailability.AVAILABLE,
+                run_id="run-inconsistent",
+                mission_id="mission-inconsistent",
+                professional_status="PACKAGE_BUILT",
+                project_id="PRJ",
+                month="октябрь-2026",
+                facility_id="",
+                discipline="",
+                source_candidate_package_id="pkg-1",
+                reviewed_package_id="",
+                included_count=None,
+                excluded_count=None,
+                unresolved_count=None,
+                confirm_event_id="",
+                confirm_decision="",
+                confirm_actor_type="",
+                confirm_actor_id="",
+                path_statuses=(),
+                candidates=(),
+                package_candidate_count=0,
+            ),
+            total_count=1,
+            outcome_counts=(("EXCLUDED_INCONSISTENT_QUANTITIES", 1),),
+            known_systems=("SYS-1",),
+            attention_count=0,
+            records=mapped,
+        )
+        tiles = dict(constructor_decision_summary_tiles(registry))
+        self.assertEqual(tiles.get("НЕСОГЛАСОВАННЫЕ ОБЪЁМЫ"), "1")
 
 
 def _eighty(unknown: ConstructorRowDecisionView) -> tuple[ConstructorRowDecisionView, ...]:

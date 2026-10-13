@@ -1030,6 +1030,9 @@ _ROW_OUTCOME_RU = {
     "EXCLUDED_ALREADY_PLANNED": "Уже включено в план",
     "EXCLUDED_INVALID": "Не включать · исходные данные невалидны",
     "EXCLUDED_OVERRUN": "Не включать · выявлено превышение",
+    "EXCLUDED_INCONSISTENT_QUANTITIES": (
+        "Не включать · already_planned превышает физический остаток"
+    ),
 }
 
 _ROW_OUTCOME_TILE_RU = {
@@ -1038,6 +1041,7 @@ _ROW_OUTCOME_TILE_RU = {
     "EXCLUDED_ALREADY_PLANNED": "УЖЕ В ПЛАНЕ",
     "EXCLUDED_INVALID": "НЕВАЛИДНЫЕ",
     "EXCLUDED_OVERRUN": "ПРЕВЫШЕНИЕ",
+    "EXCLUDED_INCONSISTENT_QUANTITIES": "НЕСОГЛАСОВАННЫЕ ОБЪЁМЫ",
     "CANDIDATE": "КАНДИДАТА",
 }
 
@@ -1048,6 +1052,7 @@ _ROW_OUTCOME_FILTER_RU = {
     "EXCLUDED_ALREADY_PLANNED": "Уже в плане",
     "EXCLUDED_INVALID": "Невалидные",
     "EXCLUDED_OVERRUN": "Превышение",
+    "EXCLUDED_INCONSISTENT_QUANTITIES": "Несогласованные объёмы",
 }
 
 _HITL_ACTION_TO_REVIEW_DECISION = {
@@ -1207,6 +1212,7 @@ def constructor_decision_summary_tiles(
         "EXCLUDED_ALREADY_PLANNED",
         "EXCLUDED_INVALID",
         "EXCLUDED_OVERRUN",
+        "EXCLUDED_INCONSISTENT_QUANTITIES",
         "CANDIDATE",
     ):
         count = counts.get(outcome, 0)

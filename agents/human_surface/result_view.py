@@ -32,6 +32,7 @@ _VIEW_ORDER = (
     ("EXCLUDED_ALREADY_PLANNED", "Уже в плане"),
     ("EXCLUDED_INVALID", "Невалидные"),
     ("EXCLUDED_OVERRUN", "Превышение"),
+    ("EXCLUDED_INCONSISTENT_QUANTITIES", "Несогласованные объёмы"),
 )
 
 
@@ -44,6 +45,10 @@ def workspace_result_lines(registry: ConstructorDecisionRegistryView) -> tuple[s
         f"Уже включено в план: {counts.get('EXCLUDED_ALREADY_PLANNED', 0)}",
         f"Невалидные данные: {counts.get('EXCLUDED_INVALID', 0)}",
         f"Превышение: {counts.get('EXCLUDED_OVERRUN', 0)}",
+        (
+            "Несогласованные объёмы: "
+            f"{counts.get('EXCLUDED_INCONSISTENT_QUANTITIES', 0)}"
+        ),
         f"Кандидаты: {counts.get('CANDIDATE', 0)}",
         f"Требуют решения человека: {registry.attention_count}",
     )
@@ -179,7 +184,13 @@ def candidate_situation_line(
     return ""
 
 
-_PROBLEM_OUTCOMES = frozenset({"EXCLUDED_INVALID", "EXCLUDED_OVERRUN"})
+_PROBLEM_OUTCOMES = frozenset(
+    {
+        "EXCLUDED_INVALID",
+        "EXCLUDED_OVERRUN",
+        "EXCLUDED_INCONSISTENT_QUANTITIES",
+    }
+)
 
 
 def simple_result_filter_options(

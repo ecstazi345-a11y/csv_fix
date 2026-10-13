@@ -12,8 +12,10 @@ import pandas as pd
 
 from agents.monthly_plan_constructor.candidate_package import build_candidate_package
 from agents.monthly_plan_constructor.domain import (
+    ISSUE_INCONSISTENT_QUANTITIES,
     REASON_ALREADY_PLANNED,
     REASON_COMPLETED,
+    REASON_INCONSISTENT_QUANTITIES,
     REASON_INVALID,
     REASON_NO_REMAINDER,
     build_constructor_proposal,
@@ -23,12 +25,19 @@ from agents.monthly_plan_constructor.durable_checkpoint import (
     build_constructor_jsonplus_serializer,
 )
 from agents.monthly_plan_constructor.lifecycle import (
+    STATUS_FAILED,
     STATUS_PACKAGE_BUILT,
+    STATUS_REALITY_LOADED,
     CandidateAssemblyResult,
     ConstructorLifecycleState,
     create_lifecycle_state,
 )
-from agents.monthly_plan_constructor.real_data_assembler import RealDataShadowAdapter
+from agents.monthly_plan_constructor.real_data_assembler import (
+    CODE_DOMAIN_BLOCKER,
+    RealDataAssemblerError,
+    RealDataShadowAdapter,
+    _require_proposal_ok,
+)
 from agents.monthly_plan_constructor.row_decision import (
     OUTCOME_CANDIDATE,
     OUTCOME_UNCLASSIFIED,
@@ -481,11 +490,178 @@ class RowDecisionRecordsTest(unittest.TestCase):
             )
         finally:
             connection.close()
-        self.assertIsNotNone(loaded)
+        if loaded is None:
+            self.skipTest(
+                f"historical thread {HISTORICAL_RUN_ID} is not on this machine"
+            )
         lifecycle = loaded.checkpoint["channel_values"]["lifecycle"]
         self.assertIsInstance(lifecycle, ConstructorLifecycleState)
         self.assertEqual(lifecycle.row_decisions, ())
         self.assertEqual(len(lifecycle.package.candidates), 2)
+
+    def test_inconsistent_quantities_exclude_row_and_keep_package(self) -> None:
+        """TEST 1 / 2 — row-local blockers do not erase valid candidates."""
+        rows = [
+            _scope_row(boq_code="BOQ-GOOD", boq_name="Нормальный кандидат"),
+            _scope_row(
+                boq_code="BOQ-BAD-1",
+                boq_name="Уже перепланировано",
+                total_project_qty=10.0,
+                total_qty=10.0,
+                planning_remaining_qty=10.0,
+                total_project_value=100.0,
+                total_value=100.0,
+            ),
+            _scope_row(
+                boq_code="BOQ-BAD-2",
+                boq_name="Сильно перепланировано",
+                total_project_qty=66.0,
+                total_qty=66.0,
+                planning_remaining_qty=66.0,
+                total_project_value=660.0,
+                total_value=660.0,
+            ),
+            _scope_row(
+                boq_code="BOQ-DONE",
+                boq_name="Выполнено",
+                total_project_qty=5.0,
+                total_qty=5.0,
+                executed_qty_all_time=5.0,
+                executed_qty=5.0,
+                planning_remaining_qty=0.0,
+                total_project_value=50.0,
+                total_value=50.0,
+            ),
+        ]
+        plans = [
+            _plan_line(boq_code="BOQ-BAD-1", planned_qty=15.0, plan_line_id="pl-bad-1"),
+            _plan_line(boq_code="BOQ-BAD-2", planned_qty=178.0, plan_line_id="pl-bad-2"),
+        ]
+        proposal = _proposal(rows, plans)
+        self.assertTrue(proposal["ok"])
+        _require_proposal_ok(proposal)
+        records = proposal["row_decisions"]
+        self.assertEqual(len(records), 4)
+        found = _by_boq(proposal)
+        self.assertEqual(found["BOQ-GOOD"].outcome, OUTCOME_CANDIDATE)
+        self.assertTrue(found["BOQ-GOOD"].candidate_created)
+        for bad in ("BOQ-BAD-1", "BOQ-BAD-2"):
+            self.assertEqual(found[bad].outcome, REASON_INCONSISTENT_QUANTITIES)
+            self.assertEqual(found[bad].reason_code, REASON_INCONSISTENT_QUANTITIES)
+            self.assertFalse(found[bad].candidate_created)
+            self.assertTrue(found[bad].requires_human)
+            self.assertIsNotNone(found[bad].remaining_qty)
+            self.assertIsNotNone(found[bad].already_planned_qty)
+        self.assertEqual(found["BOQ-DONE"].outcome, REASON_COMPLETED)
+        candidate_boqs = {item["boq_code"] for item in proposal["candidates"]}
+        self.assertEqual(candidate_boqs, {"BOQ-GOOD"})
+        self.assertNotIn("BOQ-BAD-1", candidate_boqs)
+        self.assertNotIn("BOQ-BAD-2", candidate_boqs)
+        blockers = [
+            i
+            for i in proposal["human_issues"]
+            if i.get("code") == ISSUE_INCONSISTENT_QUANTITIES
+        ]
+        self.assertEqual(len(blockers), 2)
+
+    def test_require_proposal_ok_rejects_unaccounted_inconsistent_blocker(self) -> None:
+        """TEST 3 — no silent blocker bypass without an explicit row decision."""
+        good = _proposal([_scope_row(boq_code="BOQ-ONLY")])
+        self.assertTrue(good["ok"])
+        forged = dict(good)
+        forged["human_issues"] = [
+            {
+                "code": ISSUE_INCONSISTENT_QUANTITIES,
+                "severity": "BLOCKER",
+                "message": "synthetic unaccounted blocker",
+                "scope_key": f"{PROJECT}|ЗДАНИЕ А|ОВ|BOQ-ONLY",
+                "boq_code": "BOQ-ONLY",
+                "evidence": {},
+            }
+        ]
+        with self.assertRaises(RealDataAssemblerError) as ctx:
+            _require_proposal_ok(forged)
+        self.assertEqual(ctx.exception.code, CODE_DOMAIN_BLOCKER)
+        self.assertIn("not accounted for", str(ctx.exception))
+
+    def test_require_proposal_ok_still_fails_package_level_blocker(self) -> None:
+        """TEST 4 — true package-level blocker remains fail-closed."""
+        good = _proposal([_scope_row(boq_code="BOQ-ONLY")])
+        forged = dict(good)
+        forged["human_issues"] = [
+            {
+                "code": "CONFLICTING_PLAN_LINES",
+                "severity": "BLOCKER",
+                "message": "package-level conflict",
+                "scope_key": f"{PROJECT}|ЗДАНИЕ А|ОВ|BOQ-ONLY",
+                "boq_code": "BOQ-ONLY",
+                "evidence": {},
+            }
+        ]
+        with self.assertRaises(RealDataAssemblerError) as ctx:
+            _require_proposal_ok(forged)
+        self.assertEqual(ctx.exception.code, CODE_DOMAIN_BLOCKER)
+        self.assertIn("CONFLICTING_PLAN_LINES", str(ctx.exception))
+
+    def test_lifecycle_maps_assembler_error_off_reality_loaded(self) -> None:
+        """TEST 5 — RealDataAssemblerError must not leave REALITY_LOADED."""
+
+        class _FailingAssembler:
+            def __call__(self, reality_read, scope):
+                raise RealDataAssemblerError(
+                    CODE_DOMAIN_BLOCKER,
+                    "blocking domain issue CONFLICTING_PLAN_LINES",
+                )
+
+        state = create_lifecycle_state(
+            mission_id="mission-assembler-safety",
+            created_at=FIXED_AT,
+        )
+        state = _advance(state)
+        state = _advance(state)
+        self.assertEqual(state.status, STATUS_REALITY_LOADED)
+        state = _advance(state, assembler=_FailingAssembler())
+        self.assertEqual(state.status, STATUS_FAILED)
+        self.assertNotEqual(state.status, STATUS_REALITY_LOADED)
+        self.assertEqual(state.error_code, "DATA_CONTRACT_BLOCKER")
+        self.assertIsNone(state.package)
+        self.assertEqual(state.row_decisions, ())
+
+    def test_real_assembler_tolerates_accounted_inconsistent_rows(self) -> None:
+        """Assembler path: inconsistent plan rows excluded; good row remains."""
+        adapter = RealDataShadowAdapter()
+        mission = _mission()
+        rows = [
+            _assembler_scope_row(boq_code="BOQ-GOOD", boq_name="Ок"),
+            _assembler_scope_row(
+                boq_code="BOQ-BAD",
+                boq_name="Переплан",
+                total_project_qty=10.0,
+                executed_qty_all_time=0.0,
+                planning_remaining_qty=10.0,
+                total_project_value=100.0,
+            ),
+        ]
+        plans = [
+            {
+                "plan_line_id": "pl-bad",
+                "project_code": PROJECT,
+                "month_key": mission.month_key,
+                "facility": "16160-17",
+                "discipline": "Автоматизация",
+                "boq_code": "BOQ-BAD",
+                "planned_qty": 25.0,
+                "status": "NOT_SENT",
+            }
+        ]
+        reality = _capture(adapter, mission, scope_rows=rows, plan_rows=plans)
+        result = adapter(reality, mission)
+        self.assertEqual(len(result.row_decisions), 2)
+        self.assertEqual(len(result.candidates), 1)
+        self.assertEqual(result.candidates[0]["boq_code"], "BOQ-GOOD")
+        bad = next(item for item in result.row_decisions if item.boq_code == "BOQ-BAD")
+        self.assertEqual(bad.outcome, REASON_INCONSISTENT_QUANTITIES)
+        self.assertFalse(bad.candidate_created)
 
 
 if __name__ == "__main__":

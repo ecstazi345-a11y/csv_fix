@@ -321,7 +321,8 @@ class RuntimeAGraphTests(unittest.TestCase):
         self.assertEqual(out2["__interrupt__"][0].value.wait_kind, WAIT_KIND_HUMAN_REVIEW)
 
     def test_04_15_valid_add_reaches_reviewed_ready_no_completed(self) -> None:
-        app, ctx, _ = self._build_app()
+        recorder = InMemoryObservabilityRecorder()
+        app, ctx, _ = self._build_app(recorder=recorder)
         initial = create_lifecycle_state(
             mission_id=MISSION_ID,
             run_id=RUN_ID,
@@ -331,6 +332,14 @@ class RuntimeAGraphTests(unittest.TestCase):
         config = {"configurable": {"thread_id": RUN_ID}}
         out1 = app.invoke({"lifecycle": initial}, config)
         self.assertEqual(out1["lifecycle"].status, STATUS_WAITING_FOR_HUMAN_REVIEW)
+        wait_events = [
+            e
+            for e in recorder.events_for_run(RUN_ID)
+            if e.event_type is EventType.HUMAN_WAIT_STARTED
+            and getattr(e, "node_name", None) == "human_review_wait"
+        ]
+        self.assertEqual(len(wait_events), 1)
+        self.assertEqual(wait_events[0].interrupt_id, out1["__interrupt__"][0].value.interrupt_id)
         wait_req = out1["__interrupt__"][0].value
         package = out1["lifecycle"].package
         event = _review_event(package, decision=HumanReviewDecision.ADD)
@@ -348,6 +357,13 @@ class RuntimeAGraphTests(unittest.TestCase):
         lifecycle = out2["lifecycle"]
         # RUNTIME-B: resolved review continues into Human Confirm wait.
         self.assertEqual(lifecycle.status, STATUS_WAITING_FOR_HUMAN_CONFIRM)
+        confirm_waits = [
+            e
+            for e in recorder.events_for_run(RUN_ID)
+            if e.event_type is EventType.HUMAN_WAIT_STARTED
+            and getattr(e, "node_name", None) == "human_confirm_wait"
+        ]
+        self.assertEqual(len(confirm_waits), 1)
         self.assertIsNotNone(lifecycle.reviewed_package)
         self.assertEqual(lifecycle.reviewed_package.unresolved_count, 0)
         self.assertEqual(lifecycle.reviewed_package.included_count, 1)

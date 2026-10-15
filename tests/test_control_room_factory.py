@@ -76,13 +76,40 @@ def _close_port_store(port: AgentControlRoomQueryPort) -> None:
 
 
 class ControlRoomFactoryTests(unittest.TestCase):
-    def test_missing_env_fail_closed(self) -> None:
+    def test_missing_env_fail_closed_without_shadow(self) -> None:
+        from unittest.mock import patch
+
         env = os.environ.pop(AGENT_OBSERVABILITY_DB_PATH_ENV, None)
         try:
-            with self.assertRaises(ControlRoomConfigurationError):
-                resolve_observability_db_path()
-            with self.assertRaises(ControlRoomConfigurationError):
-                build_agent_control_room_query_port()
+            with patch(
+                "agents.control_room.factory._existing_constructor_shadow_observability_path",
+                return_value=None,
+            ):
+                with self.assertRaises(ControlRoomConfigurationError):
+                    resolve_observability_db_path()
+                with self.assertRaises(ControlRoomConfigurationError):
+                    build_agent_control_room_query_port()
+        finally:
+            if env is not None:
+                os.environ[AGENT_OBSERVABILITY_DB_PATH_ENV] = env
+
+    def test_missing_env_uses_existing_constructor_shadow_store(self) -> None:
+        from agents.control_room.factory import (
+            _existing_constructor_shadow_observability_path,
+        )
+
+        shadow = _existing_constructor_shadow_observability_path()
+        if shadow is None:
+            self.skipTest("constructor shadow observability.sqlite not present")
+        env = os.environ.pop(AGENT_OBSERVABILITY_DB_PATH_ENV, None)
+        try:
+            resolved = resolve_observability_db_path()
+            self.assertEqual(resolved, shadow)
+            port = build_agent_control_room_query_port()
+            try:
+                self.assertIsInstance(port, AgentControlRoomQueryPort)
+            finally:
+                _close_port_store(port)
         finally:
             if env is not None:
                 os.environ[AGENT_OBSERVABILITY_DB_PATH_ENV] = env

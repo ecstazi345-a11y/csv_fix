@@ -52,6 +52,7 @@ class MissionLaunchResult:
     mission_id: str
     status: str
     started_at: str
+    reused_existing: bool = False
 
 
 def mission_gaps(context: WorkingContext) -> tuple[str, ...]:
@@ -159,8 +160,13 @@ def launch_monthly_plan_mission(
     catalog: WorkContextCatalog,
     *,
     starter: Optional[Callable[..., MissionLaunchResult]] = None,
+    query_port: Optional[object] = None,
 ) -> MissionLaunchResult:
-    """Start one Constructor run. A repeated key returns the same result."""
+    """Start one Constructor run. A repeated key returns the same result.
+
+    When query_port is provided and a durable professional WAITING run with a
+    Candidate Package already exists for Project+Month, reuse it — do not start.
+    """
     gaps = mission_gaps(context)
     if gaps:
         raise MissionCommandError("Чтобы запустить задачу, не хватает: " + ", ".join(gaps) + ".")
@@ -169,6 +175,16 @@ def launch_monthly_plan_mission(
     project_code = _project_code(catalog, context.project or "")
     if not project_code:
         raise MissionCommandError("Для выбранного проекта нет authoritative project_code.")
+    month_key = _stored_month_key(context.planning_month or "")
+    if query_port is not None:
+        reused = _reuse_durable_professional(
+            query_port,
+            project_code=project_code,
+            month_key=month_key,
+            queue=str(context.queue or "").strip() or None,
+        )
+        if reused is not None:
+            return reused
     key = mission_idempotency_key(context)
     with _LAUNCH_LOCK:
         cached = _LAUNCHES.get(key)
@@ -196,6 +212,32 @@ def launch_monthly_plan_mission(
     finally:
         with _LAUNCH_LOCK:
             _IN_FLIGHT.discard(key)
+
+
+def _reuse_durable_professional(
+    query_port: object,
+    *,
+    project_code: str,
+    month_key: str,
+    queue: Optional[str] = None,
+) -> Optional[MissionLaunchResult]:
+    from agents.human_surface.mission_recovery import find_usable_professional_run
+
+    mission = find_usable_professional_run(
+        query_port,
+        project_code=project_code,
+        month_key=month_key,
+        queue=queue,
+    )
+    if mission is None:
+        return None
+    return MissionLaunchResult(
+        run_id=mission.run_id,
+        mission_id=mission.mission_id,
+        status=mission.lifecycle_status or mission.operational_status or "WAITING_FOR_HUMAN_REVIEW",
+        started_at=mission.requested_at.isoformat(),
+        reused_existing=True,
+    )
 
 
 def _project_code(catalog: WorkContextCatalog, label: str) -> str:

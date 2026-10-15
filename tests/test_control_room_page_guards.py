@@ -49,6 +49,7 @@ from agents.control_room.dtos import (
     ProfessionalExecutionStepKind,
     ProfessionalExecutionStepView,
     empty_constructor_decision_registry,
+    inconsistent_constructor_professional_result,
     unavailable_constructor_professional_result,
     RealityRefreshStepView,
     StageDisplayState,
@@ -144,11 +145,14 @@ class _StreamlitStub(ModuleType):
         self.write_calls: list[Any] = []
         self.dataframe_calls: list[Any] = []
         self.radio_calls: list[dict[str, Any]] = []
+        self.metric_calls: list[dict[str, Any]] = []
+        self.pills_calls: list[dict[str, Any]] = []
+        self.text_area_calls: list[dict[str, Any]] = []
+        self.caption_calls: list[str] = []
         self.set_page_config = lambda **kwargs: None
         self.cache_resource = _cache_resource_stub
         self.cache_data = _cache_resource_stub
         self.title = lambda *a, **k: None
-        self.caption = lambda *a, **k: None
         self.subheader = lambda *a, **k: None
         self.code = lambda *a, **k: None
         self.button_calls: list[dict[str, Any]] = []
@@ -206,9 +210,57 @@ class _StreamlitStub(ModuleType):
     def dataframe(self, data: Any, *args: Any, **kwargs: Any) -> None:
         self.dataframe_calls.append(data)
 
-    def radio(self, label: str, *, options: list[str], index: int = 0, **kwargs: Any) -> str:
-        self.radio_calls.append({"label": label, "options": options, "index": index})
-        return options[index]
+    def radio(
+        self,
+        label: str,
+        options: list[str] | None = None,
+        *,
+        index: int = 0,
+        **kwargs: Any,
+    ) -> str:
+        opts = list(options if options is not None else kwargs.get("options") or ())
+        self.radio_calls.append({"label": label, "options": opts, "index": index})
+        return opts[index] if opts else ""
+
+    def form(self, *args: Any, **kwargs: Any) -> Any:
+        return self
+
+    def form_submit_button(self, label: str, *args: Any, **kwargs: Any) -> bool:
+        self.button_calls.append({"label": str(label), "disabled": bool(kwargs.get("disabled", False))})
+        return False
+
+    def __enter__(self) -> "_StreamlitStub":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        return None
+
+    def pills(
+        self,
+        label: str,
+        *,
+        options: list[str],
+        selection_mode: str = "single",
+        default: Any = None,
+        **kwargs: Any,
+    ) -> Any:
+        self.pills_calls.append(
+            {
+                "label": label,
+                "options": options,
+                "selection_mode": selection_mode,
+                "default": default,
+            }
+        )
+        if default is not None:
+            return default
+        return options[0] if options else None
+
+    def metric(self, label: str, value: Any, *args: Any, **kwargs: Any) -> None:
+        self.metric_calls.append({"label": str(label), "value": str(value)})
+
+    def caption(self, text: str = "", *args: Any, **kwargs: Any) -> None:
+        self.caption_calls.append(str(text))
 
     def selectbox(self, label: str, options: list[str], **kwargs: Any) -> str:
         if not options:
@@ -223,7 +275,11 @@ class _StreamlitStub(ModuleType):
         return ""
 
     def text_area(self, label: str, *args: Any, **kwargs: Any) -> str:
-        return ""
+        self.text_area_calls.append({"label": str(label), **kwargs})
+        key = kwargs.get("key")
+        if key and key in self.session_state:
+            return str(self.session_state.get(key) or "")
+        return str(kwargs.get("value") or "")
 
     def button(self, label: str, *args: Any, **kwargs: Any) -> bool:
         self.button_calls.append({"label": str(label), "disabled": bool(kwargs.get("disabled", False))})
@@ -249,6 +305,8 @@ class _StreamlitStub(ModuleType):
             mock.multiselect = self.multiselect
             mock.button = self.button
             mock.radio = self.radio
+            mock.pills = self.pills
+            mock.metric = self.metric
             mock.text_input = self.text_input
         return mocks
 
@@ -513,6 +571,10 @@ def _load_page_module() -> tuple[ModuleType, _StreamlitStub]:
         "dataframe_calls",
         "radio_calls",
         "expander_labels",
+        "pills_calls",
+        "metric_calls",
+        "caption_calls",
+        "text_area_calls",
     ):
         getattr(st, name).clear()
     return module, st
@@ -536,6 +598,24 @@ class ControlRoomPageGuardTests(unittest.TestCase):
         self.assertIn("53_AI_Центр_управления_агентами.py", pages)
         self.assertEqual(pages.index("53_AI_Центр_управления_агентами.py"), pages.index("52_Архитектура_агентной_оркестрации_месячного_плана.py") + 1)
         self.assertIn('"53_AI_Центр_управления_агентами.py": "Центр управления агентами"', text)
+
+    def test_global_navigation_protected_from_page53(self) -> None:
+        """Page 53 must not alter app.py navigation / sidebar registration."""
+        page = PAGE_PATH.read_text(encoding="utf-8")
+        app = APP_PY.read_text(encoding="utf-8")
+        self.assertIn("st.navigation", app)
+        self.assertIn("NAV_SECTIONS", app)
+        self.assertNotIn("st.navigation", page)
+        self.assertNotIn("NAV_SECTIONS", page)
+        self.assertNotRegex(page, r"st\.set_page_config\s*\(")
+        self.assertNotRegex(page, r"showSidebarNavigation")
+        # Streamlit 1.56: client.showSidebarNavigation=false forces
+        # st.navigation(position=sidebar) to HIDDEN. Do not set it false.
+        config = REPO_ROOT / ".streamlit" / "config.toml"
+        self.assertTrue(config.is_file())
+        config_text = config.read_text(encoding="utf-8")
+        self.assertNotIn("showSidebarNavigation = false", config_text)
+        self.assertNotIn("\ufeff", config_text)
 
     def test_page_forbidden_imports_absent(self) -> None:
         source = PAGE_PATH.read_text(encoding="utf-8")
@@ -652,13 +732,13 @@ class ControlRoomPageBehaviorTests(unittest.TestCase):
     def test_main_reads_current_constructor_run(self) -> None:
         page, st = _load_page_module()
         fake = _FakeQueryPort()
-        with patch.object(page, "_cached_query_port", return_value=fake):
+        with patch.object(page, "_safe_query_port", return_value=fake):
             with redirect_stdout(io.StringIO()):
                 page.main()
         self.assertEqual(fake.snapshot_calls, [])
         self.assertNotIn("run-76ae10af-69f7-4588-91f5-5b0f5d28052a", "\n".join(st.primary_markdown))
         st.session_state["dynamis_active_run_id"] = "run-new-1"
-        with patch.object(page, "_cached_query_port", return_value=fake):
+        with patch.object(page, "_safe_query_port", return_value=fake):
             with redirect_stdout(io.StringIO()):
                 page.main()
         self.assertEqual(fake.snapshot_calls, ["run-new-1"])
@@ -671,6 +751,24 @@ class ControlRoomPageBehaviorTests(unittest.TestCase):
         self.assertIn("Поручение", text)
         self.assertIn("ТЕКСТОМ", "\n".join(st.button_calls and [item["label"] for item in st.button_calls]))
         self.assertNotIn('options=["Текстом", "Голосом"]', PAGE_PATH.read_text(encoding="utf-8"))
+
+    def test_quick_command_default_is_empty_neutral_placeholder(self) -> None:
+        from agents.human_surface.work_context import WorkContextCatalog
+
+        page, st = _load_page_module()
+        catalog = WorkContextCatalog(source="test", error="", months=(), facts=())
+        page._render_global_command_bar(catalog)
+        self.assertEqual(st.session_state.get("dynamis_global_text"), "")
+        command_calls = [
+            item for item in st.text_area_calls if item.get("key") == "dynamis_global_text"
+        ]
+        self.assertGreaterEqual(len(command_calls), 1)
+        for call in command_calls:
+            self.assertEqual(call.get("placeholder"), "Напишите или продиктуйте задачу…")
+            self.assertNotIn("ноябрь", str(call.get("placeholder") or "").lower())
+            self.assertNotIn("БХК", str(call.get("placeholder") or ""))
+        source = PAGE_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("Остальные системы в ноябрь не включать", source)
 
     def test_launch_button_calls_port_once_and_rerun_keeps_the_run(self) -> None:
         from agents.human_surface.mission_command import MissionLaunchResult
@@ -708,7 +806,11 @@ class ControlRoomPageBehaviorTests(unittest.TestCase):
         )
         calls: list[str] = []
 
-        def fake_launch(context: WorkingContext, received: WorkContextCatalog) -> MissionLaunchResult:
+        def fake_launch(
+            context: WorkingContext,
+            received: WorkContextCatalog,
+            **kwargs: Any,
+        ) -> MissionLaunchResult:
             calls.append("launch")
             self.assertEqual(context.titles, ("16160-13",))
             self.assertEqual(received.source, "test")
@@ -724,9 +826,10 @@ class ControlRoomPageBehaviorTests(unittest.TestCase):
             return str(label) == "ЗАПУСТИТЬ" and not kwargs.get("disabled", False)
 
         st.button = button
-        with patch.object(page, "launch_monthly_plan_mission", side_effect=fake_launch):
-            page._render_mission_draft(catalog)
-            page._render_mission_draft(catalog)
+        with patch.object(page, "_find_usable_professional_for_context", return_value=None):
+            with patch.object(page, "launch_monthly_plan_mission", side_effect=fake_launch):
+                page._render_mission_draft(catalog)
+                page._render_mission_draft(catalog)
         self.assertEqual(calls, ["launch"])
         self.assertEqual(st.session_state["dynamis_active_run_id"], "run-new-1")
         self.assertEqual(st.session_state["dynamis_active_mission_id"], "mission-new-1")
@@ -799,7 +902,11 @@ class ControlRoomPageBehaviorTests(unittest.TestCase):
             contour_code="MONTHLY_PRODUCTION_COMMITMENT",
         )
 
-        def empty_launch(context: WorkingContext, received: WorkContextCatalog) -> MissionLaunchResult:
+        def empty_launch(
+            context: WorkingContext,
+            received: WorkContextCatalog,
+            **kwargs: Any,
+        ) -> MissionLaunchResult:
             return MissionLaunchResult(
                 run_id="",
                 mission_id="mission-missing",
@@ -811,15 +918,16 @@ class ControlRoomPageBehaviorTests(unittest.TestCase):
             return str(label) == "ЗАПУСТИТЬ" and not kwargs.get("disabled", False)
 
         st.button = button
-        with patch.object(page, "launch_monthly_plan_mission", side_effect=empty_launch):
-            page._render_mission_draft(catalog)
+        with patch.object(page, "_find_usable_professional_for_context", return_value=None):
+            with patch.object(page, "launch_monthly_plan_mission", side_effect=empty_launch):
+                page._render_mission_draft(catalog)
         self.assertNotIn("dynamis_active_run_id", st.session_state)
         self.assertNotIn("Задача запущена", st.info_calls)
         self.assertIn("Не удалось подтвердить запуск задачи.", st.error_calls)
         self.assertNotIn("выполняет задачу", "\n".join(st.info_calls))
         st.button = lambda *args, **kwargs: False
         fake = _FakeQueryPort()
-        with patch.object(page, "_cached_query_port", return_value=fake):
+        with patch.object(page, "_safe_query_port", return_value=fake):
             with redirect_stdout(io.StringIO()):
                 page.main()
         self.assertEqual(fake.snapshot_calls, [])
@@ -839,7 +947,10 @@ class ControlRoomPageBehaviorTests(unittest.TestCase):
         registry = empty_constructor_decision_registry(unavailable_constructor_professional_result())
         snap = _snapshot(run=_detail(run_id="run-live-1", operational_status=OperationalStatus.STARTING.value))
         page._render_constructor_workspace(snap, registry)
-        self.assertIn("выполняет задачу", "\n".join(st.info_calls))
+        self.assertIn(
+            "Профессиональный результат этого запуска недоступен",
+            "\n".join(st.info_calls),
+        )
         technical = "\n".join(str(item) for item in st.technical_writes)
         self.assertIn("Run ID: run-live-1", technical)
         self.assertIn("Mission ID: mission-live-1", technical)
@@ -857,7 +968,7 @@ class ControlRoomPageBehaviorTests(unittest.TestCase):
 
         fake.get_constructor_decision_registry = registry
         st.session_state["dynamis_active_run_id"] = "run-live-1"
-        with patch.object(page, "_cached_query_port", return_value=fake):
+        with patch.object(page, "_safe_query_port", return_value=fake):
             with redirect_stdout(io.StringIO()):
                 page.main()
         self.assertEqual(fake.snapshot_calls, ["run-live-1"])
@@ -904,9 +1015,11 @@ class ControlRoomPageBehaviorTests(unittest.TestCase):
 
         fake.get_constructor_decision_registry = registry
         launches: list[str] = []
+        st.session_state.clear()
+        st.session_state["dynamis_recovery_resolved"] = False
         with patch.object(page, "load_recovery_decision", return_value=decision):
             with patch.object(page, "launch_monthly_plan_mission", side_effect=launches.append):
-                with patch.object(page, "_cached_query_port", return_value=fake):
+                with patch.object(page, "_safe_query_port", return_value=fake):
                     with patch.object(page, "load_work_context_catalog", return_value=_recovery_catalog()):
                         with redirect_stdout(io.StringIO()):
                             page.main()
@@ -918,7 +1031,7 @@ class ControlRoomPageBehaviorTests(unittest.TestCase):
         self.assertEqual(fake.snapshot_calls, ["run-830bc0c5"])
         self.assertEqual(recorded, ["run-830bc0c5"])
         self.assertNotIn("run-76ae10af-69f7-4588-91f5-5b0f5d28052a", fake.snapshot_calls)
-        self.assertIn(page.CONTINUES_EXECUTION_RU, st.info_calls)
+        self.assertEqual(launches, [])
 
     def test_ambiguous_recovery_does_not_choose_a_run(self) -> None:
         from agents.human_surface.mission_recovery import RecoveryDecision
@@ -1270,37 +1383,44 @@ class ControlRoomPageBehaviorTests(unittest.TestCase):
             + [str(item) for item in st.primary_writes]
             + st.info_calls
             + st.warning_calls
+            + st.caption_calls
         )
         frame = st.dataframe_calls[before]
         cells = " ".join(frame.astype(str).to_numpy().ravel())
+        self.assertIn("Результат анализа Constructor", "\n".join(st.primary_markdown))
         self.assertIn("БХК · октябрь 2026", text)
-        self.assertIn("разные состояния", text)
-        self.assertIn("В контуре миссии: 80", text)
-        self.assertIn("Выполнено: 38", text)
-        self.assertIn("Кандидаты: 2", text)
-        self.assertIn("Требуют решения человека: 2", text)
+        # Waiting professional package: Work Context is a review slice, not a new mission.
+        self.assertIn("Новый запуск Constructor не требуется", text)
+        self.assertIn("Дополнительный анализ", text)
+        metrics = {item["label"]: item["value"] for item in st.metric_calls}
+        self.assertEqual(metrics.get("Изучено"), "80")
+        self.assertEqual(metrics.get("Предложено к рассмотрению"), "2")
+        self.assertEqual(metrics.get("Контрольные отклонения"), "17")
+        self.assertEqual(metrics.get("Не требуют действия"), "61")
+        self.assertTrue(st.pills_calls)
+        pill_labels = " ".join(st.pills_calls[0]["options"])
+        self.assertIn("Все · 80", pill_labels)
+        self.assertNotIn("Требуют решения", pill_labels)
+        self.assertNotIn("Кандидаты (", pill_labels)
         self.assertEqual(len(frame), 80)
-        self.assertIn("Кандидат Constructor", cells)
+        self.assertIn("Предложено к рассмотрению", cells)
         self.assertNotIn("EXCLUDED_COMPLETED", cells)
         self.assertIn("HITL Command Port", text)
         self.assertIn("после подтверждения итогового состава", text)
         self.assertIn("Рассмотрено Constructor: 80", text)
         self.assertIn("Предложено к включению: 2", text)
         self.assertIn("Временный выпуск без допуска", "\n".join(st.primary_markdown))
-        buttons = [
+        # Human Confirm / Handoff remain gated; HR writes go through Command Port.
+        gated = [
             item
             for item in st.button_calls
             if item["label"] in {
-                "ОК",
-                "НЕ ОК",
-                "В ДРУГОЙ МЕСЯЦ",
-                "НУЖНЫ ДАННЫЕ",
                 "ПОДТВЕРДИТЬ РЕЗУЛЬТАТ",
                 "ПЕРЕДАТЬ ИНЖЕНЕРУ ПРОИЗВОДСТВЕННОЙ ГОТОВНОСТИ И ДОПУСКА",
             }
         ]
-        self.assertGreaterEqual(len(buttons), 5)
-        self.assertTrue(all(item["disabled"] for item in buttons))
+        self.assertEqual(len(gated), 2)
+        self.assertTrue(all(item["disabled"] for item in gated))
         export_buttons = [item for item in st.button_calls if "XLSX" in item["label"]]
         self.assertEqual(len(export_buttons), 1)
         self.assertFalse(export_buttons[0]["disabled"])
@@ -1319,7 +1439,7 @@ class ControlRoomPageBehaviorTests(unittest.TestCase):
             + st.info_calls
         )
         for heading in (
-            "Результат работы",
+            "Результат анализа Constructor",
             "Решение человека",
             "Итог",
             "Передать дальше",
@@ -1340,6 +1460,108 @@ class ControlRoomPageBehaviorTests(unittest.TestCase):
         export_buttons = [item for item in st.button_calls if "XLSX" in item["label"]]
         self.assertEqual(len(export_buttons), 1)
         self.assertTrue(export_buttons[0]["disabled"])
+
+    def test_running_observability_does_not_hide_available_professional_result(self) -> None:
+        """Persisted professional result must render even when ops status is RUNNING."""
+        from agents.control_room.dtos import empty_constructor_decision_registry
+        from agents.control_room.presentation import PROFESSIONAL_RESULT_INCONSISTENT_RU
+
+        page, st = _load_page_module()
+        records = _registry_records()
+        candidates = (
+            ConstructorCandidateResultView(
+                candidate_id="c-1",
+                boq_code="2041-01-22-02",
+                name="Решетка",
+                unit="м2 / m2",
+                remaining_qty="9.08",
+                already_planned_qty="9.07",
+                available_qty="0.01",
+                labor_status="UNRESOLVED",
+                recommendation="HUMAN_REVIEW_REQUIRED",
+                exception_codes=(),
+                human_review_decision="",
+                final_disposition="",
+                final_reason_code="",
+            ),
+        )
+        result = ConstructorProfessionalResultView(
+            availability=ProfessionalResultAvailability.AVAILABLE,
+            run_id="run-a0c70277-486b-439d-a6be-7599411ffc37",
+            mission_id="mission-hs-64b62cbcb56220fb604625d3",
+            professional_status="WAITING_FOR_HUMAN_REVIEW",
+            project_id="PRJ_001_БХК",
+            month="октябрь-2026",
+            facility_id="16160-13",
+            discipline="ВЕНТИЛЯЦИЯ",
+            source_candidate_package_id="3ef26b0e-1f5c-41ef-a06e-e39758749273",
+            reviewed_package_id="",
+            included_count=None,
+            excluded_count=None,
+            unresolved_count=None,
+            confirm_event_id="",
+            confirm_decision="",
+            confirm_actor_type="",
+            confirm_actor_id="",
+            path_statuses=("WAITING_FOR_HUMAN_REVIEW",),
+            candidates=candidates,
+            package_candidate_count=1,
+        )
+        registry = ConstructorDecisionRegistryView(
+            availability=ProfessionalResultAvailability.AVAILABLE,
+            professional=result,
+            total_count=len(records),
+            outcome_counts=(("CANDIDATE", 2),),
+            known_systems=(),
+            attention_count=2,
+            records=records,
+        )
+        st.session_state["dynamis_active_run_id"] = result.run_id
+        snap = _snapshot(run=_detail(operational_status=OperationalStatus.RUNNING.value))
+        page._render_constructor_workspace(snap, registry)
+        text = "\n".join(
+            st.primary_markdown
+            + [str(item) for item in st.primary_writes]
+            + st.info_calls
+            + st.error_calls
+            + st.caption_calls
+        )
+        self.assertNotIn("Candidate Package: ещё не сформирован", text)
+        self.assertNotIn("Профессиональный результат: ещё не сформирован", text)
+        self.assertTrue(st.dataframe_calls)
+        self.assertTrue(st.metric_calls)
+
+        # Registry read failure must surface an explicit error — never fake pending.
+        page2, st2 = _load_page_module()
+        st2.session_state["dynamis_active_run_id"] = result.run_id
+        failed = empty_constructor_decision_registry(
+            inconsistent_constructor_professional_result()
+        )
+        page2._render_constructor_workspace(snap, failed)
+        err_text = "\n".join(st2.error_calls + [str(item) for item in st2.primary_writes])
+        self.assertIn(PROFESSIONAL_RESULT_INCONSISTENT_RU, err_text)
+        self.assertNotIn("Candidate Package: ещё не сформирован", err_text)
+        self.assertNotIn("Профессиональный результат: ещё не сформирован", err_text)
+
+    def test_load_constructor_registry_surfaces_exception(self) -> None:
+        page, st = _load_page_module()
+
+        class _BoomPort:
+            def get_constructor_decision_registry(self, run_id: str, **kwargs: Any):
+                raise RuntimeError("checkpoint boom")
+
+        snap = _snapshot()
+        loaded = page._load_constructor_registry(snap, _BoomPort(), bound_run_id=snap.run.run_id)
+        self.assertIsNotNone(loaded)
+        assert loaded is not None
+        self.assertEqual(loaded.availability, ProfessionalResultAvailability.INCONSISTENT)
+        self.assertTrue(st.error_calls)
+        self.assertIn("checkpoint boom", st.error_calls[0])
+        source = PAGE_PATH.read_text(encoding="utf-8")
+        self.assertNotRegex(
+            source,
+            r"except Exception:\s*\n\s*return None",
+        )
 
 
 def _registry_records() -> tuple[ConstructorRowDecisionView, ...]:

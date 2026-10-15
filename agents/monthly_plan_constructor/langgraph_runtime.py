@@ -76,13 +76,17 @@ from agents.monthly_plan_constructor.lifecycle import (
     advance_constructor_reality_read_step,
     create_lifecycle_state,
 )
+from agents.monthly_plan_constructor.human_confirm_contracts import HumanConfirmDecision
+from agents.monthly_plan_constructor.human_review_contracts import HumanReviewDecision
 from agents.monthly_plan_constructor.professional_confirm_resume import (
+    REASON_HUMAN_CONFIRM,
     apply_professional_human_confirm,
     build_professional_confirm_wait_request,
     coerce_professional_confirm_resume_command,
     enter_waiting_for_human_confirm,
 )
 from agents.monthly_plan_constructor.professional_review_resume import (
+    REASON_HUMAN_REVIEW,
     apply_professional_human_review,
     build_professional_review_wait_request,
     coerce_professional_review_resume_command,
@@ -408,6 +412,8 @@ def build_constructor_langgraph(
         Reuses LangGraph interrupt + checkpoint binding.
         Does not use generic CLARIFY_SCOPE / ABORT_RUN.
         Does not emit RUN_COMPLETED or persist legacy handoff.
+        Emits HUMAN_WAIT_STARTED before interrupt so operational projection
+        can leave RUNNING → WAITING_FOR_HUMAN (same contract as generic HITL).
         """
         lifecycle = _require_status(
             state,
@@ -415,6 +421,25 @@ def build_constructor_langgraph(
             node_name=NODE_HUMAN_REVIEW_WAIT,
         )
         request = build_professional_review_wait_request(lifecycle, created_at=now)
+        if instrumentation is not None:
+            stamp = event_stamp or lifecycle.updated_at
+            _emit_professional_human_wait_started(
+                instrumentation=instrumentation,
+                lifecycle=lifecycle,
+                node_name=NODE_HUMAN_REVIEW_WAIT,
+                wait_ordinal=request.wait_ordinal,
+                interrupt_id=request.interrupt_id,
+                occurred_at=stamp,
+                reason_code=REASON_HUMAN_REVIEW,
+                human_readable_reason="Professional Human Review required",
+                allowed_decisions=(
+                    HumanReviewDecision.ADD.value,
+                    HumanReviewDecision.REMOVE.value,
+                    HumanReviewDecision.REQUIRES_CLARIFICATION.value,
+                ),
+                evidence_refs=(request.package_id,),
+                wait_kind=request.wait_kind,
+            )
         resume_payload = interrupt(request)
         command = coerce_professional_review_resume_command(resume_payload)
         cfg = get_config()
@@ -465,6 +490,7 @@ def build_constructor_langgraph(
         Reuses LangGraph interrupt + checkpoint binding.
         Valid Confirm → PROFESSIONAL_WORK_COMPLETED + optional RUN_COMPLETED
         without handoff.
+        Emits HUMAN_WAIT_STARTED before interrupt for operational projection.
         """
         lifecycle = _require_status(
             state,
@@ -472,6 +498,21 @@ def build_constructor_langgraph(
             node_name=NODE_HUMAN_CONFIRM_WAIT,
         )
         request = build_professional_confirm_wait_request(lifecycle, created_at=now)
+        if instrumentation is not None:
+            stamp = event_stamp or lifecycle.updated_at
+            _emit_professional_human_wait_started(
+                instrumentation=instrumentation,
+                lifecycle=lifecycle,
+                node_name=NODE_HUMAN_CONFIRM_WAIT,
+                wait_ordinal=request.wait_ordinal,
+                interrupt_id=request.interrupt_id,
+                occurred_at=stamp,
+                reason_code=REASON_HUMAN_CONFIRM,
+                human_readable_reason="Professional Human Confirm required",
+                allowed_decisions=(HumanConfirmDecision.CONFIRM.value,),
+                evidence_refs=(request.reviewed_package_id,),
+                wait_kind=request.wait_kind,
+            )
         resume_payload = interrupt(request)
         command = coerce_professional_confirm_resume_command(resume_payload)
         cfg = get_config()
@@ -1478,6 +1519,53 @@ def _resolve_and_validate_operator_resume(
         require_expected_checkpoint=True,
     )
     return resume, resolved
+
+
+def _emit_professional_human_wait_started(
+    *,
+    instrumentation: ConstructorRuntimeInstrumentation,
+    lifecycle: ConstructorLifecycleState,
+    node_name: str,
+    wait_ordinal: int,
+    interrupt_id: str,
+    occurred_at: datetime,
+    reason_code: str,
+    human_readable_reason: str,
+    allowed_decisions: tuple[str, ...],
+    evidence_refs: tuple[str, ...],
+    wait_kind: str,
+) -> None:
+    """Project WAITING_FOR_HUMAN via the same HUMAN_WAIT_STARTED contract as generic HITL."""
+    wait_key = ConstructorRuntimeEventKey(
+        run_id=lifecycle.run_id,
+        event_type=EventType.HUMAN_WAIT_STARTED,
+        stage_id="HUMAN_GATE",
+        node_name=node_name,
+        attempt_n=1,
+        resume_n=wait_ordinal,
+        semantic_occurrence_key=f"professional-{wait_kind.lower()}-wait-{wait_ordinal}",
+        artifact_correlation_id=None,
+    )
+    instrumentation.emit(
+        key=wait_key,
+        occurred_at=occurred_at,
+        agent_code=CONSTRUCTOR_AGENT_CODE,
+        title="Human wait started",
+        mission_id=lifecycle.mission_id,
+        authorization_id=lifecycle.authorization_id,
+        interrupt_id=interrupt_id,
+        human_decision_request=build_human_decision_request_observability_context(
+            reason_code=reason_code,
+            human_readable_reason=human_readable_reason,
+            allowed_decisions=allowed_decisions,
+            evidence_refs=evidence_refs,
+        ),
+        detail={
+            "wait_kind": wait_kind,
+            "wait_ordinal": str(wait_ordinal),
+            "professional_status_before": lifecycle.status,
+        },
+    )
 
 
 def _instrumented_human_wait(

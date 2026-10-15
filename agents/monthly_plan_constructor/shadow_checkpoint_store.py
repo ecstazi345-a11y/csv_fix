@@ -96,6 +96,46 @@ class ConstructorShadowCheckpointStore:
             )
 
 
+def open_constructor_shadow_checkpoint_store(
+    *,
+    checkpoints_db_path: Union[str, Path],
+) -> ConstructorShadowCheckpointStore:
+    """
+    Open an existing checkpoints.sqlite for LangGraph resume / write.
+
+    Does not create the parent directory or the database file.
+    """
+    path = Path(checkpoints_db_path).resolve()
+    if not path.is_file():
+        raise ShadowCheckpointStoreError(
+            CODE_SHADOW_CHECKPOINT_STORE_BLOCKER,
+            "checkpoints.sqlite does not exist",
+        )
+    try:
+        connection = sqlite3.connect(
+            str(path),
+            check_same_thread=False,
+        )
+    except sqlite3.Error as exc:
+        raise ShadowCheckpointStoreError(
+            CODE_SHADOW_CHECKPOINT_STORE_BLOCKER,
+            "checkpoints.sqlite could not be opened",
+        ) from exc
+
+    try:
+        serializer = build_constructor_jsonplus_serializer()
+        checkpointer = SqliteSaver(connection, serde=serializer)
+        checkpointer.setup()
+        return ConstructorShadowCheckpointStore(
+            db_path=path,
+            connection=connection,
+            checkpointer=checkpointer,
+        )
+    except BaseException:
+        connection.close()
+        raise
+
+
 def bootstrap_constructor_shadow_checkpoint_store(
     *,
     repository_root: Union[str, Path],
@@ -117,26 +157,16 @@ def bootstrap_constructor_shadow_checkpoint_store(
             "canonical Shadow runtime directory could not be created",
         ) from exc
 
-    try:
-        connection = sqlite3.connect(
-            str(paths.checkpoints_db_path),
-            check_same_thread=False,
-        )
-    except sqlite3.Error as exc:
-        raise ShadowCheckpointStoreError(
-            CODE_SHADOW_CHECKPOINT_STORE_BLOCKER,
-            "checkpoints.sqlite could not be opened",
-        ) from exc
+    if not paths.checkpoints_db_path.is_file():
+        try:
+            # Create empty file so open_ path can proceed; setup() owns schema.
+            paths.checkpoints_db_path.touch(exist_ok=True)
+        except OSError as exc:
+            raise ShadowCheckpointStoreError(
+                CODE_SHADOW_CHECKPOINT_STORE_BLOCKER,
+                "checkpoints.sqlite could not be created",
+            ) from exc
 
-    try:
-        serializer = build_constructor_jsonplus_serializer()
-        checkpointer = SqliteSaver(connection, serde=serializer)
-        checkpointer.setup()
-        return ConstructorShadowCheckpointStore(
-            db_path=paths.checkpoints_db_path,
-            connection=connection,
-            checkpointer=checkpointer,
-        )
-    except BaseException:
-        connection.close()
-        raise
+    return open_constructor_shadow_checkpoint_store(
+        checkpoints_db_path=paths.checkpoints_db_path,
+    )

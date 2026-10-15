@@ -30,8 +30,13 @@ CODE_HUMAN_REVIEW_CONTRACT_BLOCKER = "HUMAN_REVIEW_CONTRACT_BLOCKER"
 
 ACTOR_TYPE_HUMAN = "HUMAN"
 
+# Additive V1.2 professional resolution metadata (backwards-compatible).
+RESOLUTION_KIND_DEFER_TO_PERIOD = "DEFER_TO_PERIOD"
+
 _MAX_ID_LEN = 128
 _MAX_ACTOR_LEN = 64
+_MAX_RESOLUTION_LEN = 64
+_MAX_PERIOD_LEN = 32
 
 
 class HumanReviewDecision(str, Enum):
@@ -60,6 +65,11 @@ class HumanReviewEvent:
 
     Decision is human judgment / intent only.
     It does not set included/approved/final/handoff_ready/labor_resolved flags.
+
+    Optional quantity / reason fields are V1.1 additions.
+    Optional resolution_kind / target_period are V1.2 additions
+    (e.g. REMOVE + DEFER_TO_PERIOD + 2026-11).
+    Historical events without them remain readable (None).
     """
 
     schema_version: str
@@ -72,6 +82,11 @@ class HumanReviewEvent:
     actor_type: str
     actor_id: str
     reviewed_at: datetime
+    constructor_proposed_qty: Optional[float] = None
+    human_approved_qty: Optional[float] = None
+    reason_text: Optional[str] = None
+    resolution_kind: Optional[str] = None
+    target_period: Optional[str] = None
 
 
 def _optional_text(value: Any) -> Optional[str]:
@@ -125,6 +140,64 @@ def _coerce_decision(value: Any) -> HumanReviewDecision:
         ) from exc
 
 
+_MAX_REASON_LEN = 2000
+
+
+def _optional_finite_qty(value: Any, field_name: str) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise HumanReviewContractError(
+            CODE_HUMAN_REVIEW_CONTRACT_BLOCKER,
+            f"{field_name} must be a finite number when provided",
+        )
+    number = float(value)
+    if number != number or number in (float("inf"), float("-inf")):
+        raise HumanReviewContractError(
+            CODE_HUMAN_REVIEW_CONTRACT_BLOCKER,
+            f"{field_name} must be a finite number when provided",
+        )
+    return number
+
+
+def _optional_reason(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if len(text) > _MAX_REASON_LEN:
+        raise HumanReviewContractError(
+            CODE_HUMAN_REVIEW_CONTRACT_BLOCKER,
+            f"reason_text exceeds max length {_MAX_REASON_LEN}",
+        )
+    return text
+
+
+def _optional_resolution_kind(value: Any) -> Optional[str]:
+    text = _optional_text(value)
+    if text is None:
+        return None
+    if len(text) > _MAX_RESOLUTION_LEN:
+        raise HumanReviewContractError(
+            CODE_HUMAN_REVIEW_CONTRACT_BLOCKER,
+            f"resolution_kind exceeds max length {_MAX_RESOLUTION_LEN}",
+        )
+    return text.upper()
+
+
+def _optional_target_period(value: Any) -> Optional[str]:
+    text = _optional_text(value)
+    if text is None:
+        return None
+    if len(text) > _MAX_PERIOD_LEN:
+        raise HumanReviewContractError(
+            CODE_HUMAN_REVIEW_CONTRACT_BLOCKER,
+            f"target_period exceeds max length {_MAX_PERIOD_LEN}",
+        )
+    return text
+
+
 def build_human_review_event(
     *,
     review_event_id: str,
@@ -137,6 +210,11 @@ def build_human_review_event(
     reviewed_at: datetime,
     actor_type: str = ACTOR_TYPE_HUMAN,
     schema_version: str = SCHEMA_VERSION,
+    constructor_proposed_qty: Any = None,
+    human_approved_qty: Any = None,
+    reason_text: Any = None,
+    resolution_kind: Any = None,
+    target_period: Any = None,
 ) -> HumanReviewEvent:
     """
     Normalize a Human Review event. Pure. No UUID / now() generation.
@@ -146,6 +224,18 @@ def build_human_review_event(
         raise HumanReviewContractError(
             CODE_HUMAN_REVIEW_CONTRACT_BLOCKER,
             "actor_type must be HUMAN (transitional attribution, not verified IAM)",
+        )
+    kind = _optional_resolution_kind(resolution_kind)
+    period = _optional_target_period(target_period)
+    if kind == RESOLUTION_KIND_DEFER_TO_PERIOD and period is None:
+        raise HumanReviewContractError(
+            CODE_HUMAN_REVIEW_CONTRACT_BLOCKER,
+            "target_period is required for DEFER_TO_PERIOD",
+        )
+    if period is not None and kind is None:
+        raise HumanReviewContractError(
+            CODE_HUMAN_REVIEW_CONTRACT_BLOCKER,
+            "resolution_kind is required when target_period is set",
         )
     return HumanReviewEvent(
         schema_version=_require_text(schema_version, "schema_version", max_len=32),
@@ -158,6 +248,15 @@ def build_human_review_event(
         actor_type=actor,
         actor_id=_require_text(actor_id, "actor_id"),
         reviewed_at=_require_aware_utc(reviewed_at, "reviewed_at"),
+        constructor_proposed_qty=_optional_finite_qty(
+            constructor_proposed_qty, "constructor_proposed_qty"
+        ),
+        human_approved_qty=_optional_finite_qty(
+            human_approved_qty, "human_approved_qty"
+        ),
+        reason_text=_optional_reason(reason_text),
+        resolution_kind=kind,
+        target_period=period,
     )
 
 
@@ -239,6 +338,11 @@ def _event_payload_fingerprint(event: HumanReviewEvent) -> tuple[Any, ...]:
         event.actor_type,
         event.actor_id,
         event.reviewed_at.isoformat(),
+        event.constructor_proposed_qty,
+        event.human_approved_qty,
+        event.reason_text,
+        event.resolution_kind,
+        event.target_period,
     )
 
 
@@ -292,10 +396,23 @@ def project_effective_human_review_decisions(
     Do not sort by reviewed_at.
     Candidates without review events are omitted (NOT REVIEWED — no fake decision).
     """
+    return {
+        candidate_id: event.decision
+        for candidate_id, event in project_effective_human_review_events(
+            events, package
+        ).items()
+    }
+
+
+def project_effective_human_review_events(
+    events: Sequence[HumanReviewEvent],
+    package: CandidatePackage,
+) -> Mapping[str, HumanReviewEvent]:
+    """Latest HumanReviewEvent per candidate_id (append-only history; order wins)."""
     normalized = normalize_human_review_events(events, package)
-    effective: dict[str, HumanReviewDecision] = {}
+    effective: dict[str, HumanReviewEvent] = {}
     for event in normalized:
-        effective[event.candidate_id] = event.decision
+        effective[event.candidate_id] = event
     return dict(effective)
 
 

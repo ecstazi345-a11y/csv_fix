@@ -7,7 +7,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
+import re
+from pathlib import Path
 from typing import Any, Optional
 
 import pandas as pd
@@ -24,6 +28,7 @@ from agents.control_room.dtos import (
     ProfessionalExecutionStepKind,
     ProfessionalResultAvailability,
     constructor_row_awaits_human_review,
+    empty_constructor_decision_registry,
     inconsistent_constructor_professional_result,
 )
 from agents.control_room.errors import (
@@ -33,8 +38,10 @@ from agents.control_room.errors import (
     ControlRoomStorageUnavailableError,
 )
 from agents.control_room.factory import (
+    AGENT_OBSERVABILITY_DB_PATH_ENV,
     ControlRoomConfigurationError,
     build_agent_control_room_query_port,
+    resolve_observability_db_path,
 )
 from agents.human_surface.mission_draft import (
     COMMAND_EXECUTION_REQUIRED_RU,
@@ -43,7 +50,11 @@ from agents.human_surface.mission_draft import (
     GLOBAL_VOICE_RECORDED_RU,
     HANDOFF_COMMAND_PORT_REQUIRED_RU,
     HITL_COMMAND_PORT_REQUIRED_RU,
+    EXISTING_MONTHLY_ANALYSIS_RU,
+    EXISTING_MONTHLY_WORK_ACTION_RU,
     SEPARATE_ASSIGNMENT_RU,
+    WORK_CONTEXT_OUT_OF_SCOPE_RU,
+    WORK_CONTEXT_SLICE_RU,
     GlobalCommandDraft,
     MissionDraft,
     WorkingContext,
@@ -70,7 +81,9 @@ from agents.human_surface.mission_recovery import (
     REALITY_LOADED,
     RECOVERY_CONTINUE_RU,
     RecoveredMission,
+    find_usable_professional_run,
     load_recovery_decision,
+    operational_status_for_run,
     working_context_from_mission,
 )
 from agents.human_surface.pre_admission_export import (
@@ -92,6 +105,29 @@ from agents.human_surface.mission_command import (
     mission_idempotency_key,
     mission_preview_lines,
 )
+from agents.human_surface.human_review_batch import (
+    prepare_batch_from_text,
+    submit_human_review_batch,
+)
+from agents.human_surface.human_review_command import (
+    HumanReviewAction,
+    HumanReviewCommand,
+    HumanReviewCommandError,
+    prepare_human_review_surface,
+    submit_human_review_decision,
+)
+from agents.human_surface.human_review_focus import (
+    build_focus_set_from_work_context,
+    durable_exception_detail_rows,
+    grouped_review_summary,
+)
+from agents.human_surface.monthly_commitment_draft import (
+    NON_CANDIDATE_CLARIFICATION_RU,
+    build_monthly_commitment_draft,
+    build_work_context_review_summary,
+    composition_table_dicts,
+    is_non_candidate_reference_error,
+)
 from agents.human_surface.work_context import (
     DISCIPLINES_UNAVAILABLE_RU,
     PACKAGES_UNAVAILABLE_RU,
@@ -105,12 +141,17 @@ from agents.human_surface.work_context import (
     selector_options,
 )
 from agents.human_surface.result_view import (
+    MODULE5_TITLE_RU,
+    build_module5_result_summary_from_records,
     candidate_situation_line,
+    filter_records_by_work_context,
     human_decision_tally,
+    module5_filter_options,
+    module5_kpi_tiles,
+    module5_state_timestamp,
+    order_records_by_candidate_ids,
     professional_status_line,
     select_workspace_records,
-    simple_result_filter_options,
-    workspace_result_lines,
     workspace_run_banner,
     workspace_table_rows,
 )
@@ -226,14 +267,26 @@ CATALOG_LIMIT = 200
 LIST_LIMIT = 50
 
 
-@st.cache_resource
-def _cached_query_port() -> AgentControlRoomQueryPort:
+def _ensure_observability_env() -> None:
+    """Bind Page 53 to the same durable observability store the live launcher uses."""
+    if str(os.environ.get(AGENT_OBSERVABILITY_DB_PATH_ENV) or "").strip():
+        return
+    try:
+        path = resolve_observability_db_path()
+    except ControlRoomConfigurationError:
+        return
+    os.environ[AGENT_OBSERVABILITY_DB_PATH_ENV] = str(Path(path).resolve())
+
+
+def _build_query_port() -> AgentControlRoomQueryPort:
+    """Fresh Query Port each call — no cache_resource (stale composition hides durable results)."""
+    _ensure_observability_env()
     return build_agent_control_room_query_port()
 
 
 def _safe_query_port() -> Optional[AgentControlRoomQueryPort]:
     try:
-        return _cached_query_port()
+        return _build_query_port()
     except ControlRoomConfigurationError:
         st.error(
             "Хранилище наблюдаемости не настроено или недоступно. "
@@ -480,8 +533,19 @@ def _load_constructor_registry(
         return None
     try:
         return getter(target_run_id, **filters)
-    except Exception:
-        return None
+    except Exception as exc:
+        # Never convert a professional-result read failure into fake «ещё не сформирован».
+        logger.exception(
+            "Constructor decision registry read failed for run_id=%s",
+            target_run_id,
+        )
+        st.error(
+            "Не удалось прочитать профессиональный результат Constructor "
+            f"(run_id={target_run_id}): {exc}"
+        )
+        return empty_constructor_decision_registry(
+            inconsistent_constructor_professional_result()
+        )
 
 
 def _render_constructor_employee(
@@ -489,10 +553,10 @@ def _render_constructor_employee(
     result: ConstructorProfessionalResultView,
     port: Optional[AgentControlRoomQueryPort] = None,
 ) -> None:
-    if result.availability is ProfessionalResultAvailability.UNAVAILABLE:
+    if result.availability == ProfessionalResultAvailability.UNAVAILABLE:
         st.info(PROFESSIONAL_RESULT_UNAVAILABLE_RU)
         return
-    if result.availability is ProfessionalResultAvailability.INCONSISTENT:
+    if result.availability == ProfessionalResultAvailability.INCONSISTENT:
         st.error(PROFESSIONAL_RESULT_INCONSISTENT_RU)
         return
 
@@ -501,7 +565,7 @@ def _render_constructor_employee(
     registry = _load_constructor_registry(snapshot, port)
     if (
         registry is not None
-        and registry.availability is ProfessionalResultAvailability.AVAILABLE
+        and registry.availability == ProfessionalResultAvailability.AVAILABLE
         and registry.total_count > 0
     ):
         _render_constructor_registry(snapshot, result, registry, port)
@@ -789,7 +853,7 @@ def _render_selected_run(
     professional = _load_constructor_professional(snapshot, port)
     if (
         professional is not None
-        and professional.availability is ProfessionalResultAvailability.AVAILABLE
+        and professional.availability == ProfessionalResultAvailability.AVAILABLE
     ):
         _render_constructor_employee(snapshot, professional, port)
         return
@@ -989,14 +1053,11 @@ def _render_global_command_bar(catalog: WorkContextCatalog) -> None:
     if _command_mode() == "voice":
         _render_global_voice()
         return
+    if "dynamis_global_text" not in st.session_state:
+        st.session_state["dynamis_global_text"] = ""
     command = st.text_area(
         "Команда",
-        placeholder=(
-            "БХК, ноябрь 2026, первая очередь, титулы 13 и 17, вентиляция, "
-            "П1 П2 П3 В2 В6 В8. Работаем в контуре месячного производственного обязательства. "
-            "Привлечь инженера формирования месячного плана. "
-            "Остальные системы в ноябрь не включать."
-        ),
+        placeholder="Напишите или продиктуйте задачу…",
         key="dynamis_global_text",
     )
     if st.button("РАСПОЗНАТЬ КОМАНДУ", key="dynamis_parse_global"):
@@ -1347,15 +1408,161 @@ def _render_assignment() -> None:
         st.caption(updated.excluded_scope_rule)
 
 
+def _catalog_project_code(catalog: WorkContextCatalog, project_label: str) -> str:
+    codes = {
+        item.project_code
+        for item in catalog.facts
+        if item.project_label == project_label and item.project_code
+    }
+    if len(codes) == 1:
+        return next(iter(codes))
+    return ""
+
+
+def _stored_planning_month_key(display: str) -> str:
+    return " ".join(str(display or "").split()).replace(" ", "-")
+
+
+def _find_usable_professional_for_context(
+    catalog: WorkContextCatalog,
+    context: WorkingContext,
+    port: Optional[AgentControlRoomQueryPort],
+) -> Optional[RecoveredMission]:
+    if port is None:
+        return None
+    project_code = _catalog_project_code(catalog, str(context.project or ""))
+    month_key = _stored_planning_month_key(str(context.planning_month or ""))
+    if not project_code or not month_key:
+        return None
+    try:
+        return find_usable_professional_run(
+            port,
+            project_code=project_code,
+            month_key=month_key,
+            queue=str(context.queue or "").strip() or None,
+        )
+    except Exception:
+        logger.exception("Usable professional run lookup failed")
+        return None
+
+
+def _monthly_workspace_key(context: WorkingContext) -> str:
+    """Identity for an existing monthly analysis — ignores Title/Discipline slice."""
+    payload = "|".join(
+        (
+            str(context.agent_code or CONSTRUCTOR_AGENT_CODE),
+            str(context.project or ""),
+            str(context.planning_month or ""),
+            str(context.queue or ""),
+            "monthly-workspace",
+        )
+    )
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+    return f"hs-month-{digest}"
+
+
+def _bind_usable_run_ids(mission: RecoveredMission, context: WorkingContext) -> None:
+    """Attach existing monthly run without overwriting the user's Work Context slice."""
+    st.session_state["dynamis_active_run_id"] = mission.run_id
+    st.session_state["dynamis_active_mission_id"] = mission.mission_id
+    st.session_state["dynamis_launch_status"] = (
+        mission.lifecycle_status or mission.operational_status
+    )
+    st.session_state["dynamis_execution_lifecycle"] = mission.lifecycle_status
+    st.session_state["dynamis_launch_failure"] = ""
+    st.session_state["dynamis_recovery_resolved"] = True
+    st.session_state["dynamis_recovery_choices"] = ()
+    monthly_key = _monthly_workspace_key(context)
+    st.session_state["dynamis_launch_key"] = monthly_key
+    st.session_state["dynamis_launched_mission_identity"] = monthly_key
+
+
+def _clear_active_run_binding() -> None:
+    st.session_state.pop("dynamis_active_run_id", None)
+    st.session_state.pop("dynamis_active_mission_id", None)
+    st.session_state.pop("dynamis_launch_key", None)
+    st.session_state.pop("dynamis_launched_mission_identity", None)
+    st.session_state.pop("dynamis_launch_status", None)
+    st.session_state.pop("dynamis_execution_lifecycle", None)
+
+
+def _ensure_existing_monthly_workspace(
+    catalog: WorkContextCatalog,
+    port: Optional[AgentControlRoomQueryPort],
+) -> None:
+    """Bind Project+Month(+Queue) usable run; unbind when month has no usable analysis."""
+    context = st.session_state.get("dynamis_working_context")
+    if not isinstance(context, WorkingContext):
+        return
+    if not str(context.project or "").strip() or not str(context.planning_month or "").strip():
+        return
+    project_code = _catalog_project_code(catalog, str(context.project or ""))
+    month_key = _stored_planning_month_key(str(context.planning_month or ""))
+    # Without authoritative Project+Month codes, keep any recovered binding as-is.
+    if not project_code or not month_key:
+        return
+    usable = _find_usable_professional_for_context(catalog, context, port)
+    if usable is not None:
+        active = active_result_run_id(st.session_state.get("dynamis_active_run_id"))
+        if active != usable.run_id:
+            _bind_usable_run_ids(usable, context)
+        else:
+            # Keep monthly identity aligned so Title/Discipline changes stay slices.
+            monthly_key = _monthly_workspace_key(context)
+            st.session_state["dynamis_launch_key"] = monthly_key
+            st.session_state["dynamis_launched_mission_identity"] = monthly_key
+        return
+    active = active_result_run_id(st.session_state.get("dynamis_active_run_id"))
+    if not active or port is None:
+        return
+    # Confirmed: this Project+Month(+Queue) has no usable analysis — free ЗАПУСТИТЬ.
+    _clear_active_run_binding()
+
+
+def _work_context_out_of_package_scope(
+    registry: ConstructorDecisionRegistryView,
+    context: Optional[WorkingContext],
+) -> bool:
+    if context is None:
+        return False
+    has_slice = bool(
+        context.titles
+        or str(context.discipline or "").strip()
+        or context.systems
+        or str(context.packages or "").strip()
+    )
+    if not has_slice:
+        return False
+    if not registry.records:
+        return False
+    scoped = filter_records_by_work_context(registry.records, context)
+    return len(scoped) == 0
+
+
+def _render_existing_monthly_workspace_panel(usable: RecoveredMission) -> None:
+    st.markdown("## Месячный анализ сформирован")
+    st.info(EXISTING_MONTHLY_ANALYSIS_RU)
+    st.write(f"**Статус:** {EXISTING_MONTHLY_WORK_ACTION_RU}")
+    st.write(f"**Run ID:** {usable.run_id}")
+    st.caption(WORK_CONTEXT_SLICE_RU)
+
+
 def _render_mission_draft(catalog: WorkContextCatalog) -> None:
     context = st.session_state.get("dynamis_working_context")
-    st.markdown("## Задача распознана")
     if not isinstance(context, WorkingContext):
+        st.markdown("## Задача распознана")
         st.warning("Чтобы запустить задачу, не хватает: рабочий контекст.")
         st.button("ЗАПУСТИТЬ", key="dynamis_launch_mission", disabled=True)
         return
     for message in st.session_state.get("dynamis_context_messages") or ():
         st.warning(message)
+    port = _safe_query_port()
+    usable = _find_usable_professional_for_context(catalog, context, port)
+    if usable is not None:
+        _bind_usable_run_ids(usable, context)
+        _render_existing_monthly_workspace_panel(usable)
+        return
+    st.markdown("## Задача распознана")
     gaps = mission_gaps(context)
     if gaps:
         st.warning("Чтобы запустить задачу, не хватает: " + ", ".join(gaps) + ".")
@@ -1382,7 +1589,7 @@ def _render_mission_draft(catalog: WorkContextCatalog) -> None:
         return
     st.session_state["dynamis_launch_inflight"] = key
     try:
-        result = launch_monthly_plan_mission(context, catalog)
+        result = launch_monthly_plan_mission(context, catalog, query_port=port)
     except MissionCommandError as exc:
         st.session_state["dynamis_launch_inflight"] = None
         st.session_state["dynamis_launch_failure"] = exc.message
@@ -1394,6 +1601,33 @@ def _render_mission_draft(catalog: WorkContextCatalog) -> None:
         st.session_state["dynamis_launch_failure"] = "Запуск не вернул run_id."
         st.error("Не удалось подтвердить запуск задачи.")
         return
+    if bool(getattr(result, "reused_existing", False)):
+        st.session_state["dynamis_launch_inflight"] = None
+        st.session_state["dynamis_launch_failure"] = ""
+        recovered = _find_usable_professional_for_context(catalog, context, port)
+        if recovered is not None:
+            _bind_usable_run_ids(recovered, context)
+            _render_existing_monthly_workspace_panel(recovered)
+        else:
+            st.session_state["dynamis_active_run_id"] = confirmed_run
+            st.session_state["dynamis_active_mission_id"] = (
+                active_result_run_id(getattr(result, "mission_id", None)) or ""
+            )
+            st.info(EXISTING_MONTHLY_ANALYSIS_RU)
+        return
+    status_text = str(getattr(result, "status", "") or "").strip().upper()
+    if status_text in _FAILED_STATUSES:
+        st.session_state["dynamis_launch_inflight"] = None
+        st.session_state["dynamis_launch_failure"] = (
+            f"Новый запуск завершился со статусом {status_text}."
+        )
+        restore = _find_usable_professional_for_context(catalog, context, port)
+        if restore is not None:
+            _bind_usable_run_ids(restore, context)
+            st.error("Не удалось завершить новый запуск. Восстановлен существующий результат.")
+            _render_existing_monthly_workspace_panel(restore)
+            return
+        # No prior usable professional result — surface the failed run honestly.
     st.session_state["dynamis_active_run_id"] = confirmed_run
     st.session_state["dynamis_active_mission_id"] = active_result_run_id(getattr(result, "mission_id", None)) or ""
     st.session_state["dynamis_launch_status"] = result.status
@@ -1410,7 +1644,7 @@ def _render_constructor_workspace(
     snapshot: Optional[AgentRunSnapshot],
     registry: Optional[ConstructorDecisionRegistryView],
 ) -> None:
-    st.markdown("## Результат работы")
+    st.markdown(f"## {MODULE5_TITLE_RU}")
     result = registry.professional if registry is not None else None
     draft = st.session_state.get("dynamis_mission_draft")
     context = st.session_state.get("dynamis_working_context")
@@ -1423,34 +1657,57 @@ def _render_constructor_workspace(
     launched_identity = st.session_state.get("dynamis_launched_mission_identity")
     shown_run_id = result.run_id if result is not None and result.run_id else None
     active_run_id = active_result_run_id(st.session_state.get("dynamis_active_run_id"))
+    professional_ready = (
+        result is not None
+        and str(result.professional_status or "").strip() == "WAITING_FOR_HUMAN_REVIEW"
+        and str(getattr(result, "source_candidate_package_id", "") or "").strip()
+    )
     if current_identity and different_mission_state(
         current_identity,
         str(launched_identity) if launched_identity else None,
         shown_run_id,
         active_run_id,
     ):
-        st.warning(SEPARATE_ASSIGNMENT_RU)
+        if professional_ready:
+            st.info(WORK_CONTEXT_SLICE_RU)
+        else:
+            st.warning(SEPARATE_ASSIGNMENT_RU)
     operational = str(getattr(getattr(snapshot, "run", None), "operational_status", "") or "")
     professional_status = str(result.professional_status or "") if result is not None else ""
     ready = (
         registry is not None
         and result is not None
-        and registry.availability is ProfessionalResultAvailability.AVAILABLE
+        and registry.availability == ProfessionalResultAvailability.AVAILABLE
+        and result.availability == ProfessionalResultAvailability.AVAILABLE
         and registry.total_count > 0
+    )
+    # Observability may still project RUNNING; it must not hide an AVAILABLE
+    # professional result, and must not invent fake pending after a read failure.
+    read_failed = (
+        registry is not None
+        and registry.availability == ProfessionalResultAvailability.INCONSISTENT
     )
     if operational in _FAILED_STATUSES or professional_status == "FAILED":
         st.error("Не удалось завершить задачу.")
         _write_result_pending()
     elif ready and result is not None and registry is not None:
-        if constructor_hitl_actions_visible(professional_status):
-            st.info("Требуется решение человека.")
-        elif professional_status in _COMPLETED_STATUSES or operational == "COMPLETED":
-            st.info("Работа завершена.")
-        st.write(workspace_run_banner(result))
-        st.write(f"**Статус:** {professional_status_line(result)}")
-        for line in workspace_result_lines(registry):
-            st.write(line)
-        _render_decision_table(result, registry)
+        if isinstance(context, WorkingContext) and _work_context_out_of_package_scope(
+            registry, context
+        ):
+            st.warning(WORK_CONTEXT_OUT_OF_SCOPE_RU)
+            st.caption(WORK_CONTEXT_SLICE_RU)
+        _render_module5_compact_result(snapshot, result, registry)
+    elif read_failed:
+        st.error(PROFESSIONAL_RESULT_INCONSISTENT_RU)
+        _refresh_status_button()
+    elif (
+        registry is not None
+        and result is not None
+        and result.availability == ProfessionalResultAvailability.UNAVAILABLE
+        and active_run_id
+    ):
+        st.info(PROFESSIONAL_RESULT_UNAVAILABLE_RU)
+        _refresh_status_button()
     elif operational in _WAITING_STATUSES or professional_status in _WAITING_STATUSES:
         st.info("Требуется решение человека.")
         _write_result_pending()
@@ -1471,6 +1728,110 @@ def _render_constructor_workspace(
     _render_technical_evidence(snapshot, registry)
 
 
+def _applied_working_context() -> Optional[WorkingContext]:
+    context = st.session_state.get("dynamis_working_context")
+    return context if isinstance(context, WorkingContext) else None
+
+
+def _render_module5_compact_result(
+    snapshot: Optional[AgentRunSnapshot],
+    result: ConstructorProfessionalResultView,
+    registry: ConstructorDecisionRegistryView,
+) -> None:
+    context = _applied_working_context()
+    scoped_records = filter_records_by_work_context(registry.records, context)
+    summary = build_module5_result_summary_from_records(scoped_records)
+    meta_bits = [workspace_run_banner(result)]
+    as_of = None
+    if snapshot is not None:
+        as_of = getattr(getattr(snapshot, "run", None), "updated_at", None)
+    stamp = module5_state_timestamp(as_of)
+    if stamp:
+        meta_bits.append(stamp)
+    if summary.mode_badge:
+        meta_bits.append(summary.mode_badge)
+    st.caption(" · ".join(meta_bits))
+    if constructor_hitl_actions_visible(str(result.professional_status or "")):
+        st.caption(f"Статус: {professional_status_line(result)}")
+
+    kpi_cols = st.columns(4)
+    for column, (label, value) in zip(kpi_cols, module5_kpi_tiles(summary)):
+        with column:
+            st.metric(label, value)
+
+    options = module5_filter_options(summary)
+    labels = [label for _key, label, _emph in options]
+    pills = getattr(st, "pills", None)
+    filter_key = f"dynamis_result_filter_{result.run_id}"
+    if callable(pills):
+        selected_label = pills(
+            "Фильтр результата",
+            options=labels,
+            selection_mode="single",
+            default=labels[0] if labels else None,
+            key=filter_key,
+            label_visibility="collapsed",
+        )
+    else:
+        selected_label = st.radio(
+            "Фильтр результата",
+            options=labels,
+            horizontal=True,
+            key=filter_key,
+            label_visibility="collapsed",
+        )
+    if not selected_label:
+        selected_label = labels[0]
+    view_id = next(key for key, label, _emph in options if label == selected_label)
+
+    search = st.text_input(
+        "Поиск",
+        placeholder="BOQ, титул, наименование или система",
+        key=f"dynamis_result_search_{result.run_id}",
+        label_visibility="collapsed",
+    )
+    records = select_workspace_records(
+        scoped_records,
+        result,
+        view_id=view_id,
+        text=str(search or ""),
+    )
+
+    focus = None
+    surface = None
+    # Command surface belongs to Result Analysis + Work Context, not only «Кандидаты».
+    if str(result.professional_status or "").strip() == "WAITING_FOR_HUMAN_REVIEW":
+        try:
+            surface = prepare_human_review_surface(str(result.run_id))
+            focus = build_focus_set_from_work_context(surface, context)
+            if view_id == "candidates":
+                records = order_records_by_candidate_ids(
+                    records, focus.ordered_candidate_ids
+                )
+        except HumanReviewCommandError:
+            surface = None
+            focus = None
+        except Exception:
+            logger.exception("Work-context Focus Set prepare failed")
+            surface = None
+            focus = None
+
+    if records:
+        st.dataframe(
+            pd.DataFrame(list(workspace_table_rows(records, result))),
+            use_container_width=True,
+            hide_index=True,
+            height=420,
+        )
+    else:
+        st.caption("В этом разрезе сохранённых работ нет.")
+    with st.expander("Детали выбранной строки", expanded=False):
+        _render_selected_work(result, records)
+
+    if surface is not None and focus is not None:
+        _render_decision_command_panel(surface, focus, context=context)
+
+
 def _write_result_pending() -> None:
     st.write("Candidate Package: ещё не сформирован")
     st.write("Профессиональный результат: ещё не сформирован")
@@ -1483,6 +1844,245 @@ def _refresh_status_button() -> None:
             rerun()
 
 
+def _period_label_ru(period: Optional[str]) -> str:
+    """Display helper: 2026-11 → «ноябрь 2026»."""
+    text = str(period or "").strip()
+    months = {
+        "01": "январь",
+        "02": "февраль",
+        "03": "март",
+        "04": "апрель",
+        "05": "май",
+        "06": "июнь",
+        "07": "июль",
+        "08": "август",
+        "09": "сентябрь",
+        "10": "октябрь",
+        "11": "ноябрь",
+        "12": "декабрь",
+    }
+    match = re.fullmatch(r"(20\d{2})-(\d{2})", text)
+    if not match:
+        return text or "—"
+    return f"{months.get(match.group(2), match.group(2))} {match.group(1)}"
+
+
+def _planning_month_to_period(planning_month: Optional[str]) -> Optional[str]:
+    """«октябрь 2026» → 2026-10 for yearless defer resolution."""
+    text = str(planning_month or "").strip().casefold().replace("ё", "е")
+    if not text:
+        return None
+    month_map = {
+        "январ": "01",
+        "феврал": "02",
+        "март": "03",
+        "апрел": "04",
+        "ма": "05",
+        "июн": "06",
+        "июл": "07",
+        "август": "08",
+        "сентябр": "09",
+        "октябр": "10",
+        "ноябр": "11",
+        "декабр": "12",
+    }
+    year_match = re.search(r"(20\d{2})", text)
+    if not year_match:
+        return None
+    year = year_match.group(1)
+    for stem, month in month_map.items():
+        if stem == "ма" and not re.search(r"\bма[йяе]\b", text):
+            continue
+        if stem in text:
+            return f"{year}-{month}"
+    return None
+
+
+def _render_decision_command_panel(
+    surface: Any,
+    focus: Any,
+    *,
+    context: Optional[WorkingContext] = None,
+) -> None:
+    """Command input immediately under the main candidate table. Preview before write."""
+    st.markdown("### Команда решения")
+    batch_key = f"dynamis_hr_batch_preview_{surface.run_id}"
+    error_key = f"dynamis_hr_batch_error_{surface.run_id}"
+    default_year = 2026
+    year_text = _horizon_year(context) if context is not None else None
+    if year_text and str(year_text).isdigit():
+        default_year = int(year_text)
+    from_period_label = (
+        str(context.planning_month).strip()
+        if isinstance(context, WorkingContext) and context.planning_month
+        else "—"
+    )
+    context_period = (
+        _planning_month_to_period(context.planning_month)
+        if isinstance(context, WorkingContext)
+        else None
+    )
+    # Form binds textarea + recognize in one submit so the command never arrives empty.
+    with st.form(key=f"dynamis_hr_command_form_{surface.run_id}", clear_on_submit=False):
+        command_text = st.text_area(
+            "КОМАНДА РЕШЕНИЯ",
+            placeholder=(
+                "№2 перенести на ноябрь — нет строительной готовности.\n"
+                "№5 принять 50 м — объём требует корректировки.\n"
+                "Остальные принять."
+            ),
+            key=f"dynamis_hr_command_text_{surface.run_id}",
+            height=120,
+        )
+        recognize = st.form_submit_button("РАСПОЗНАТЬ КОМАНДУ")
+    if recognize:
+        try:
+            preview = prepare_batch_from_text(
+                str(command_text or ""),
+                focus=focus,
+                surface=surface,
+                default_year=default_year,
+                context_period=context_period,
+            )
+            st.session_state[batch_key] = {
+                "focus_set_id": focus.focus_set_id,
+                "focus_hash": focus.focus_hash,
+                "checkpoint_id": focus.expected_checkpoint_id,
+                "preview": preview,
+                "focus": focus,
+            }
+            st.session_state.pop(error_key, None)
+        except HumanReviewCommandError as exc:
+            st.session_state.pop(batch_key, None)
+            if is_non_candidate_reference_error(exc.message):
+                st.session_state[error_key] = NON_CANDIDATE_CLARIFICATION_RU
+            else:
+                st.session_state[error_key] = (
+                    f"Не удалось распознать команду: {exc.message}"
+                )
+        except Exception as exc:
+            logger.exception("Human Review command parse failed")
+            st.session_state.pop(batch_key, None)
+            st.session_state[error_key] = (
+                f"Не удалось распознать команду: {exc}"
+            )
+
+    parse_error = str(st.session_state.get(error_key) or "").strip()
+    if parse_error:
+        st.error(parse_error)
+
+    stored = st.session_state.get(batch_key)
+    if (
+        isinstance(stored, dict)
+        and stored.get("focus_hash") == focus.focus_hash
+        and stored.get("checkpoint_id") == focus.expected_checkpoint_id
+    ):
+        preview = stored.get("preview")
+        bound_focus = stored.get("focus") or focus
+        if preview is not None:
+            st.markdown("### Команда распознана")
+            facility = preview.focus_facility or "Все"
+            discipline = preview.focus_discipline or "Все"
+            st.write(f"**Контекст:** {facility} · {discipline}")
+            st.write(f"**Кандидатов в контексте:** {preview.focus_size}")
+            prior_deferred = int(getattr(preview, "prior_deferred_in_focus", 0) or 0)
+            prior_accepted = int(getattr(preview, "prior_accepted_in_focus", 0) or 0)
+            prior_changed = int(getattr(preview, "prior_changed_in_focus", 0) or 0)
+            if prior_deferred or prior_accepted or prior_changed:
+                st.markdown("**Уже решено ранее (текущий контекст):**")
+                if prior_deferred:
+                    st.write(f"Перенесено: {prior_deferred}")
+                if prior_accepted:
+                    st.write(f"Принято: {prior_accepted}")
+                if prior_changed:
+                    st.write(f"Изменён объём: {prior_changed}")
+            st.markdown("**Новые решения:**")
+            st.write(f"Принять: {preview.counts.accept}")
+            st.write(f"Перенести: {preview.counts.defer}")
+            st.write(f"Скорректировать: {preview.counts.change_qty}")
+            st.write(f"Исключить: {preview.counts.exclude}")
+            st.write(f"Нужны данные: {preview.counts.needs_data}")
+            if preview.exception_lines:
+                st.markdown("**Исключения:**")
+                for line in preview.exception_lines:
+                    st.write(line)
+            if preview.accept_lines:
+                with st.expander(f"Принятые ({len(preview.accept_lines)})", expanded=False):
+                    for line in preview.accept_lines:
+                        st.write(line)
+            for op in preview.draft.operations:
+                if op.resolution.value != "DEFER_TO_PERIOD":
+                    continue
+                alias = f"№{op.alias_number}" if op.alias_number else "—"
+                st.write(f"**{alias} / {op.boq_code}**")
+                st.write("Решение: Перенести")
+                st.write(f"Из: {from_period_label}")
+                st.write(f"В: {_period_label_ru(op.target_period)}")
+                reason = (op.reason_text or "").strip()
+                st.write(
+                    f"Причина: {reason}"
+                    if reason
+                    else "Причина: требуется указать до подтверждения"
+                )
+            clarifications = tuple(getattr(preview, "clarification_lines", ()) or ())
+            reasons_ok = bool(getattr(preview, "reasons_complete", True))
+            if clarifications:
+                for line in clarifications:
+                    st.warning(line)
+            if reasons_ok:
+                if st.button(
+                    "ПОДТВЕРДИТЬ РЕШЕНИЯ",
+                    key=f"dynamis_hr_commit_batch_{surface.run_id}",
+                    type="primary",
+                ):
+                    try:
+                        submit_result = submit_human_review_batch(
+                            preview.draft,
+                            focus=bound_focus,
+                            confirmed=True,
+                        )
+                        # Read-after-write law: UI committed state only from durable surface.
+                        surface_after = prepare_human_review_surface(
+                            str(surface.run_id)
+                        )
+                        durable_by_id = {
+                            item.candidate_id: item.current_decision_label
+                            for item in surface_after.candidates
+                        }
+                        missing = [
+                            op.candidate_id
+                            for op in preview.draft.operations
+                            if durable_by_id.get(op.candidate_id, "НЕ РАССМОТРЕНО")
+                            == "НЕ РАССМОТРЕНО"
+                        ]
+                        if missing or int(submit_result.operation_count or 0) < 1:
+                            raise HumanReviewCommandError(
+                                "Durable Human Review readback does not contain "
+                                "confirmed decisions. Preview is not committed truth."
+                            )
+                        st.session_state.pop(batch_key, None)
+                        st.session_state.pop(error_key, None)
+                        st.session_state[f"dynamis_hr_command_text_{surface.run_id}"] = ""
+                        st.success("Пакет решений записан в durable Human Review.")
+                        rerun = getattr(st, "rerun", None)
+                        if callable(rerun):
+                            rerun()
+                    except HumanReviewCommandError as exc:
+                        st.session_state[error_key] = exc.message
+                        st.error(exc.message)
+                    except Exception:
+                        logger.exception("Human Review batch submit failed")
+                        st.error("Не удалось записать пакет Human Review.")
+            else:
+                st.caption("Подтверждение недоступно, пока не указаны обязательные причины.")
+    elif isinstance(stored, dict):
+        st.warning(
+            "Предпросмотр устарел после смены рабочего контекста / checkpoint. "
+            "Распознайте команду снова."
+        )
+        st.session_state.pop(batch_key, None)
+
+
 def _render_human_decision(
     result: Optional[ConstructorProfessionalResultView],
     registry: Optional[ConstructorDecisionRegistryView],
@@ -1491,22 +2091,265 @@ def _render_human_decision(
     if result is None or registry is None:
         st.write("Решения человека появятся после формирования результата цифровым сотрудником.")
         return
-    reviews = tuple(
-        item for item in registry.records if constructor_row_awaits_human_review(item, result)
-    )
-    if reviews:
+    if str(result.professional_status or "").strip() != "WAITING_FOR_HUMAN_REVIEW":
+        st.write("Human Review для текущего запуска сейчас недоступен.")
+        return
+    try:
+        surface = prepare_human_review_surface(str(result.run_id))
+    except HumanReviewCommandError as exc:
+        st.error(exc.message)
+        st.info(HITL_COMMAND_PORT_REQUIRED_RU)
+        return
+    except Exception:
+        logger.exception("Human Review surface prepare failed")
+        st.error("Не удалось загрузить Human Review Command Port.")
+        st.info(HITL_COMMAND_PORT_REQUIRED_RU)
+        return
+
+    context = _applied_working_context()
+    focus = None
+    try:
+        focus = build_focus_set_from_work_context(surface, context)
+    except Exception:
+        logger.exception("Work-context summary focus failed")
+        focus = None
+
+    if focus is not None:
+        ctx_summary = build_work_context_review_summary(surface, focus)
+        st.markdown("### Текущий рабочий контекст")
+        st.write(f"**Контекст:** {ctx_summary.facility} · {ctx_summary.discipline}")
+        st.write(f"Рассмотрено: {ctx_summary.reviewed} / {ctx_summary.total}")
+        st.write(f"Принято: {ctx_summary.accepted}")
+        st.write(f"Изменён объём: {ctx_summary.changed_qty}")
+        st.write(f"Перенесено: {ctx_summary.deferred}")
+        st.write(f"Исключено: {ctx_summary.excluded}")
+        st.write(f"Нужны данные: {ctx_summary.needs_data}")
+        st.write(f"Не рассмотрено: {ctx_summary.not_reviewed}")
+    else:
+        total = surface.reviewed_count + surface.not_reviewed_count
+        st.write(f"Рассмотрено: {surface.reviewed_count} / {total}")
+        st.write(f"Принято: {surface.accepted_count}")
+        st.write(f"Изменён объём: {surface.changed_qty_count}")
+        st.write(f"Перенесено: {surface.deferred_count}")
+        st.write(f"Исключено: {surface.excluded_count}")
+        st.write(f"Нужны данные: {surface.needs_data_count}")
+        st.write(f"Не рассмотрено: {surface.not_reviewed_count}")
+
+    draft = build_monthly_commitment_draft(surface)
+    st.markdown("### Текущий черновик месячного обязательства")
+    st.write(f"Итоговых позиций: {draft.counts.final_positions}")
+    st.write(f"Базовый состав: {draft.counts.baseline}")
+    st.write(f"Добавлено Constructor: {draft.counts.added_constructor}")
+    st.write(f"Изменён объём: {draft.counts.changed_qty}")
+    st.write(f"Перенесено: {draft.counts.deferred}")
+    st.write(f"Исключено: {draft.counts.excluded}")
+    st.write(f"Нужны данные: {draft.counts.needs_data}")
+    st.write(f"Не рассмотрено: {draft.counts.unresolved}")
+
+    composition = composition_table_dicts(draft)
+    if composition:
+        display_cols = [c for c in composition[0].keys() if c != "candidate_id"]
         st.dataframe(
-            pd.DataFrame(list(workspace_table_rows(reviews, result))),
+            pd.DataFrame([{k: row[k] for k in display_cols} for row in composition]),
             use_container_width=True,
             hide_index=True,
+            height=320,
         )
     else:
-        st.write("Позиций, требующих решения человека, нет.")
-    st.button("ОК", disabled=True, key="dynamis_decision_ok")
-    st.button("НЕ ОК", disabled=True, key="dynamis_decision_not_ok")
-    st.button("В ДРУГОЙ МЕСЯЦ", disabled=True, key="dynamis_decision_defer")
-    st.button("НУЖНЫ ДАННЫЕ", disabled=True, key="dynamis_decision_need")
-    st.info(HITL_COMMAND_PORT_REQUIRED_RU)
+        st.caption(
+            "Текущий черновик месячного обязательства пока без утверждённых позиций — "
+            "подтвердите решения в блоке команды выше."
+        )
+
+    deferred = durable_exception_detail_rows(surface, labels=("ПЕРЕНЕСЕНО",))
+    excluded = durable_exception_detail_rows(surface, labels=("ИСКЛЮЧЕНО",))
+    needs = durable_exception_detail_rows(surface, labels=("НУЖНЫ ДАННЫЕ",))
+    if deferred:
+        with st.expander(f"Перенесено ({len(deferred)})", expanded=False):
+            st.dataframe(pd.DataFrame(list(deferred)), use_container_width=True, hide_index=True)
+    if excluded:
+        with st.expander(f"Исключено ({len(excluded)})", expanded=False):
+            st.dataframe(pd.DataFrame(list(excluded)), use_container_width=True, hide_index=True)
+    if needs:
+        with st.expander(f"Нужны данные ({len(needs)})", expanded=False):
+            st.dataframe(pd.DataFrame(list(needs)), use_container_width=True, hide_index=True)
+
+    if surface.not_reviewed_count == 0 and surface.needs_data_count == 0 and surface.candidates:
+        st.markdown("### Сводка по титулам / дисциплинам")
+        for facility_name, discipline_name, counts in grouped_review_summary(surface):
+            st.write(
+                f"**{facility_name}** / {discipline_name}: "
+                f"принято {counts['accepted']} · "
+                f"изменено {counts['changed_qty']} · "
+                f"перенесено {counts['deferred']} · "
+                f"исключено {counts['excluded']}"
+            )
+        st.caption(
+            "Финальное подтверждение месячного обязательства станет доступно "
+            "отдельным действием (не в этом increment)."
+        )
+
+
+def _render_human_decision_single_row_v1(surface: Any) -> None:
+    """Preserved V1 single-row confirmation path (drill-down / fallback)."""
+    labels = [
+        f"№? · {item.boq_code} · {item.facility} · {item.current_decision_label}"
+        for item in surface.candidates
+    ]
+    selected_label = st.selectbox(
+        "Кандидат",
+        options=labels,
+        key=f"dynamis_hr_candidate_{surface.run_id}",
+    )
+    candidate = surface.candidates[labels.index(selected_label)]
+    st.write(f"**Титул:** {candidate.facility or '—'}")
+    st.write(f"**Дисциплина:** {candidate.discipline or '—'}")
+    st.write(f"**Система:** {candidate.system or '—'}")
+    st.write(f"**Пакет / IWP:** {candidate.iwp or '—'}")
+    st.write(f"**BOQ:** {candidate.boq_code}")
+    st.write(candidate.name or "—")
+    st.write(f"**Ед. изм.:** {candidate.unit or '—'}")
+    st.write(f"**Текущий физический остаток:** {candidate.remaining_qty}")
+    st.write(f"**Уже в месячном плане:** {candidate.already_planned_qty}")
+    st.write(f"**Предложение Constructor:** {candidate.constructor_proposed_qty}")
+    st.write(f"**Текущее решение:** {candidate.current_decision_label}")
+    for warning in candidate.warning_lines:
+        st.warning(warning)
+
+    draft_key = f"dynamis_hr_draft_{surface.run_id}"
+    action_cols = st.columns(4)
+    if action_cols[0].button("ПРИНЯТЬ", key=f"dynamis_hr_accept_{surface.run_id}"):
+        st.session_state[draft_key] = {
+            "candidate_id": candidate.candidate_id,
+            "action": HumanReviewAction.ACCEPT.value,
+            "approved_qty": candidate.constructor_proposed_qty,
+            "reason_text": "",
+            "checkpoint_id": surface.expected_checkpoint_id,
+            "package_id": surface.package_id,
+            "proposed_qty": candidate.constructor_proposed_qty,
+            "boq_code": candidate.boq_code,
+            "unit": candidate.unit,
+        }
+    if action_cols[1].button("ИСКЛЮЧИТЬ", key=f"dynamis_hr_exclude_{surface.run_id}"):
+        st.session_state[draft_key] = {
+            "candidate_id": candidate.candidate_id,
+            "action": HumanReviewAction.EXCLUDE.value,
+            "approved_qty": 0.0,
+            "reason_text": "",
+            "checkpoint_id": surface.expected_checkpoint_id,
+            "package_id": surface.package_id,
+            "proposed_qty": candidate.constructor_proposed_qty,
+            "boq_code": candidate.boq_code,
+            "unit": candidate.unit,
+        }
+    if action_cols[2].button("ИЗМЕНИТЬ ОБЪЁМ", key=f"dynamis_hr_change_{surface.run_id}"):
+        st.session_state[draft_key] = {
+            "candidate_id": candidate.candidate_id,
+            "action": HumanReviewAction.CHANGE_QUANTITY.value,
+            "approved_qty": candidate.constructor_proposed_qty,
+            "reason_text": "",
+            "checkpoint_id": surface.expected_checkpoint_id,
+            "package_id": surface.package_id,
+            "proposed_qty": candidate.constructor_proposed_qty,
+            "boq_code": candidate.boq_code,
+            "unit": candidate.unit,
+        }
+    if action_cols[3].button("НУЖНЫ ДАННЫЕ", key=f"dynamis_hr_need_{surface.run_id}"):
+        st.session_state[draft_key] = {
+            "candidate_id": candidate.candidate_id,
+            "action": HumanReviewAction.NEEDS_DATA.value,
+            "approved_qty": None,
+            "reason_text": "",
+            "checkpoint_id": surface.expected_checkpoint_id,
+            "package_id": surface.package_id,
+            "proposed_qty": candidate.constructor_proposed_qty,
+            "boq_code": candidate.boq_code,
+            "unit": candidate.unit,
+        }
+
+    draft = st.session_state.get(draft_key)
+    if not isinstance(draft, dict) or draft.get("candidate_id") != candidate.candidate_id:
+        st.caption("Выберите решение, затем подтвердите его явно.")
+        return
+
+    action = HumanReviewAction(str(draft.get("action")))
+    st.markdown("### Предпросмотр решения")
+    st.write(f"Кандидат: {draft.get('boq_code')} · {candidate.facility}")
+    st.write(f"Решение: {action.value}")
+    st.write(f"Constructor: {draft.get('proposed_qty')} {draft.get('unit') or ''}".rstrip())
+    approved_qty = draft.get("approved_qty")
+    reason_text = str(draft.get("reason_text") or "")
+    if action is HumanReviewAction.CHANGE_QUANTITY:
+        approved_qty = st.number_input(
+            "Утверждаю объём",
+            min_value=0.0,
+            max_value=float(draft.get("proposed_qty") or 0.0),
+            value=float(approved_qty if approved_qty is not None else draft.get("proposed_qty") or 0.0),
+            key=f"dynamis_hr_qty_{surface.run_id}_{candidate.candidate_id}",
+        )
+        draft["approved_qty"] = float(approved_qty)
+        st.write(f"Утверждаю: {approved_qty} {draft.get('unit') or ''}".rstrip())
+    elif action is HumanReviewAction.ACCEPT:
+        st.write(f"Утверждаю: {draft.get('proposed_qty')} {draft.get('unit') or ''}".rstrip())
+    elif action is HumanReviewAction.EXCLUDE:
+        st.write("Утверждаю: 0")
+    needs_reason = action in {
+        HumanReviewAction.EXCLUDE,
+        HumanReviewAction.CHANGE_QUANTITY,
+        HumanReviewAction.NEEDS_DATA,
+    }
+    reason_text = st.text_area(
+        "Причина" + ("" if needs_reason else " (необязательно)"),
+        value=reason_text,
+        key=f"dynamis_hr_reason_{surface.run_id}_{candidate.candidate_id}",
+    )
+    draft["reason_text"] = reason_text
+    st.session_state[draft_key] = draft
+
+    if st.button("ПОДТВЕРДИТЬ РЕШЕНИЕ", key=f"dynamis_hr_commit_{surface.run_id}", type="primary"):
+        try:
+            candidate_id = str(draft.get("candidate_id"))
+            submit_human_review_decision(
+                HumanReviewCommand(
+                    run_id=surface.run_id,
+                    package_id=str(draft.get("package_id") or surface.package_id),
+                    candidate_id=candidate_id,
+                    action=action,
+                    expected_checkpoint_id=str(
+                        draft.get("checkpoint_id") or surface.expected_checkpoint_id
+                    ),
+                    approved_qty=(
+                        None
+                        if action is HumanReviewAction.NEEDS_DATA
+                        else float(draft.get("approved_qty") or 0.0)
+                    ),
+                    reason_text=str(draft.get("reason_text") or "").strip() or None,
+                )
+            )
+            surface_after = prepare_human_review_surface(str(surface.run_id))
+            label = next(
+                (
+                    item.current_decision_label
+                    for item in surface_after.candidates
+                    if item.candidate_id == candidate_id
+                ),
+                "НЕ РАССМОТРЕНО",
+            )
+            if label == "НЕ РАССМОТРЕНО":
+                raise HumanReviewCommandError(
+                    "Durable Human Review readback does not contain "
+                    "confirmed decision. Preview is not committed truth."
+                )
+            st.session_state.pop(draft_key, None)
+            st.success("Решение записано в durable Human Review.")
+            rerun = getattr(st, "rerun", None)
+            if callable(rerun):
+                rerun()
+        except HumanReviewCommandError as exc:
+            st.error(exc.message)
+        except Exception:
+            logger.exception("Human Review submit failed")
+            st.error("Не удалось записать решение Human Review.")
 
 
 def _render_pre_admission_export(registry: Optional[ConstructorDecisionRegistryView]) -> None:
@@ -1536,42 +2379,6 @@ def _render_pre_admission_export(registry: Optional[ConstructorDecisionRegistryV
     )
 
 
-def _render_decision_table(
-    result: ConstructorProfessionalResultView,
-    registry: ConstructorDecisionRegistryView,
-) -> None:
-    options = simple_result_filter_options(registry)
-    labels = [label for _key, label in options]
-    selected_label = st.radio(
-        "Состав результата",
-        options=labels,
-        horizontal=True,
-        key=f"dynamis_result_filter_{result.run_id}",
-    )
-    view_id = next(key for key, label in options if label == selected_label)
-    search = st.text_input(
-        "Поиск",
-        placeholder="BOQ, наименование или система",
-        key=f"dynamis_result_search_{result.run_id}",
-    )
-    records = select_workspace_records(
-        registry.records,
-        result,
-        view_id=view_id,
-        text=str(search or ""),
-    )
-    st.markdown("### Работы Constructor")
-    if records:
-        st.dataframe(
-            pd.DataFrame(list(workspace_table_rows(records, result))),
-            use_container_width=True,
-            hide_index=True,
-        )
-    else:
-        st.caption("В этом разрезе сохранённых работ нет.")
-    _render_selected_work(result, records)
-
-
 def _render_selected_work(
     result: ConstructorProfessionalResultView,
     records: tuple[ConstructorRowDecisionView, ...],
@@ -1597,11 +2404,13 @@ def _render_selected_work(
     st.markdown(f"#### {item.boq_code}")
     st.write(item.name or "—")
     st.write(f"**Система:** {item.system or '—'}")
-    st.write(f"**Физический остаток:** {row['Остаток']}")
+    st.write(f"**Пакет / IWP:** {row['Пакет / IWP']}")
+    st.write(f"**Физический остаток:** {row['Физический остаток']}")
     st.write(f"**Уже запланировано:** {row['Уже запланировано']}")
     st.write(f"**Доступный объём:** {row['Доступный объём']}")
+    st.write(f"**Отклонение:** {row['Отклонение']}")
     st.write(f"**Решение Constructor:** {row['Решение Constructor']}")
-    st.write("**Почему Constructor принял это решение**")
+    st.write("**Основание**")
     st.write(item.reason_text or "—")
     situation = candidate_situation_line(item, result)
     if situation:
@@ -1691,20 +2500,71 @@ def _apply_recovered_mission(mission: RecoveredMission) -> None:
     st.session_state["dynamis_launch_status"] = mission.operational_status
     st.session_state["dynamis_execution_lifecycle"] = mission.lifecycle_status
     st.session_state["dynamis_launch_failure"] = ""
+    st.session_state["dynamis_global_text"] = ""
+    st.session_state.pop("dynamis_pending_command", None)
     st.session_state["dynamis_recovery_choices"] = ()
     st.session_state["dynamis_recovery_resolved"] = True
     _write_context_fields(context)
 
 
-def _restore_durable_mission_if_needed(port: Optional[AgentControlRoomQueryPort]) -> None:
-    if active_result_run_id(st.session_state.get("dynamis_active_run_id")):
+def _restore_durable_mission_if_needed(
+    port: Optional[AgentControlRoomQueryPort],
+    catalog: Optional[WorkContextCatalog] = None,
+) -> None:
+    if port is None:
+        return
+    active = active_result_run_id(st.session_state.get("dynamis_active_run_id"))
+    context = st.session_state.get("dynamis_working_context")
+    status = ""
+    if active:
+        try:
+            status = operational_status_for_run(port, active).upper()
+        except Exception:
+            logger.exception("Active run status lookup failed")
+    if active and status in _FAILED_STATUSES:
+        usable = None
+        if isinstance(context, WorkingContext) and catalog is not None:
+            usable = _find_usable_professional_for_context(catalog, context, port)
+        if usable is None:
+            try:
+                decision = load_recovery_decision(port)
+            except Exception:
+                decision = None
+                logger.exception("Human Surface mission recovery failed")
+            if decision is not None and decision.selected is not None:
+                usable = decision.selected
+        if usable is not None and usable.run_id != active:
+            # Preserve the user's current Work Context slice — only rebind the run.
+            if isinstance(context, WorkingContext):
+                _bind_usable_run_ids(usable, context)
+            else:
+                _apply_recovered_mission(usable)
+            st.session_state["dynamis_recovery_resolved"] = True
+            st.session_state["dynamis_recovery_choices"] = ()
+            return
+    if active:
         return
     if st.session_state.get("dynamis_recovery_resolved"):
         return
-    if port is None:
-        return
+    # Prefer Project+Month(+Queue) usable professional result before generic recovery.
+    if isinstance(context, WorkingContext) and catalog is not None:
+        usable = _find_usable_professional_for_context(catalog, context, port)
+        if usable is not None:
+            _bind_usable_run_ids(usable, context)
+            st.session_state["dynamis_recovery_resolved"] = True
+            st.session_state["dynamis_recovery_choices"] = ()
+            return
+    project_code = None
+    month_key = None
+    if isinstance(context, WorkingContext) and catalog is not None:
+        project_code = _catalog_project_code(catalog, str(context.project or "")) or None
+        month_key = _stored_planning_month_key(str(context.planning_month or "")) or None
     try:
-        decision = load_recovery_decision(port)
+        decision = load_recovery_decision(
+            port,
+            project_code=project_code,
+            month_key=month_key,
+        )
     except Exception:
         logger.exception("Human Surface mission recovery failed")
         st.session_state["dynamis_recovery_resolved"] = True
@@ -1749,7 +2609,7 @@ def _render_recovery_choices() -> None:
 
 
 def main() -> None:
-    st.set_page_config(layout="wide", page_title="Рабочее место цифровых сотрудников")
+    # Page config / global navigation belong exclusively to app.py.
     st.markdown("# Рабочее место цифровых сотрудников")
     st.caption(
         "Постановка задач · профессиональное исполнение · "
@@ -1757,14 +2617,22 @@ def main() -> None:
     )
     catalog = load_work_context_catalog()
     port = _safe_query_port()
-    _restore_durable_mission_if_needed(port)
+    _restore_durable_mission_if_needed(port, catalog)
     _render_global_command_bar(catalog)
     _render_recovery_choices()
     _render_working_context(catalog)
+    # After WC is applied: bind/unbind monthly run for Project+Month(+Queue).
+    _ensure_existing_monthly_workspace(catalog, port)
     _render_assignee_picker()
     _render_assignment()
     context = st.session_state.get("dynamis_working_context")
-    if isinstance(context, WorkingContext) and context.intent:
+    if isinstance(context, WorkingContext) and (
+        context.intent
+        or (
+            str(context.project or "").strip()
+            and str(context.planning_month or "").strip()
+        )
+    ):
         _render_mission_draft(catalog)
     snapshot = None
     registry = None

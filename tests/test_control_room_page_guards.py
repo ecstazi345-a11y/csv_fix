@@ -1405,22 +1405,26 @@ class ControlRoomPageBehaviorTests(unittest.TestCase):
         self.assertEqual(len(frame), 80)
         self.assertIn("Предложено к рассмотрению", cells)
         self.assertNotIn("EXCLUDED_COMPLETED", cells)
-        self.assertIn("HITL Command Port", text)
         self.assertIn("после подтверждения итогового состава", text)
-        self.assertIn("Рассмотрено Constructor: 80", text)
-        self.assertIn("Предложено к включению: 2", text)
+        self.assertIn("Осталось решить: 2", text)
+        self.assertIn("остались позиции, требующие решения человека: 2", text)
+        self.assertNotIn("МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО УТВЕРЖДЕНО", text)
         self.assertIn("Временный выпуск без допуска", "\n".join(st.primary_markdown))
-        # Human Confirm / Handoff remain gated; HR writes go through Command Port.
-        gated = [
+        # Package is not ready: confirm stays disabled. Handoff stays disabled.
+        confirm = [
             item
             for item in st.button_calls
-            if item["label"] in {
-                "ПОДТВЕРДИТЬ РЕЗУЛЬТАТ",
-                "ПЕРЕДАТЬ ИНЖЕНЕРУ ПРОИЗВОДСТВЕННОЙ ГОТОВНОСТИ И ДОПУСКА",
-            }
+            if item["label"] == "ПОДТВЕРДИТЬ МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО"
         ]
-        self.assertEqual(len(gated), 2)
-        self.assertTrue(all(item["disabled"] for item in gated))
+        handoff = [
+            item
+            for item in st.button_calls
+            if item["label"] == "ПЕРЕДАТЬ ИНЖЕНЕРУ ПРОИЗВОДСТВЕННОЙ ГОТОВНОСТИ И ДОПУСКА"
+        ]
+        self.assertEqual(len(confirm), 1)
+        self.assertTrue(confirm[0]["disabled"])
+        self.assertEqual(len(handoff), 1)
+        self.assertTrue(handoff[0]["disabled"])
         export_buttons = [item for item in st.button_calls if "XLSX" in item["label"]]
         self.assertEqual(len(export_buttons), 1)
         self.assertFalse(export_buttons[0]["disabled"])

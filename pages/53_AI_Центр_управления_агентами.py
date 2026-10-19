@@ -109,6 +109,14 @@ from agents.human_surface.human_review_batch import (
     prepare_batch_from_text,
     submit_human_review_batch,
 )
+from agents.human_surface.final_confirm_command import (
+    STALE_PREVIEW_RU,
+    FinalConfirmError,
+    find_current_approved_package,
+    not_ready_message,
+    prepare_final_monthly_approval_preview,
+    submit_final_monthly_confirm,
+)
 from agents.human_surface.human_review_command import (
     HumanReviewAction,
     HumanReviewCommand,
@@ -1723,7 +1731,7 @@ def _render_constructor_workspace(
         _write_result_pending()
     _render_human_decision(result if ready else None, registry if ready else None)
     _render_human_outcome(result if ready else None, registry if ready else None)
-    _render_next_step()
+    _render_next_step(result.run_id if result is not None and result.run_id else None)
     _render_pre_admission_export(registry if ready else None)
     _render_technical_evidence(snapshot, registry)
 
@@ -2417,31 +2425,133 @@ def _render_selected_work(
         st.write(situation)
 
 
+_FINAL_PREVIEW_TOKEN = "dynamis_final_approval_preview"
+
+
 def _render_human_outcome(
     result: Optional[ConstructorProfessionalResultView],
     registry: Optional[ConstructorDecisionRegistryView],
 ) -> None:
     st.markdown("## Итог")
-    if result is None or registry is None:
+    if result is None or registry is None or not result.run_id:
+        st.session_state.pop(_FINAL_PREVIEW_TOKEN, None)
         st.write("Итоговый состав ещё не сформирован.")
-    else:
-        proposed = sum(1 for item in registry.records if item.outcome == "CANDIDATE")
-        excluded = sum(1 for item in registry.records if str(item.outcome).startswith("EXCLUDED_"))
-        attention = sum(
-            1 for item in registry.records if constructor_row_awaits_human_review(item, result)
+        st.button("ПОДТВЕРДИТЬ РЕЗУЛЬТАТ", disabled=True, key="dynamis_confirm_package")
+        st.info(CONFIRM_COMMAND_PORT_REQUIRED_RU)
+        return
+    try:
+        preview = prepare_final_monthly_approval_preview(str(result.run_id))
+    except Exception:
+        logger.exception("Final monthly approval preview failed")
+        st.session_state.pop(_FINAL_PREVIEW_TOKEN, None)
+        _write_registry_outcome(result, registry)
+        st.button("ПОДТВЕРДИТЬ РЕЗУЛЬТАТ", disabled=True, key="dynamis_confirm_package")
+        st.info(CONFIRM_COMMAND_PORT_REQUIRED_RU)
+        return
+    readiness = preview.readiness
+    reviewed = (
+        readiness.accepted_count
+        + readiness.changed_qty_count
+        + readiness.excluded_count
+        + readiness.deferred_count
+        + readiness.needs_data_count
+    )
+    st.write(f"Рассмотрено: {reviewed}")
+    st.write(f"Осталось решить: {readiness.not_reviewed_count}")
+    st.write(f"Требуют данных: {readiness.needs_data_count}")
+    st.write(f"Перенесено: {readiness.deferred_count}")
+    st.write(f"Исключено: {readiness.excluded_count}")
+    if not readiness.ready:
+        st.session_state.pop(_FINAL_PREVIEW_TOKEN, None)
+        if readiness.unresolved_human_count > 0:
+            st.write(not_ready_message(readiness.unresolved_human_count))
+        else:
+            st.write("Месячное обязательство нельзя утвердить: нет позиций кандидата.")
+        st.button(
+            "ПОДТВЕРДИТЬ МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО",
+            disabled=True,
+            key="dynamis_confirm_package",
         )
-        _agreed, _removed, clarify = human_decision_tally(result)
-        st.write(f"Рассмотрено Constructor: {registry.total_count}")
-        st.write(f"Предложено к включению: {proposed}")
-        st.write(f"Исключено: {excluded}")
-        st.write(f"Требует решения человека: {attention}")
-        st.write("Перенесено: не зафиксировано")
-        st.write(f"Нужны данные: {clarify}")
-    st.button("ПОДТВЕРДИТЬ РЕЗУЛЬТАТ", disabled=True, key="dynamis_confirm_package")
-    st.info(CONFIRM_COMMAND_PORT_REQUIRED_RU)
+        return
+    _render_final_preview_table(preview)
+    existing = find_current_approved_package(str(result.run_id))
+    if existing is not None:
+        st.session_state.pop(_FINAL_PREVIEW_TOKEN, None)
+        _write_approved_banner(existing)
+        return
+    shown = st.session_state.get(_FINAL_PREVIEW_TOKEN)
+    if st.button("ПОДТВЕРДИТЬ МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО", key="dynamis_confirm_package"):
+        if shown is None:
+            st.error(STALE_PREVIEW_RU)
+        else:
+            try:
+                confirmed = submit_final_monthly_confirm(shown)
+            except FinalConfirmError as exc:
+                st.error(exc.message)
+            except Exception:
+                logger.exception("Final monthly confirm failed")
+                st.error("Не удалось подтвердить месячное обязательство.")
+            else:
+                st.session_state.pop(_FINAL_PREVIEW_TOKEN, None)
+                _write_approved_banner(confirmed.package)
+                return
+    st.session_state[_FINAL_PREVIEW_TOKEN] = preview
 
 
-def _render_next_step() -> None:
+def _write_registry_outcome(
+    result: ConstructorProfessionalResultView,
+    registry: ConstructorDecisionRegistryView,
+) -> None:
+    proposed = sum(1 for item in registry.records if item.outcome == "CANDIDATE")
+    excluded = sum(1 for item in registry.records if str(item.outcome).startswith("EXCLUDED_"))
+    attention = sum(
+        1 for item in registry.records if constructor_row_awaits_human_review(item, result)
+    )
+    _agreed, _removed, clarify = human_decision_tally(result)
+    st.write(f"Рассмотрено Constructor: {registry.total_count}")
+    st.write(f"Предложено к включению: {proposed}")
+    st.write(f"Исключено: {excluded}")
+    st.write(f"Требует решения человека: {attention}")
+    st.write("Перенесено: не зафиксировано")
+    st.write(f"Нужны данные: {clarify}")
+
+
+def _render_final_preview_table(preview: object) -> None:
+    lines = getattr(preview, "professional_lines", ())
+    if not lines:
+        st.caption("В итоговом составе текущего месяца нет включаемых позиций.")
+        return
+    rows = [
+        {
+            "Титул": item.facility,
+            "Дисциплина": item.discipline,
+            "Система": item.system,
+            "Пакет / IWP": item.iwp,
+            "BOQ": item.boq_code,
+            "Наименование": item.name,
+            "Ед. изм.": item.unit,
+            "Базовый объём": item.baseline_qty,
+            "Добавлено Constructor": item.constructor_delta_qty,
+            "Итоговый объём": item.final_qty,
+            "Статус": item.source_status,
+        }
+        for item in lines
+    ]
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+
+def _write_approved_banner(package: object) -> None:
+    st.write("МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО УТВЕРЖДЕНО")
+    st.write(f"approved_package_id: {package.approved_package_id}")
+    approved_at = getattr(package, "approved_at", None)
+    stamp = approved_at.isoformat() if hasattr(approved_at, "isoformat") else str(approved_at)
+    st.write(f"approved_at: {stamp}")
+    st.write(f"approved_by: {package.approved_by}")
+    st.write(f"source package: {package.source_candidate_package_id}")
+    st.write(f"source run: {package.source_run_id}")
+
+
+def _render_next_step(run_id: Optional[str] = None) -> None:
     st.markdown("## Передать дальше")
     st.write("Инженер производственной готовности и допуска")
     st.button(
@@ -2449,7 +2559,20 @@ def _render_next_step() -> None:
         disabled=True,
         key="dynamis_handoff",
     )
-    st.write("Передача станет доступна после подтверждения итогового состава.")
+    approved = False
+    if run_id:
+        try:
+            approved = find_current_approved_package(str(run_id)) is not None
+        except Exception:
+            logger.exception("Approved package lookup failed")
+            approved = False
+    if approved:
+        st.write(
+            "Утверждённый пакет готов к передаче. "
+            "Контур передачи будет подключён следующим шагом."
+        )
+    else:
+        st.write("Передача станет доступна после подтверждения итогового состава.")
     st.info(HANDOFF_COMMAND_PORT_REQUIRED_RU)
 
 

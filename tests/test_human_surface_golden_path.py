@@ -184,7 +184,7 @@ class GoldenPathPageGuards(unittest.TestCase):
     def test_page_golden_path_shape(self) -> None:
         text = PAGE.read_text(encoding="utf-8")
         self.assertIn("_render_decision_command_panel", text)
-        self.assertIn("Текущий черновик месячного обязательства", text)
+        self.assertIn("Черновик кандидатного состава месяца", text)
         self.assertNotIn("Рабочий срез (Focus Set)", text)
         self.assertNotIn("dynamis_hr_focus_facility_", text)
         self.assertIn("submit_human_review_batch", text)

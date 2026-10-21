@@ -780,7 +780,7 @@ class FinalConfirmPageTests(unittest.TestCase):
         self.assertIn("Перенесено: 1", text)
         self.assertIn("Исключено: 1", text)
         confirm = [item for item in st.button_calls if "ПОДТВЕРДИТЬ" in item["label"]]
-        self.assertEqual(confirm[-1]["label"], "ПОДТВЕРДИТЬ МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО")
+        self.assertEqual(confirm[-1]["label"], "ПОДТВЕРДИТЬ КАНДИДАТНЫЙ СОСТАВ")
         self.assertTrue(confirm[-1]["disabled"])
 
         page, st = _load_page_module()
@@ -794,12 +794,12 @@ class FinalConfirmPageTests(unittest.TestCase):
         page.find_current_approved_package = lambda run_id: None
         page.submit_final_monthly_confirm = _submit
         page._render_human_outcome(result, registry)
-        enabled = [item for item in st.button_calls if item["label"] == "ПОДТВЕРДИТЬ МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО"]
+        enabled = [item for item in st.button_calls if item["label"] == "ПОДТВЕРДИТЬ КАНДИДАТНЫЙ СОСТАВ"]
         self.assertTrue(enabled)
         self.assertFalse(enabled[-1]["disabled"])
         self.assertFalse(submitted["called"])
         self.assertNotIn(
-            "МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО УТВЕРЖДЕНО",
+            "КАНДИДАТНЫЙ СОСТАВ МЕСЯЦА ПОДТВЕРЖДЁН",
             " ".join(str(item) for args in st.write_calls for item in args),
         )
 
@@ -822,7 +822,7 @@ class FinalConfirmPageTests(unittest.TestCase):
             st.button_calls.append(
                 {"label": str(label), "disabled": bool(kwargs.get("disabled", False))}
             )
-            return str(label) == "ПОДТВЕРДИТЬ МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО"
+            return str(label) == "ПОДТВЕРДИТЬ КАНДИДАТНЫЙ СОСТАВ"
 
         st.button = _button
         page.prepare_final_monthly_approval_preview = lambda run_id: self._preview(ready=True)
@@ -830,7 +830,7 @@ class FinalConfirmPageTests(unittest.TestCase):
         page.submit_final_monthly_confirm = _ok
         page._render_human_outcome(result, registry)
         self.assertNotIn(
-            "МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО УТВЕРЖДЕНО",
+            "КАНДИДАТНЫЙ СОСТАВ МЕСЯЦА ПОДТВЕРЖДЁН",
             " ".join(str(item) for args in st.write_calls for item in args),
         )
         self.assertEqual(submitted, {})
@@ -839,12 +839,15 @@ class FinalConfirmPageTests(unittest.TestCase):
         page._render_human_outcome(result, registry)
         self.assertIs(submitted["preview"], shown)
         approved_text = " ".join(str(item) for args in st.write_calls for item in args)
-        self.assertIn("МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО УТВЕРЖДЕНО", approved_text)
+        self.assertIn("КАНДИДАТНЫЙ СОСТАВ МЕСЯЦА ПОДТВЕРЖДЁН", approved_text)
+        self.assertIn("Это ещё не производственное обязательство.", approved_text)
+        self.assertNotIn("МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО УТВЕРЖДЕНО", approved_text)
         self.assertIn("amp-page", approved_text)
         self.assertIn("pkg-page", approved_text)
         self.assertIn("run-page", approved_text)
 
         page.find_current_approved_package = lambda run_id: package
+        page.find_existing_approved_candidate_handoff = lambda run_id: None
         page._render_next_step("run-page")
         handoff = [
             item
@@ -852,15 +855,19 @@ class FinalConfirmPageTests(unittest.TestCase):
             if item["label"] == "ПЕРЕДАТЬ ИНЖЕНЕРУ ПРОИЗВОДСТВЕННОЙ ГОТОВНОСТИ И ДОПУСКА"
         ]
         self.assertEqual(len(handoff), 1)
-        self.assertTrue(handoff[0]["disabled"])
+        self.assertFalse(handoff[0]["disabled"])
         next_text = " ".join(str(item) for args in st.write_calls for item in args)
-        self.assertIn("Контур передачи будет подключён следующим шагом", next_text)
+        self.assertNotIn("RECEIVER NOT CONNECTED", next_text)
+        self.assertNotIn("RECEIVED", next_text)
+        self.assertNotIn("ADMITTED", next_text)
 
         source = PAGE_PATH.read_text(encoding="utf-8")
         self.assertNotIn("sqlite3", source)
         self.assertNotIn("approved_monthly_packages", source)
         self.assertNotIn("st.navigation", source)
         self.assertNotIn("NAV_SECTIONS", source)
-        self.assertIn("ПОДТВЕРДИТЬ РЕЗУЛЬТАТ", source)
+        self.assertIn("ПОДТВЕРДИТЬ КАНДИДАТНЫЙ СОСТАВ", source)
+        self.assertNotIn("МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО УТВЕРЖДЕНО", source)
+        self.assertNotIn("ПОДТВЕРДИТЬ МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО", source)
         command = Path(__file__).resolve().parents[1] / "agents" / "human_surface" / "final_confirm_command.py"
         self.assertNotIn("force_include", command.read_text(encoding="utf-8"))

@@ -597,7 +597,7 @@ class UiRegressionTests(unittest.TestCase):
         self.assertIn("filter_records_by_work_context", text)
         self.assertIn("build_focus_set_from_work_context", text)
         self.assertIn("build_monthly_commitment_draft", text)
-        self.assertIn("Текущий черновик месячного обязательства", text)
+        self.assertIn("Черновик кандидатного состава месяца", text)
         # Golden Path: no second Focus Set filter workbench in Human Decision.
         self.assertNotIn("Рабочий срез (Focus Set)", text)
         self.assertNotIn("dynamis_hr_focus_facility_", text)

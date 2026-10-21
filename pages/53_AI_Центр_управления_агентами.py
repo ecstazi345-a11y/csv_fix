@@ -109,6 +109,12 @@ from agents.human_surface.human_review_batch import (
     prepare_batch_from_text,
     submit_human_review_batch,
 )
+from agents.human_surface.candidate_handoff import (
+    HANDOFF_PERSISTED_RU,
+    CandidateHandoffError,
+    find_existing_approved_candidate_handoff,
+    submit_approved_candidate_handoff,
+)
 from agents.human_surface.final_confirm_command import (
     STALE_PREVIEW_RU,
     FinalConfirmError,
@@ -128,6 +134,9 @@ from agents.human_surface.human_review_focus import (
     build_focus_set_from_work_context,
     durable_exception_detail_rows,
     grouped_review_summary,
+    recorded_decision_table_dicts,
+    unresolved_context_groups,
+    unresolved_table_dicts,
 )
 from agents.human_surface.monthly_commitment_draft import (
     NON_CANDIDATE_CLARIFICATION_RU,
@@ -2122,29 +2131,70 @@ def _render_human_decision(
         logger.exception("Work-context summary focus failed")
         focus = None
 
+    # Package-wide summary stays on top; unresolved work comes first.
+    total = surface.reviewed_count + surface.not_reviewed_count
+    st.write(f"Рассмотрено: {surface.reviewed_count} / {total}")
+    st.write(f"Требуют решения: {surface.not_reviewed_count}")
+    st.write(f"Принято: {surface.accepted_count}")
+    st.write(f"Изменён объём: {surface.changed_qty_count}")
+    st.write(f"Перенесено: {surface.deferred_count}")
+    st.write(f"Исключено: {surface.excluded_count}")
+    st.write(f"Нужны данные: {surface.needs_data_count}")
+
+    st.markdown("### Требуют решения в текущем рабочем контексте")
     if focus is not None:
         ctx_summary = build_work_context_review_summary(surface, focus)
-        st.markdown("### Текущий рабочий контекст")
         st.write(f"**Контекст:** {ctx_summary.facility} · {ctx_summary.discipline}")
-        st.write(f"Рассмотрено: {ctx_summary.reviewed} / {ctx_summary.total}")
-        st.write(f"Принято: {ctx_summary.accepted}")
-        st.write(f"Изменён объём: {ctx_summary.changed_qty}")
-        st.write(f"Перенесено: {ctx_summary.deferred}")
-        st.write(f"Исключено: {ctx_summary.excluded}")
-        st.write(f"Нужны данные: {ctx_summary.needs_data}")
-        st.write(f"Не рассмотрено: {ctx_summary.not_reviewed}")
+        unresolved_rows = unresolved_table_dicts(surface, focus)
+        if unresolved_rows:
+            display_cols = [c for c in unresolved_rows[0].keys() if c != "candidate_id"]
+            st.dataframe(
+                pd.DataFrame(
+                    [{k: row[k] for k in display_cols} for row in unresolved_rows]
+                ),
+                use_container_width=True,
+                hide_index=True,
+                height=320,
+            )
+            st.caption(
+                "Номер № — текущий алиас рабочего контекста для команды решения. "
+                "Решение записывается по candidate_id, а не по номеру строки."
+            )
+        else:
+            st.info(
+                "В текущем рабочем контексте нерешённых кандидатов нет. "
+                f"По месячному пакету осталось: {surface.not_reviewed_count}."
+            )
+            remaining_groups = unresolved_context_groups(surface)
+            if remaining_groups:
+                st.markdown("#### Где остались решения")
+                st.dataframe(
+                    pd.DataFrame(list(remaining_groups)),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                st.caption(
+                    "Смените существующий «Рабочий контекст» выше, "
+                    "чтобы перейти к этим позициям."
+                )
     else:
-        total = surface.reviewed_count + surface.not_reviewed_count
-        st.write(f"Рассмотрено: {surface.reviewed_count} / {total}")
-        st.write(f"Принято: {surface.accepted_count}")
-        st.write(f"Изменён объём: {surface.changed_qty_count}")
-        st.write(f"Перенесено: {surface.deferred_count}")
-        st.write(f"Исключено: {surface.excluded_count}")
-        st.write(f"Нужны данные: {surface.needs_data_count}")
-        st.write(f"Не рассмотрено: {surface.not_reviewed_count}")
+        st.warning("Рабочий контекст не применён — список требующих решения недоступен.")
+
+    st.markdown("### Принятые решения")
+    recorded_rows = recorded_decision_table_dicts(surface)
+    if recorded_rows:
+        display_cols = [c for c in recorded_rows[0].keys() if c != "candidate_id"]
+        st.dataframe(
+            pd.DataFrame([{k: row[k] for k in display_cols} for row in recorded_rows]),
+            use_container_width=True,
+            hide_index=True,
+            height=320,
+        )
+    else:
+        st.caption("Записанных решений пока нет.")
 
     draft = build_monthly_commitment_draft(surface)
-    st.markdown("### Текущий черновик месячного обязательства")
+    st.markdown("### Черновик кандидатного состава месяца")
     st.write(f"Итоговых позиций: {draft.counts.final_positions}")
     st.write(f"Базовый состав: {draft.counts.baseline}")
     st.write(f"Добавлено Constructor: {draft.counts.added_constructor}")
@@ -2165,7 +2215,7 @@ def _render_human_decision(
         )
     else:
         st.caption(
-            "Текущий черновик месячного обязательства пока без утверждённых позиций — "
+            "Черновик кандидатного состава месяца пока без подтверждённых позиций — "
             "подтвердите решения в блоке команды выше."
         )
 
@@ -2193,7 +2243,7 @@ def _render_human_decision(
                 f"исключено {counts['excluded']}"
             )
         st.caption(
-            "Финальное подтверждение месячного обязательства станет доступно "
+            "Финальное подтверждение кандидатного состава станет доступно "
             "отдельным действием (не в этом increment)."
         )
 
@@ -2436,7 +2486,7 @@ def _render_human_outcome(
     if result is None or registry is None or not result.run_id:
         st.session_state.pop(_FINAL_PREVIEW_TOKEN, None)
         st.write("Итоговый состав ещё не сформирован.")
-        st.button("ПОДТВЕРДИТЬ РЕЗУЛЬТАТ", disabled=True, key="dynamis_confirm_package")
+        st.button("ПОДТВЕРДИТЬ КАНДИДАТНЫЙ СОСТАВ", disabled=True, key="dynamis_confirm_package")
         st.info(CONFIRM_COMMAND_PORT_REQUIRED_RU)
         return
     try:
@@ -2445,7 +2495,7 @@ def _render_human_outcome(
         logger.exception("Final monthly approval preview failed")
         st.session_state.pop(_FINAL_PREVIEW_TOKEN, None)
         _write_registry_outcome(result, registry)
-        st.button("ПОДТВЕРДИТЬ РЕЗУЛЬТАТ", disabled=True, key="dynamis_confirm_package")
+        st.button("ПОДТВЕРДИТЬ КАНДИДАТНЫЙ СОСТАВ", disabled=True, key="dynamis_confirm_package")
         st.info(CONFIRM_COMMAND_PORT_REQUIRED_RU)
         return
     readiness = preview.readiness
@@ -2466,9 +2516,9 @@ def _render_human_outcome(
         if readiness.unresolved_human_count > 0:
             st.write(not_ready_message(readiness.unresolved_human_count))
         else:
-            st.write("Месячное обязательство нельзя утвердить: нет позиций кандидата.")
+            st.write("Кандидатный состав нельзя подтвердить: нет позиций кандидата.")
         st.button(
-            "ПОДТВЕРДИТЬ МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО",
+            "ПОДТВЕРДИТЬ КАНДИДАТНЫЙ СОСТАВ",
             disabled=True,
             key="dynamis_confirm_package",
         )
@@ -2480,7 +2530,7 @@ def _render_human_outcome(
         _write_approved_banner(existing)
         return
     shown = st.session_state.get(_FINAL_PREVIEW_TOKEN)
-    if st.button("ПОДТВЕРДИТЬ МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО", key="dynamis_confirm_package"):
+    if st.button("ПОДТВЕРДИТЬ КАНДИДАТНЫЙ СОСТАВ", key="dynamis_confirm_package"):
         if shown is None:
             st.error(STALE_PREVIEW_RU)
         else:
@@ -2490,7 +2540,7 @@ def _render_human_outcome(
                 st.error(exc.message)
             except Exception:
                 logger.exception("Final monthly confirm failed")
-                st.error("Не удалось подтвердить месячное обязательство.")
+                st.error("Не удалось подтвердить кандидатный состав.")
             else:
                 st.session_state.pop(_FINAL_PREVIEW_TOKEN, None)
                 _write_approved_banner(confirmed.package)
@@ -2541,7 +2591,12 @@ def _render_final_preview_table(preview: object) -> None:
 
 
 def _write_approved_banner(package: object) -> None:
-    st.write("МЕСЯЧНОЕ ОБЯЗАТЕЛЬСТВО УТВЕРЖДЕНО")
+    st.write("КАНДИДАТНЫЙ СОСТАВ МЕСЯЦА ПОДТВЕРЖДЁН")
+    st.write(
+        "Пакет подтверждён человеком и готов к проверке "
+        "производственной готовности и допуска. "
+        "Это ещё не производственное обязательство."
+    )
     st.write(f"approved_package_id: {package.approved_package_id}")
     approved_at = getattr(package, "approved_at", None)
     stamp = approved_at.isoformat() if hasattr(approved_at, "isoformat") else str(approved_at)
@@ -2554,26 +2609,56 @@ def _write_approved_banner(package: object) -> None:
 def _render_next_step(run_id: Optional[str] = None) -> None:
     st.markdown("## Передать дальше")
     st.write("Инженер производственной готовности и допуска")
-    st.button(
-        "ПЕРЕДАТЬ ИНЖЕНЕРУ ПРОИЗВОДСТВЕННОЙ ГОТОВНОСТИ И ДОПУСКА",
-        disabled=True,
-        key="dynamis_handoff",
-    )
-    approved = False
+    approved = None
+    existing_handoff = None
     if run_id:
         try:
-            approved = find_current_approved_package(str(run_id)) is not None
+            approved = find_current_approved_package(str(run_id))
         except Exception:
             logger.exception("Approved package lookup failed")
-            approved = False
-    if approved:
-        st.write(
-            "Утверждённый пакет готов к передаче. "
-            "Контур передачи будет подключён следующим шагом."
+            approved = None
+        if approved is not None:
+            try:
+                existing_handoff = find_existing_approved_candidate_handoff(
+                    str(run_id)
+                )
+            except Exception:
+                logger.exception("Approved candidate handoff lookup failed")
+                existing_handoff = None
+    if existing_handoff is not None:
+        st.button(
+            "ПЕРЕДАТЬ ИНЖЕНЕРУ ПРОИЗВОДСТВЕННОЙ ГОТОВНОСТИ И ДОПУСКА",
+            disabled=True,
+            key="dynamis_handoff",
         )
-    else:
-        st.write("Передача станет доступна после подтверждения итогового состава.")
-    st.info(HANDOFF_COMMAND_PORT_REQUIRED_RU)
+        st.write(HANDOFF_PERSISTED_RU)
+        st.write("Передано в контур допуска")
+        st.write("Receiver: ещё не подключён")
+        return
+    clicked = st.button(
+        "ПЕРЕДАТЬ ИНЖЕНЕРУ ПРОИЗВОДСТВЕННОЙ ГОТОВНОСТИ И ДОПУСКА",
+        disabled=approved is None,
+        key="dynamis_handoff",
+    )
+    if approved is None:
+        st.write("Передача станет доступна после подтверждения кандидатного состава.")
+        return
+    if not clicked:
+        st.write("Подтверждённый кандидатный состав готов к передаче в контур допуска.")
+        return
+    try:
+        result_handoff = submit_approved_candidate_handoff(str(run_id))
+    except CandidateHandoffError as exc:
+        st.error(exc.message)
+        return
+    except Exception:
+        logger.exception("Approved candidate handoff failed")
+        st.error("Не удалось передать пакет в контур допуска.")
+        return
+    st.write(HANDOFF_PERSISTED_RU)
+    st.write("Передано в контур допуска")
+    st.write("Receiver: ещё не подключён")
+    _ = result_handoff
 
 
 def _render_technical_evidence(

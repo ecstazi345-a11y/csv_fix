@@ -481,7 +481,7 @@ class MonthlyCommitmentDraftTests(unittest.TestCase):
     def test_08_page_guards_and_no_production_writes(self) -> None:
         text = PAGE.read_text(encoding="utf-8")
         self.assertIn("build_monthly_commitment_draft", text)
-        self.assertIn("Текущий черновик месячного обязательства", text)
+        self.assertIn("Черновик кандидатного состава месяца", text)
         self.assertIn("Итоговых позиций", text)
         self.assertIn("NON_CANDIDATE_CLARIFICATION_RU", text)
         self.assertNotIn(

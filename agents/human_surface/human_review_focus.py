@@ -488,6 +488,132 @@ def grouped_review_summary(
     return tuple(rows_out)
 
 
+UNRESOLVED_DECISION_LABEL = "НЕ РАССМОТРЕНО"
+REQUIRES_DECISION_LABEL = "ТРЕБУЕТ РЕШЕНИЯ"
+CANDIDATE_TYPE_NEW_RU = "Новые возможности"
+CANDIDATE_TYPE_ADDITIONAL_RU = "Доп. объём"
+
+
+def is_unresolved_candidate(item: HumanReviewCandidateContext) -> bool:
+    label = str(item.current_decision_label or "").strip()
+    return not label or label == UNRESOLVED_DECISION_LABEL
+
+
+def candidate_type_label(item: HumanReviewCandidateContext) -> str:
+    """Presentation type of a package candidate (matches Module 5 oval slices)."""
+    if float(item.already_planned_qty or 0.0) > 0:
+        return CANDIDATE_TYPE_ADDITIONAL_RU
+    return CANDIDATE_TYPE_NEW_RU
+
+
+def unresolved_focus_rows(
+    surface: HumanReviewSurfaceSnapshot,
+    focus: HumanReviewFocusSet,
+) -> tuple[HumanReviewFocusRow, ...]:
+    """Unresolved candidates of the current Work Context, in Focus alias order."""
+    return tuple(
+        row
+        for row in focus_rows(surface, focus)
+        if not str(row.current_decision_label or "").strip()
+        or str(row.current_decision_label).strip() == UNRESOLVED_DECISION_LABEL
+    )
+
+
+def unresolved_table_dicts(
+    surface: HumanReviewSurfaceSnapshot,
+    focus: HumanReviewFocusSet,
+) -> tuple[dict[str, str], ...]:
+    """Operable unresolved list. ``№`` is the current Focus alias for commands."""
+    by_id = {item.candidate_id: item for item in surface.candidates}
+    rows: list[dict[str, str]] = []
+    for row in unresolved_focus_rows(surface, focus):
+        item = by_id.get(row.candidate_id)
+        baseline = float(item.already_planned_qty or 0.0) if item is not None else 0.0
+        rows.append(
+            {
+                "№": str(row.alias_number),
+                "Титул": row.facility or "—",
+                "Дисциплина": row.discipline or "—",
+                "Система": row.system or "—",
+                "Пакет / IWP": row.iwp or "—",
+                "BOQ": row.boq_code or "—",
+                "Наименование": row.name or "—",
+                "Ед. изм.": row.unit or "—",
+                "Предложено Constructor": f"{row.constructor_proposed_qty:g}",
+                "Уже запланировано": f"{baseline:g}",
+                "Тип кандидата": (
+                    candidate_type_label(item) if item is not None else CANDIDATE_TYPE_NEW_RU
+                ),
+                "Состояние": REQUIRES_DECISION_LABEL,
+                "candidate_id": row.candidate_id,
+            }
+        )
+    return tuple(rows)
+
+
+def unresolved_context_groups(
+    surface: HumanReviewSurfaceSnapshot,
+) -> tuple[dict[str, str], ...]:
+    """Where unresolved candidates remain: Title → Discipline → System → Package.
+
+    Navigation/help summary only. It is not a filter and selects nothing.
+    """
+    counts: dict[tuple[str, str, str, str], int] = {}
+    for item in surface.candidates:
+        if not is_unresolved_candidate(item):
+            continue
+        key = (
+            str(item.facility or "").strip() or "—",
+            str(item.discipline or "").strip() or "—",
+            str(item.system or "").strip() or "—",
+            str(item.iwp or "").strip() or "—",
+        )
+        counts[key] = counts.get(key, 0) + 1
+    return tuple(
+        {
+            "Титул": facility,
+            "Дисциплина": discipline,
+            "Система": system,
+            "Пакет / IWP": iwp,
+            "Осталось": str(count),
+        }
+        for (facility, discipline, system, iwp), count in sorted(counts.items())
+    )
+
+
+def recorded_decision_table_dicts(
+    surface: HumanReviewSurfaceSnapshot,
+) -> tuple[dict[str, str], ...]:
+    """Durably recorded decisions, shown separately below unresolved work."""
+    rows: list[dict[str, str]] = []
+    for item in surface.candidates:
+        if is_unresolved_candidate(item):
+            continue
+        rows.append(
+            {
+                "Титул": item.facility or "—",
+                "Дисциплина": item.discipline or "—",
+                "Система": item.system or "—",
+                "Пакет / IWP": item.iwp or "—",
+                "BOQ": item.boq_code or "—",
+                "Наименование": item.name or "—",
+                "Статус решения": str(item.current_decision_label or "").strip(),
+                "candidate_id": item.candidate_id,
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            row["Титул"],
+            row["Дисциплина"],
+            row["Система"],
+            row["Пакет / IWP"],
+            row["BOQ"],
+            row["candidate_id"],
+        )
+    )
+    return tuple(rows)
+
+
 def package_candidate_ids(package: CandidatePackage) -> tuple[str, ...]:
     return tuple(str(item.candidate_id) for item in package.candidates)
 

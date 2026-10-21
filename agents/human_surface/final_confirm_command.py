@@ -60,7 +60,7 @@ STATUS_CONFIRM_APPROVED = "APPROVED"
 STATUS_CONFIRM_ALREADY = "ALREADY_APPROVED"
 
 NOT_READY_RU = (
-    "Месячное обязательство нельзя утвердить:\n"
+    "Кандидатный состав нельзя подтвердить:\n"
     "остались позиции, требующие решения человека: {count}."
 )
 STALE_PREVIEW_RU = (
@@ -295,7 +295,7 @@ def submit_final_monthly_confirm(
             raise FinalConfirmError(CODE_NOT_READY, not_ready_message(pending))
         raise FinalConfirmError(
             CODE_NOT_READY,
-            "Месячное обязательство нельзя утвердить: нет позиций кандидата.",
+            "Кандидатный состав нельзя подтвердить: нет позиций кандидата.",
         )
     stamp = now or datetime.now(timezone.utc)
     if stamp.tzinfo is None or stamp.utcoffset() is None:

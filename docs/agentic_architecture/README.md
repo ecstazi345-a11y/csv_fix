@@ -16,6 +16,7 @@
 |---------|--------|
 | [AGENT_RUNTIME_PROGRESS.md](AGENT_RUNTIME_PROGRESS.md) | Где мы сейчас (журнал программы, append-only checkpoints). |
 | [DIGITAL_EMPLOYEE_ANATOMY.md](DIGITAL_EMPLOYEE_ANATOMY.md) | Как профессионально устроен цифровой сотрудник. |
+| [DIGITAL_WORKER_BLUEPRINT.md](DIGITAL_WORKER_BLUEPRINT.md) | Навигационный стандарт проектирования цифрового сотрудника. Не заменяет источники истины. |
 | [ARCHITECTURE_BASELINE.md](ARCHITECTURE_BASELINE.md) | Как устроена целевая архитектура. |
 | [RECOVERY_CONTEXT.md](RECOVERY_CONTEXT.md) | Как восстановить контекст после паузы. |
 

@@ -5,6 +5,16 @@ ADR-like. Новые решения добавлять сверху по дат�
 
 ---
 
+## 2026-10-24 — Digital Worker Blueprint as navigation standard
+
+**DECISION:** `DIGITAL_WORKER_BLUEPRINT.md` — навигационный стандарт проектирования цифрового сотрудника. Он указывает, какие действующие источники читать и в каком порядке. Он не является паспортом роли и не заменяет источники истины.
+
+**DOES NOT SUPERSEDE:** `DIGITAL_EMPLOYEE_ANATOMY.md`, `PROFESSIONAL_PASSPORT_TEMPLATE_V1_0.md`, `ARCHITECTURE_BASELINE.md`, `security/*.md`, канон конкретной профессии (для Constructor — `CONSTRUCTOR_AGENT_ANATOMY.md`).
+
+**REJECTED:** считать Blueprint новым законом взамен Anatomy, Passport Template, EOS-SEC или паспорта Constructor; копировать его текст в правило Cursor вместо чтения источников.
+
+---
+
 ## 2026-10-02 — Constructor as digital employee: Human Intent, two packages, labor two-laws
 
 **DECISION:** Constructor сам формирует Candidate Package из Mission (project, month, queue/facility/discipline/system/IWP = одно / несколько / ALL). Единственная целевая цепочка: Human Intent → Constructor Mission → Constructor Agent → Candidate Package → Human Review Gate → Reviewed Candidate Package → Human Confirm → Executability Agent. `LABOR_NORM_UNRESOLVED` не удаляет кандидата на discovery; included UNRESOLVED блокирует reviewed handoff. Professional sources/tools независимы от конкретного store. Канон: `CONSTRUCTOR_AGENT_ANATOMY.md`.

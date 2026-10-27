@@ -34,10 +34,29 @@ EXPORT_COLUMNS = [
     "system_label_clean",
     "Unit_of_Measure",
     "Quantity_Today",
+    "Direct_Work_Hours",
+    "Operation_Type",
+    "Operation_Quantity",
+    "Operation_Main_Parameter",
+    "Operation_Location",
+    "Elevation_Mark",
+    "Operation_Comment",
     "Unit_Rate",
     "EV_DAY_VALUE",
     "validation_status_clean",
 ]
+
+# Operational detail fields must keep a stable Excel column even when the
+# live source has not yet exposed a value (e.g. Elevation_Mark pending view).
+EXPORT_ALWAYS_INCLUDE = {
+    "Direct_Work_Hours",
+    "Operation_Type",
+    "Operation_Quantity",
+    "Operation_Main_Parameter",
+    "Operation_Location",
+    "Elevation_Mark",
+    "Operation_Comment",
+}
 
 XLSX_TEXT_COLUMNS = {
     "Month_Key",
@@ -49,11 +68,18 @@ XLSX_TEXT_COLUMNS = {
     "IWP_ID_clean",
     "system_label_clean",
     "Unit_of_Measure",
+    "Operation_Type",
+    "Operation_Main_Parameter",
+    "Operation_Location",
+    "Elevation_Mark",
+    "Operation_Comment",
     "validation_status_clean",
 }
 
 XLSX_NUMERIC_COLUMNS = {
     "Quantity_Today",
+    "Direct_Work_Hours",
+    "Operation_Quantity",
     "Unit_Rate",
     "EV_DAY_VALUE",
 }
@@ -62,6 +88,8 @@ XLSX_DATE_COLUMNS = {"Work_Date"}
 
 XLSX_NUM_FORMATS = {
     "Quantity_Today": "0.00",
+    "Direct_Work_Hours": "0.00",
+    "Operation_Quantity": "0.00",
     "Unit_Rate": "#,##0.00",
     "EV_DAY_VALUE": "#,##0.00",
 }
@@ -96,6 +124,13 @@ EXPORT_FIELD_MAP = {
     "system_label_clean": ["system_label_clean", "system_label", "System_Label"],
     "Unit_of_Measure": ["unit_of_measure", "Unit_of_Measure", "unit", "uom"],
     "Quantity_Today": ["quantity_today", "Quantity_Today", "qty_today"],
+    "Direct_Work_Hours": ["direct_work_hours", "Direct_Work_Hours"],
+    "Operation_Type": ["operation_type", "Operation_Type"],
+    "Operation_Quantity": ["operation_quantity", "Operation_Quantity"],
+    "Operation_Main_Parameter": ["operation_main_parameter", "Operation_Main_Parameter"],
+    "Operation_Location": ["operation_location", "Operation_Location"],
+    "Elevation_Mark": ["elevation_mark", "Elevation_Mark"],
+    "Operation_Comment": ["operation_comment", "Operation_Comment"],
     "Unit_Rate": ["unit_rate", "Unit_Rate"],
     "EV_DAY_VALUE": ["ev_day_value", "EV_DAY_VALUE", "ev_value"],
     "validation_status_clean": ["validation_status_clean", "validation_status", "Validation_Status"],
@@ -212,6 +247,8 @@ def build_export_df(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str], lis
             export_df[target_col] = df[source_col]
         else:
             missing.append(target_col)
+            if target_col in EXPORT_ALWAYS_INCLUDE:
+                export_df[target_col] = ""
     if "Work_Date" in export_df.columns:
         export_df["Work_Date"] = export_df["Work_Date"].apply(to_excel_date)
     return export_df, mapped, missing
@@ -336,6 +373,13 @@ def _xlsx_display_label(col: str) -> str:
         "system_label_clean": "system_label_clean",
         "Unit_of_Measure": "Unit_of_Measure",
         "Quantity_Today": "Quantity_Today",
+        "Direct_Work_Hours": "Direct_Work_Hours",
+        "Operation_Type": "Operation_Type",
+        "Operation_Quantity": "Operation_Quantity",
+        "Operation_Main_Parameter": "Operation_Main_Parameter",
+        "Operation_Location": "Operation_Location",
+        "Elevation_Mark": "Elevation_Mark",
+        "Operation_Comment": "Operation_Comment",
         "Unit_Rate": "Unit_Rate",
         "EV_DAY_VALUE": "EV_DAY_VALUE",
         "validation_status_clean": "validation_status_clean",

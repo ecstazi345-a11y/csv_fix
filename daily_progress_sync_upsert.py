@@ -133,6 +133,9 @@ def map_fields(record):
         "operation_quantity": to_num(clean_value(fields.get("Operation_Quantity"))),
         "operation_main_parameter": clean_value(fields.get("Operation_Main_Parameter")),
         "operation_location": clean_value(fields.get("Operation_Location")),
+        # Requires additive column on daily_progress_raw first:
+        # sql/daily_progress_raw_add_elevation_mark.sql
+        "elevation_mark": clean_value(fields.get("Elevation_Mark")),
         "operation_comment": clean_value(fields.get("Operation_Comment")),
         "system_label": clean_value(fields.get("System_Label")),
         "is_deleted": False,
@@ -162,6 +165,22 @@ def fetch_airtable_records():
     return all_rows
 
 
+def _raw_has_elevation_mark_column(session) -> bool:
+    """True only after sql/daily_progress_raw_add_elevation_mark.sql is applied."""
+    url = (
+        f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}"
+        f"?select=elevation_mark&limit=1"
+    )
+    resp = session.get(url, headers=SUPABASE_HEADERS, timeout=60)
+    if resp.status_code < 300:
+        return True
+    body = (resp.text or "").lower()
+    if resp.status_code == 400 and "elevation_mark" in body and "does not exist" in body:
+        return False
+    # Unknown error: keep payload unchanged and let upsert surface it.
+    return True
+
+
 def upsert_to_supabase(rows):
     if not rows:
         print("Нет строк для загрузки.")
@@ -171,9 +190,21 @@ def upsert_to_supabase(rows):
     batch_size = 20
     total = len(rows)
     session = make_requests_session()
+    include_elevation = _raw_has_elevation_mark_column(session)
+    if not include_elevation:
+        print(
+            "WARN: daily_progress_raw.elevation_mark отсутствует. "
+            "Примените sql/daily_progress_raw_add_elevation_mark.sql. "
+            "Синк elevation_mark пропущен в этом прогоне."
+        )
 
     for i in range(0, total, batch_size):
         batch = rows[i : i + batch_size]
+        if not include_elevation:
+            batch = [
+                {k: v for k, v in row.items() if k != "elevation_mark"}
+                for row in batch
+            ]
         resp = session.post(url, headers=SUPABASE_HEADERS, json=batch, timeout=60)
 
         if resp.status_code >= 300:

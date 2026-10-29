@@ -597,11 +597,32 @@ def inject_page_styles() -> None:
         """
         <style>
         .constructor-v2-header {
-            margin-bottom: 1rem;
+            margin-bottom: 0.65rem;
             font-size: 1.65rem;
             font-weight: 700;
             color: #0f172a;
             letter-spacing: -0.02em;
+        }
+        .monthly-commitment-law {
+            border-left: 3px solid #4f46e5;
+            background: #f8fafc;
+            border-radius: 0 8px 8px 0;
+            padding: 0.7rem 0.9rem;
+            margin: 0 0 1rem 0;
+        }
+        .monthly-commitment-law-label {
+            color: #64748b;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            margin-bottom: 0.28rem;
+        }
+        .monthly-commitment-law-text {
+            color: #1f2937;
+            font-size: 0.96rem;
+            font-weight: 600;
+            line-height: 1.45;
         }
         .constructor-v2-scope-module-title {
             font-size: 1.12rem;
@@ -1637,7 +1658,19 @@ def inject_page_styles() -> None:
 
 def render_page_header() -> None:
     st.markdown(f'<h1 class="constructor-v2-header">{PAGE_TITLE}</h1>', unsafe_allow_html=True)
-    st.caption("активная версия v2")
+    st.markdown(
+        """
+        <div class="monthly-commitment-law">
+            <div class="monthly-commitment-law-label">Закон месячного производственного обязательства</div>
+            <div class="monthly-commitment-law-text">
+                Ни одна работа не должна попадать в месячное производственное обязательство,
+                пока не понятны её исполнимость, требуемая производственная мощность,
+                стоимость исполнения и путь к коммерческому признанию.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _empty_table(columns: list[str]) -> pd.DataFrame:

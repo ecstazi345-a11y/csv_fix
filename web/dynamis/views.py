@@ -14,6 +14,7 @@ from services.labor_norm_decisions import (
     save_decision,
 )
 
+from .control_room_state import control_room_context
 from .forms import LaborNormDecisionForm
 
 SOURCE_PAGE_DJANGO = "DJANGO_LABOR_NORM_DECISION"
@@ -21,6 +22,12 @@ SOURCE_PAGE_DJANGO = "DJANGO_LABOR_NORM_DECISION"
 
 def home(request):
     return render(request, "dynamis/home.html")
+
+
+@require_http_methods(["GET"])
+def control_room(request):
+    """Product UI shell. Demo view-state only: no runtime and no writes."""
+    return render(request, "dynamis/control_room.html", control_room_context())
 
 
 def architecture(request):

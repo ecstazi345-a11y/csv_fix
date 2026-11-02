@@ -1,0 +1,289 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DYNAMIS — Digital Workforce Control Room</title>
+  <link rel="stylesheet" href="{% static 'dynamis/control_room.css' %}?v=4">
+</head>
+<body>
+  <div class="cr">
+    <header class="cr-top">
+      <div class="cr-brand">
+        <div class="cr-brand-name">DYNAMIS</div>
+        <div class="cr-brand-tag">Цифровая организация физического исполнения</div>
+      </div>
+      <div class="cr-context">
+        <span>Проект: {{ project_label }}</span>
+        <span>Контур: {{ contour_label }}</span>
+      </div>
+      <nav class="cr-contours" aria-label="Контуры">
+        {% for contour in contours %}
+        <button type="button" class="cr-contour{% if contour.active %} is-active{% endif %}" data-contour="{{ contour.code }}" aria-pressed="{% if contour.active %}true{% else %}false{% endif %}">{{ contour.label }}</button>
+        {% endfor %}
+      </nav>
+      <div class="cr-session">
+        <button type="button" class="cr-reset" id="layout-reset">Сбросить раскладку</button>
+        <span class="cr-pill">Локальный контур</span>
+        <span class="cr-pill">Безопасное соединение</span>
+        <span class="cr-user">{{ operator_name }}</span>
+      </div>
+    </header>
+
+    <div class="cr-body">
+      <aside class="cr-side" aria-label="Разделы">
+        {% for item in nav_items %}
+        {% if item.active %}
+        <a class="cr-nav is-active" href="{% url 'control_room' %}">
+          <span>{{ item.label }}</span>
+          <small>{{ item.hint }}</small>
+        </a>
+        {% else %}
+        <button type="button" class="cr-nav" data-later="{{ item.label }}">
+          <span>{{ item.label }}</span>
+        </button>
+        {% endif %}
+        {% endfor %}
+      </aside>
+
+      <div class="cr-workspace" id="cr-workspace">
+        <div class="cr-columns" id="cr-columns">
+          <section class="cr-panel" id="cr-left" aria-labelledby="dialog-title">
+            <header class="cr-panel-head">
+              <h1 id="dialog-title">Диалог с DYNAMIS</h1>
+              <button type="button" class="cr-fold" data-collapse="left" aria-expanded="true">Свернуть</button>
+            </header>
+            <div class="cr-tabs" data-tabs>
+              <div class="cr-tablist" role="tablist">
+                <button type="button" class="is-active" data-tab="chat" role="tab" aria-selected="true">Чат</button>
+                <button type="button" data-tab="voice" role="tab" aria-selected="false">Голос</button>
+              </div>
+              <div class="cr-tabpanel" data-panel="chat">
+                <p class="cr-kicker">Команда человека</p>
+                <blockquote class="cr-command">{{ command_example }}</blockquote>
+                <p class="cr-kicker">DYNAMIS понимает команду</p>
+                <dl class="cr-facts">
+                  {% for label, value in understood %}
+                  <div>
+                    <dt>{{ label }}</dt>
+                    <dd>{{ value }}</dd>
+                  </div>
+                  {% endfor %}
+                </dl>
+                <button type="button" class="cr-btn cr-btn-primary" data-demo="launch">Запустить Constructor Agent</button>
+                <p class="cr-kicker">История диалога</p>
+                <ul class="cr-history">
+                  {% for line in history %}
+                  <li>{{ line }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+              <div class="cr-tabpanel" data-panel="voice" hidden>
+                <p class="cr-muted">Голосовой ввод на этом шаге только обозначен. Распознавание речи не подключено.</p>
+              </div>
+            </div>
+            <form class="cr-composer" id="command-form">
+              <label class="cr-sr" for="command-input">Команда</label>
+              <input id="command-input" type="text" placeholder="Команда для DYNAMIS" autocomplete="off">
+              <button type="button" class="cr-mic" data-demo="mic" aria-label="Микрофон, пока не подключён">
+                <span aria-hidden="true"></span>
+              </button>
+            </form>
+            <p class="cr-notice" id="cr-notice" hidden></p>
+          </section>
+          <div class="cr-splitter" data-splitter="left" role="separator" aria-orientation="vertical" aria-label="Ширина диалога" tabindex="0"></div>
+
+          <section class="cr-panel cr-workforce" id="cr-center" aria-labelledby="workforce-title">
+            <header class="cr-panel-head">
+              <h1 id="workforce-title">Цифровая организация / Месячное обязательство</h1>
+              <p>Единая работа цифровых сотрудников над проектом</p>
+            </header>
+            <p class="cr-flow-rail" aria-label="Последовательность агентов">
+              {% for agent in agents %}
+              <span class="{% if agent.tone == 'working' %}is-current{% endif %}">{{ agent.name|cut:" Agent" }}</span>{% if not forloop.last %}<span class="cr-arrow" aria-hidden="true">→</span>{% endif %}
+              {% endfor %}
+            </p>
+            <div class="cr-agent-grid">
+              {% for agent in agents %}
+              <article class="cr-agent is-{{ agent.tone }}">
+                <header>
+                  <h2>{{ agent.name }}</h2>
+                  <span class="cr-status is-{{ agent.tone }}">{{ agent.status }}</span>
+                </header>
+                <p>{{ agent.description }}</p>
+              </article>
+              {% endfor %}
+            </div>
+
+            <article class="cr-current">
+              <header>
+                <div>
+                  <p class="cr-kicker">Текущий агент</p>
+                  <h2>Constructor Agent</h2>
+                  <p>Анализирует доступные объёмы и формирует кандидатный состав</p>
+                </div>
+                <span class="cr-status is-working">WORKING</span>
+              </header>
+              <dl class="cr-kpis">
+                {% for value, label in kpis %}
+                <div>
+                  <dt>{{ value }}</dt>
+                  <dd>{{ label }}</dd>
+                </div>
+                {% endfor %}
+              </dl>
+              <ul class="cr-activity">
+                {% for state, label in activity %}
+                <li class="is-{{ state }}">{{ label }}</li>
+                {% endfor %}
+              </ul>
+            </article>
+          </section>
+          <div class="cr-splitter" data-splitter="right" role="separator" aria-orientation="vertical" aria-label="Ширина результата" tabindex="0"></div>
+
+          <section class="cr-panel" id="cr-right" aria-labelledby="result-title">
+            <header class="cr-panel-head">
+              <h1 id="result-title">Результат</h1>
+              <button type="button" class="cr-fold" data-collapse="right" aria-expanded="true">Свернуть</button>
+            </header>
+            <div class="cr-tabs" data-tabs>
+              <div class="cr-tablist" role="tablist">
+                <button type="button" class="is-active" data-tab="candidates" role="tab" aria-selected="true">Кандидатный состав</button>
+                <button type="button" data-tab="clarify" role="tab" aria-selected="false">Требуют уточнения</button>
+                <button type="button" data-tab="excluded" role="tab" aria-selected="false">Исключённые</button>
+              </div>
+              <div class="cr-tabpanel" data-panel="candidates">
+                {% for row in preview_rows %}
+                {% if row.tab == "candidates" %}
+                {% include "dynamis/_preview_row.html" %}
+                {% endif %}
+                {% endfor %}
+              </div>
+              <div class="cr-tabpanel" data-panel="clarify" hidden>
+                {% for row in preview_rows %}
+                {% if row.tab == "clarify" %}
+                {% include "dynamis/_preview_row.html" %}
+                {% endif %}
+                {% endfor %}
+              </div>
+              <div class="cr-tabpanel" data-panel="excluded" hidden>
+                {% for row in preview_rows %}
+                {% if row.tab == "excluded" %}
+                {% include "dynamis/_preview_row.html" %}
+                {% endif %}
+                {% endfor %}
+              </div>
+            </div>
+            <div class="cr-actions">
+              <button type="button" data-demo="decision">Принять в ноябрь</button>
+              <button type="button" data-demo="decision">Изменить объём</button>
+              <button type="button" data-demo="decision">Перенести</button>
+              <button type="button" data-demo="decision">Исключить</button>
+              <button type="button" data-demo="decision">Нужны данные</button>
+            </div>
+            <div class="cr-summary">
+              <p class="cr-kicker">Итог по решению человека</p>
+              <ul>
+                {% for label, value in decision_summary %}
+                <li><span>{{ label }}</span><strong>{{ value }}</strong></li>
+                {% endfor %}
+              </ul>
+            </div>
+            <button type="button" class="cr-btn cr-btn-primary cr-btn-block" data-demo="admission">Передать в Admission Agent</button>
+          </section>
+        </div>
+        <div class="cr-splitter cr-splitter-row" data-splitter="bottom" role="separator" aria-orientation="horizontal" aria-label="Высота таблицы" tabindex="0"></div>
+
+        <section class="cr-bottom" id="detail-panel" aria-label="Детальная рабочая панель">
+          <header class="cr-bottom-bar">
+            <div class="cr-tablist" role="tablist" data-tabs="detail">
+              <button type="button" class="is-active" data-tab="table" role="tab" aria-selected="true">Детальная таблица кандидатов</button>
+              <button type="button" data-tab="audit" role="tab" aria-selected="false">Аудит и трассировка</button>
+            </div>
+            <div class="cr-bottom-tools">
+              <button type="button" id="detail-collapse">Свернуть</button>
+              <button type="button" id="detail-expand">Открыть на весь экран</button>
+            </div>
+          </header>
+          <div class="cr-bottom-body">
+            <div class="cr-detail-panel" data-panel="table">
+              <p class="cr-table-note">Демонстрационный фрагмент. Runtime не подключён, решение человека не записано.</p>
+              <div class="cr-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th></th>
+                      <th>BOQ</th>
+                      <th>Работа / Наименование</th>
+                      <th>Титул</th>
+                      <th>Дисциплина</th>
+                      <th>Система / IWP</th>
+                      <th class="num">Физический остаток</th>
+                      <th class="num">Уже запланировано</th>
+                      <th class="num">Предлагаемый объём</th>
+                      <th>Статус / Решение</th>
+                      <th>Комментарий</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in table_rows %}
+                    <tr>
+                      <td><input type="checkbox" aria-label="Выбрать {{ row.boq }}"></td>
+                      <td class="mono">{{ row.boq }}</td>
+                      <td>{{ row.name }}</td>
+                      <td>{{ row.title }}</td>
+                      <td>{{ row.discipline }}</td>
+                      <td>{{ row.place }}</td>
+                      <td class="num">{{ row.remaining }}</td>
+                      <td class="num">{{ row.planned }}</td>
+                      <td class="num">{{ row.proposed }}</td>
+                      <td>{{ row.status }}</td>
+                      <td>{% if row.comment %}{{ row.comment }}{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="cr-detail-panel" data-panel="audit" hidden>
+              <p class="cr-table-note">Техническая поверхность. Сейчас показан демонстрационный след, не checkpoint runtime.</p>
+              <div class="cr-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Run</th>
+                      <th>Mission</th>
+                      <th>Event</th>
+                      <th>Timestamp</th>
+                      <th>Agent</th>
+                      <th>Artifact</th>
+                      <th>Handoff</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in audit_rows %}
+                    <tr>
+                      <td class="mono">{{ row.run }}</td>
+                      <td class="mono">{{ row.mission }}</td>
+                      <td>{{ row.event }}</td>
+                      <td>{{ row.timestamp }}</td>
+                      <td>{{ row.agent }}</td>
+                      <td class="mono">{{ row.artifact }}</td>
+                      <td>{{ row.handoff }}</td>
+                      <td>{{ row.status }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+  <script src="{% static 'dynamis/control_room.js' %}?v=4"></script>
+</body>
+</html>

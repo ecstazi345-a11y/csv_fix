@@ -233,3 +233,77 @@ class DynamisHumanSurfaceTests(SimpleTestCase):
                 ):
                     offenders.append(f"{path}:{stripped}")
         self.assertEqual(offenders, [])
+
+
+@override_settings(
+    ROOT_URLCONF="config.urls",
+    ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"],
+)
+class ControlRoomShellTests(SimpleTestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+
+    def test_control_room_get_renders_shell(self) -> None:
+        response = self.client.get(reverse("control_room"))
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode("utf-8")
+        for text in (
+            "Диалог с DYNAMIS",
+            "Цифровая организация / Месячное обязательство",
+            "Constructor Agent",
+            "Admission Agent",
+            "Constraint Agent",
+            "Resource Agent",
+            "Economic Agent",
+            "Decision Agent",
+            "Детальная таблица кандидатов",
+            "Аудит и трассировка",
+            "Запустить Constructor Agent",
+            "Передать в Admission Agent",
+        ):
+            self.assertIn(text, body)
+        self.assertNotIn("launch_monthly_plan", body)
+        self.assertEqual(body.count('data-demo="launch"'), 1)
+        self.assertEqual(body.count('data-demo="admission"'), 1)
+
+    def test_control_room_post_is_rejected(self) -> None:
+        response = self.client.post(reverse("control_room"), {})
+        self.assertEqual(response.status_code, 405)
+
+    def test_control_room_view_does_not_touch_runtime(self) -> None:
+        source = Path(__file__).with_name("views.py").read_text(encoding="utf-8")
+        start = source.index("def control_room")
+        end = source.index("\ndef architecture")
+        room_view = source[start:end]
+        room = Path(__file__).with_name("control_room_state.py").read_text(encoding="utf-8")
+        for blob in (room_view, room):
+            self.assertNotIn("launch_monthly_plan_mission", blob)
+            self.assertNotIn("submit_human_review", blob)
+            self.assertNotIn("import supabase", blob.lower())
+            self.assertNotIn("services.supabase", blob.lower())
+        self.assertIn("control_room_context()", room_view)
+
+    def test_control_room_layout_is_resizable_and_local(self) -> None:
+        response = self.client.get(reverse("control_room"))
+        body = response.content.decode("utf-8")
+        for marker in (
+            'data-splitter="left"',
+            'data-splitter="right"',
+            'data-splitter="bottom"',
+            'data-collapse="left"',
+            'data-collapse="right"',
+            "Сбросить раскладку",
+            "Открыть на весь экран",
+        ):
+            self.assertIn(marker, body)
+        script = (
+            Path(__file__).resolve().parent / "static" / "dynamis" / "control_room.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("dynamis.control-room.layout", script)
+        self.assertIn("localStorage", script)
+        self.assertIn("left: 0.24", script)
+        self.assertIn("center: 0.52", script)
+        self.assertIn("right: 0.24", script)
+        self.assertIn("bottom: 0.32", script)
+        self.assertNotIn("sqlite", script.lower())
+        self.assertNotIn("supabase", script.lower())

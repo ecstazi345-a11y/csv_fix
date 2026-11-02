@@ -1,0 +1,13 @@
+<article class="cr-preview">
+  <header>
+    <strong class="mono">{{ row.boq }}</strong>
+    <span>{{ row.status }}</span>
+  </header>
+  <p>{{ row.name }}</p>
+  <p class="cr-muted">{{ row.place }}</p>
+  <dl>
+    <div><dt>Остаток</dt><dd>{{ row.remaining }}</dd></div>
+    <div><dt>Уже в плане</dt><dd>{{ row.planned }}</dd></div>
+    <div><dt>Предложено</dt><dd>{{ row.proposed }}</dd></div>
+  </dl>
+</article>

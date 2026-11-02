@@ -121,10 +121,18 @@
                 <div>
                   <p class="cr-kicker">Текущий агент</p>
                   <h2>Constructor Agent</h2>
-                  <p>Анализирует доступные объёмы и формирует кандидатный состав</p>
+                  <p>{{ constructor_summary }}</p>
                 </div>
-                <span class="cr-status is-working">WORKING</span>
+                <span class="cr-status is-{{ constructor_tone }}">{{ constructor_status }}</span>
               </header>
+              <dl class="cr-facts">
+                {% for label, value in constructor_facts %}
+                <div>
+                  <dt>{{ label }}</dt>
+                  <dd>{{ value }}</dd>
+                </div>
+                {% endfor %}
+              </dl>
               <dl class="cr-kpis">
                 {% for value, label in kpis %}
                 <div>
@@ -154,11 +162,13 @@
                 <button type="button" data-tab="excluded" role="tab" aria-selected="false">Исключённые</button>
               </div>
               <div class="cr-tabpanel" data-panel="candidates">
+                {% if candidates_note %}<p class="cr-table-note">{{ candidates_note }}</p>{% endif %}
                 {% for row in preview_rows %}
                 {% if row.tab == "candidates" %}
                 {% include "dynamis/_preview_row.html" %}
                 {% endif %}
                 {% endfor %}
+                {% if candidates_empty_note %}<p class="cr-table-note">{{ candidates_empty_note }}</p>{% endif %}
               </div>
               <div class="cr-tabpanel" data-panel="clarify" hidden>
                 {% for row in preview_rows %}
@@ -166,13 +176,16 @@
                 {% include "dynamis/_preview_row.html" %}
                 {% endif %}
                 {% endfor %}
+                {% if clarify_empty_note %}<p class="cr-table-note">{{ clarify_empty_note }}</p>{% endif %}
               </div>
               <div class="cr-tabpanel" data-panel="excluded" hidden>
+                {% if excluded_note %}<p class="cr-table-note">{{ excluded_note }}</p>{% endif %}
                 {% for row in preview_rows %}
                 {% if row.tab == "excluded" %}
                 {% include "dynamis/_preview_row.html" %}
                 {% endif %}
                 {% endfor %}
+                {% if excluded_empty_note %}<p class="cr-table-note">{{ excluded_empty_note }}</p>{% endif %}
               </div>
             </div>
             <div class="cr-actions">
@@ -208,7 +221,7 @@
           </header>
           <div class="cr-bottom-body">
             <div class="cr-detail-panel" data-panel="table">
-              <p class="cr-table-note">Демонстрационный фрагмент. Runtime не подключён, решение человека не записано.</p>
+              <p class="cr-table-note">{{ table_note }}</p>
               <div class="cr-table-wrap">
                 <table>
                   <thead>
@@ -247,7 +260,7 @@
               </div>
             </div>
             <div class="cr-detail-panel" data-panel="audit" hidden>
-              <p class="cr-table-note">Техническая поверхность. Сейчас показан демонстрационный след, не checkpoint runtime.</p>
+              <p class="cr-table-note">{{ audit_note }}</p>
               <div class="cr-table-wrap">
                 <table>
                   <thead>

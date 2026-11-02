@@ -26,8 +26,48 @@ def home(request):
 
 @require_http_methods(["GET"])
 def control_room(request):
-    """Product UI shell. Demo view-state only: no runtime and no writes."""
-    return render(request, "dynamis/control_room.html", control_room_context())
+    """Control Room shell. Constructor state is read through the official query port."""
+    context = control_room_context()
+    try:
+        from .constructor_read_model import load_constructor_control_room
+
+        context.update(load_constructor_control_room(agents=context["agents"]))
+    except Exception:
+        notice = "Constructor runtime недоступен"
+        context.update(
+            {
+                "runtime_notice": notice,
+                "constructor_status": "НЕДОСТУПЕН",
+                "constructor_tone": "waiting",
+                "constructor_summary": notice,
+                "constructor_facts": (("Состояние Constructor", notice),),
+                "kpis": (),
+                "activity": (("pending", notice),),
+                "preview_rows": (),
+                "table_rows": (),
+                "audit_rows": (),
+                "decision_summary": (("Состояние Constructor", notice),),
+                "table_note": notice,
+                "audit_note": notice,
+                "candidates_note": "",
+                "excluded_note": "",
+                "candidates_empty_note": notice,
+                "clarify_empty_note": notice,
+                "excluded_empty_note": notice,
+                "agents": [
+                    {
+                        **agent,
+                        "status": "НЕДОСТУПЕН",
+                        "tone": "waiting",
+                        "description": notice,
+                    }
+                    if agent.get("code") == "constructor"
+                    else agent
+                    for agent in context["agents"]
+                ],
+            }
+        )
+    return render(request, "dynamis/control_room.html", context)
 
 
 def architecture(request):

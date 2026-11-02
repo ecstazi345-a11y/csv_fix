@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Mapping, MutableMapping, Optional
 
-from agents.human_surface.command_interpretation import interpret_command
+from agents.human_surface.command_understanding import understand_command
 from agents.human_surface.work_context import WorkContextCatalog, load_work_context_catalog
 
 from .human_command import HUMAN_COMMAND_SESSION_KEY, HumanCommand
@@ -28,12 +28,16 @@ def remember_command_interpretation(
 ) -> None:
     if catalog is None:
         catalog = load_work_context_catalog()
-    result = interpret_command(
+    understood = understand_command(
         command_id=command.command_id,
         raw_text=command.raw_text,
         catalog=catalog,
     )
-    session[INTERPRETATION_SESSION_KEY] = result.as_dict()
+    payload = understood.interpretation.as_dict()
+    payload["interpretation_channel"] = understood.channel
+    if understood.extraction is not None:
+        payload["validated_extraction"] = understood.extraction.as_dict()
+    session[INTERPRETATION_SESSION_KEY] = payload
     if getattr(session, "modified", None) is not None:
         session.modified = True
 
@@ -54,6 +58,7 @@ def command_interpretation_template_context(session: Mapping[str, object]) -> di
         "interpretation_can_confirm": stored.get("processing_state") == "NEEDS_CONFIRMATION",
         "interpretation_note": _note(stored),
         "interpretation_law": "Constructor ещё не запущен. Черновик не заменяет миссию текущего запуска.",
+        "interpretation_channel": str(stored.get("interpretation_channel") or ""),
     }
 
 
@@ -66,6 +71,7 @@ def _empty_context() -> dict[str, object]:
         "interpretation_can_confirm": False,
         "interpretation_note": "",
         "interpretation_law": "",
+        "interpretation_channel": "",
     }
 
 

@@ -1,6 +1,7 @@
 """Focused Django Human Surface tests — mock LND service, no product writes."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1277,3 +1278,574 @@ class CommandConfirmationTests(SimpleTestCase):
         )
         self.assertIn("grid-template-rows: minmax(0, 68fr) 12px minmax(0, 32fr);", css)
         self.assertIn('type="button" class="cr-btn cr-btn-primary" data-demo="launch"', body)
+
+
+_MESSY_COMMANDS = (
+    "бхк нояб 1 очер 16160 13 автоматик сформируй кандидатов",
+    "сформируй кондидатный соства по бхк на ноябр первая очередь автомаитка 16160-13",
+    "сделай мне на ноябрь что можно взять по автоматике на 13 титуле по бхк первой очереди",
+)
+
+
+def _accepted_extraction():
+    from agents.human_surface.command_interpreter_provider import CommandExtraction
+
+    return CommandExtraction(
+        intent="FORM_CANDIDATE_PACKAGE",
+        target_agent_hint="constructor",
+        project_hint="БХК",
+        period_hint="ноябрь 2026",
+        queue_hint="1",
+        title_hint="16160-13",
+        discipline_hint="автоматика",
+    )
+
+
+def _status_error(cls, status: int, code: str, param: str = "text", message: str = "failed"):
+    import httpx
+
+    request = httpx.Request("POST", "https://api.openai.com/v1/responses")
+    response = httpx.Response(
+        status,
+        request=request,
+        headers={"x-request-id": "req_diag_1"},
+        json={"error": {"message": message, "code": code, "param": param}},
+    )
+    return cls(message, response=response, body={"message": message, "code": code, "param": param})
+
+
+class _HintProvider:
+    def __init__(self, extraction=None, fail: bool = False) -> None:
+        from agents.human_surface.command_interpreter_provider import (
+            InterpreterUsage,
+            ProviderExtractionResult,
+        )
+
+        self.calls: list[str] = []
+        self.extraction = _accepted_extraction() if extraction is None else extraction
+        self.fail = fail
+        self._usage = InterpreterUsage("openai", "gpt-4.1-mini", 12, 8, 20, 5, not fail)
+        self._result_type = ProviderExtractionResult
+
+    def extract(self, raw_text: str):
+        self.calls.append(raw_text)
+        extraction = None if self.fail else self.extraction
+        return self._result_type(extraction=extraction, usage=self._usage)
+
+
+@override_settings(
+    ROOT_URLCONF="config.urls",
+    ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"],
+)
+class CommandInterpreterProviderTests(SimpleTestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+
+    def test_clear_command_does_not_call_provider(self) -> None:
+        from agents.human_surface.command_understanding import understand_command
+
+        provider = _HintProvider()
+        understood = understand_command(
+            command_id="clear",
+            raw_text=_ACCEPTED_COMMAND,
+            catalog=_scope_catalog(),
+            provider=provider,
+        )
+        self.assertEqual(provider.calls, [])
+        self.assertEqual(understood.channel, "deterministic")
+        self.assertIsNone(understood.extraction)
+        self.assertEqual(understood.interpretation.resolved_scope["project_code"], "PRJ_001_БХК")
+        self.assertEqual(understood.interpretation.resolved_scope["facility"], "16160-13")
+
+    def test_provider_hints_resolve_to_one_canonical_scope(self) -> None:
+        from agents.human_surface.command_understanding import understand_command
+
+        for text in (_ACCEPTED_COMMAND, *_MESSY_COMMANDS):
+            provider = _HintProvider()
+            understood = understand_command(
+                command_id="hint",
+                raw_text=text,
+                catalog=_scope_catalog(),
+                provider=provider,
+            )
+            scope = understood.interpretation.resolved_scope
+            if text == _ACCEPTED_COMMAND:
+                self.assertEqual(provider.calls, [])
+                self.assertEqual(understood.channel, "deterministic")
+            else:
+                self.assertEqual(provider.calls, [text])
+                self.assertEqual(understood.channel, "openai")
+            self.assertEqual(understood.interpretation.processing_state, "NEEDS_CONFIRMATION")
+            self.assertEqual(scope["project_code"], "PRJ_001_БХК")
+            self.assertEqual(scope["month_key"], "ноябрь-2026")
+            self.assertEqual(scope["queue"], "1")
+            self.assertEqual(scope["facility"], "16160-13")
+            self.assertEqual(scope["discipline"], "Автоматизация")
+            self.assertNotIn("PRJ_001_БХК", provider.extraction.as_dict().values())
+
+    def test_schema_rejects_prose_codes_and_extra_fields(self) -> None:
+        from agents.human_surface.command_interpreter_provider import (
+            ExtractionRejected,
+            validate_extraction,
+        )
+
+        valid = _accepted_extraction().as_dict()
+        self.assertEqual(validate_extraction(valid).project_hint, "БХК")
+        with self.assertRaises(ExtractionRejected):
+            validate_extraction("Проект БХК, титул 16160-13")
+        coded = dict(valid)
+        coded["project_hint"] = "PRJ_001_БХК"
+        with self.assertRaises(ExtractionRejected):
+            validate_extraction(coded)
+        extra = dict(valid)
+        extra["project_code"] = "PRJ_001_БХК"
+        with self.assertRaises(ExtractionRejected):
+            validate_extraction(extra)
+
+    def test_provider_failure_keeps_deterministic_reading(self) -> None:
+        from agents.human_surface.command_understanding import understand_command
+
+        understood = understand_command(
+            command_id="down",
+            raw_text=_MESSY_COMMANDS[0],
+            catalog=_scope_catalog(),
+            provider=_HintProvider(fail=True),
+        )
+        self.assertEqual(understood.channel, "unavailable")
+        self.assertIsNone(understood.extraction)
+        self.assertNotEqual(understood.interpretation.processing_state, "NEEDS_CONFIRMATION")
+        self.assertFalse(understood.interpretation.mission_created)
+
+    def test_request_contains_only_the_command_and_a_short_schema(self) -> None:
+        from agents.human_surface.openai_command_interpreter import (
+            MAX_OUTPUT_TOKENS,
+            MODEL,
+            TEMPERATURE,
+            request_arguments,
+        )
+
+        payload = request_arguments(_MESSY_COMMANDS[0])
+        self.assertEqual(
+            set(payload),
+            {
+                "model",
+                "instructions",
+                "input",
+                "temperature",
+                "max_output_tokens",
+                "store",
+                "text",
+            },
+        )
+        self.assertEqual(payload["model"], MODEL)
+        self.assertEqual(payload["temperature"], TEMPERATURE)
+        self.assertEqual(payload["max_output_tokens"], MAX_OUTPUT_TOKENS)
+        self.assertLessEqual(MAX_OUTPUT_TOKENS, 160)
+        self.assertEqual(payload["input"], _MESSY_COMMANDS[0])
+        self.assertEqual(payload["model"], "gpt-4.1-mini")
+        self.assertEqual(payload["temperature"], 0)
+        self.assertEqual(payload["max_output_tokens"], 160)
+        self.assertIs(payload["store"], False)
+        self.assertNotIn("api_key", payload)
+        self.assertNotIn("tools", payload)
+        schema = payload["text"]["format"]
+        self.assertEqual(schema["type"], "json_schema")
+        self.assertIs(schema["strict"], True)
+        self.assertEqual(schema["name"], "command_extraction")
+        self.assertIs(schema["schema"]["additionalProperties"], False)
+        self.assertEqual(set(schema["schema"]["required"]), set(schema["schema"]["properties"]))
+        blob = str(payload).casefold()
+        self.assertNotIn("candidate package", blob)
+        self.assertNotIn("boq", blob)
+        self.assertNotIn("prj_", blob)
+        self.assertNotIn("observability", blob)
+        source = (
+            Path(__file__).resolve().parents[2]
+            / "agents"
+            / "human_surface"
+            / "openai_command_interpreter.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("tools=", source)
+        self.assertNotIn("supabase", source.lower())
+        self.assertNotIn("create_run", source)
+        self.assertNotIn("launch_monthly_plan_mission", source)
+
+    def test_production_client_disables_sdk_retries(self) -> None:
+        import json
+        from unittest.mock import MagicMock
+
+        from agents.human_surface.openai_command_interpreter import (
+            MAX_SDK_RETRIES,
+            MODEL,
+            OpenAICommandInterpreter,
+        )
+
+        response = MagicMock()
+        response.output_text = json.dumps(_accepted_extraction().as_dict(), ensure_ascii=False)
+        response.usage.input_tokens = 3
+        response.usage.output_tokens = 4
+        response.usage.total_tokens = 7
+        with patch("openai.OpenAI") as client_cls:
+            client_cls.return_value.responses.create.return_value = response
+            result = OpenAICommandInterpreter().extract(_MESSY_COMMANDS[0])
+        client_cls.assert_called_once_with(max_retries=0)
+        self.assertEqual(MAX_SDK_RETRIES, 0)
+        client_cls.return_value.responses.create.assert_called_once()
+        self.assertEqual(
+            client_cls.return_value.responses.create.call_args.kwargs["model"],
+            MODEL,
+        )
+        self.assertTrue(result.usage.success)
+        self.assertIsNone(result.failure)
+        self.assertEqual(result.extraction.project_hint, "БХК")
+
+    def test_provider_failures_are_classified_once_and_redacted(self) -> None:
+        import httpx
+        from openai import (
+            APIConnectionError,
+            APITimeoutError,
+            AuthenticationError,
+            BadRequestError,
+            InternalServerError,
+            RateLimitError,
+        )
+
+        from agents.human_surface.openai_command_interpreter import OpenAICommandInterpreter
+
+        cases = (
+            (
+                _status_error(
+                    AuthenticationError,
+                    401,
+                    "invalid_api_key",
+                    message="rejected sk-testSecretValue123 Bearer abcdef",
+                ),
+                "authentication",
+                401,
+            ),
+            (_status_error(RateLimitError, 429, "insufficient_quota"), "rate_or_billing", 429),
+            (_status_error(BadRequestError, 400, "invalid_request_error", param="text.format"), "configuration", 400),
+            (_status_error(InternalServerError, 500, "server_error"), "provider_server", 500),
+            (
+                APIConnectionError(
+                    message="Connection error.",
+                    request=httpx.Request("POST", "https://api.openai.com/v1/responses"),
+                ),
+                "network",
+                None,
+            ),
+            (
+                APITimeoutError(httpx.Request("POST", "https://api.openai.com/v1/responses")),
+                "network",
+                None,
+            ),
+        )
+        for exc, category, status in cases:
+            with patch("openai.OpenAI") as client_cls:
+                client_cls.return_value.responses.create.side_effect = exc
+                result = OpenAICommandInterpreter().extract(_MESSY_COMMANDS[0])
+            client_cls.return_value.responses.create.assert_called_once()
+            self.assertIsNone(result.extraction)
+            self.assertFalse(result.usage.success)
+            self.assertEqual(result.failure.category, category)
+            self.assertEqual(result.failure.http_status, status)
+            self.assertEqual(result.failure.error_type, type(exc).__name__)
+            self.assertNotIn("sk-", result.failure.safe_error_message)
+            self.assertNotIn("Bearer", result.failure.safe_error_message)
+
+    def test_invalid_structured_response_fails_closed_without_another_call(self) -> None:
+        from unittest.mock import MagicMock
+
+        from agents.human_surface.openai_command_interpreter import OpenAICommandInterpreter
+
+        response = MagicMock()
+        response.output_text = "это не JSON и ключ sk-liveSecretValue123"
+        response.usage.input_tokens = 9
+        response.usage.output_tokens = 2
+        response.usage.total_tokens = 11
+        with patch("openai.OpenAI") as client_cls:
+            client_cls.return_value.responses.create.return_value = response
+            result = OpenAICommandInterpreter().extract(_MESSY_COMMANDS[0])
+        client_cls.return_value.responses.create.assert_called_once()
+        self.assertEqual(result.failure.category, "response_validation")
+        self.assertEqual(result.usage.total_tokens, 11)
+        self.assertNotIn("sk-", result.failure.safe_error_message)
+        self.assertIsNone(result.extraction)
+
+    def test_messy_command_confirms_without_a_second_provider_call_or_run(self) -> None:
+        from dynamis.constructor_read_model import (
+            constructor_runtime_store_path,
+            load_constructor_control_room,
+        )
+
+        provider = _HintProvider()
+        store = constructor_runtime_store_path()
+        self.assertIsNotNone(store)
+        assert store is not None
+        before_files = _file_fingerprint(store.parent)
+        before = load_constructor_control_room()["read_model_meta"]["run_id"]
+        catalog = _scope_catalog()
+        with patch(
+            "dynamis.command_interpretation.load_work_context_catalog",
+            return_value=catalog,
+        ), patch(
+            "dynamis.command_confirmation.load_work_context_catalog",
+            return_value=catalog,
+        ), patch(
+            "agents.human_surface.openai_command_interpreter.build_openai_provider",
+            return_value=provider,
+        ):
+            preview = self.client.post(
+                reverse("control_room"),
+                {"raw_text": _MESSY_COMMANDS[0]},
+                follow=True,
+            )
+            confirmed = self.client.post(
+                reverse("control_room"),
+                {"action": "confirm"},
+                follow=True,
+            )
+        body = confirmed.content.decode("utf-8")
+        self.assertEqual(provider.calls, [_MESSY_COMMANDS[0]])
+        self.assertIn("Интерпретация: OpenAI + проверка DYNAMIS", preview.content.decode("utf-8"))
+        self.assertIn("Интерпретация: OpenAI + проверка DYNAMIS", body)
+        self.assertIn("Поручение подтверждено", body)
+        self.assertIn("Constructor ещё не запущен", body)
+        self.assertIn("PRJ_001_БХК / БХК", body)
+        self.assertEqual(
+            self.client.session["dynamis_command_confirmation"]["confirmation_state"],
+            "CONFIRMED",
+        )
+        self.assertFalse(self.client.session["dynamis_command_confirmation"]["mission_created"])
+        self.assertFalse(
+            self.client.session["dynamis_command_confirmation"]["constructor_run_created"]
+        )
+        self.assertEqual(load_constructor_control_room()["read_model_meta"]["run_id"], before)
+        self.assertEqual(before, _ACCEPTED_RUN_ID)
+        self.assertEqual(before_files, _file_fingerprint(store.parent))
+        self.assertIn('data-splitter="left"', body)
+        self.assertIn('data-splitter="right"', body)
+        self.assertIn('data-splitter="bottom"', body)
+
+
+_YANDEX_BASE_URL = "https://ai.api.cloud.yandex.net/v1"
+_YANDEX_MODEL_URI = "gpt://b1g8bjuch0rbhn2rkpqg/yandexgpt/latest"
+_YANDEX_FOLDER_ID = "b1g8bjuch0rbhn2rkpqg"
+_YANDEX_FAKE_KEY = "AQVNunitkeyvalue0001"
+
+
+def _yandex_env() -> dict[str, str]:
+    return {
+        "YANDEX_API_KEY": _YANDEX_FAKE_KEY,
+        "YANDEX_FOLDER_ID": _YANDEX_FOLDER_ID,
+        "YANDEX_BASE_URL": _YANDEX_BASE_URL,
+        "YANDEX_MODEL_URI": _YANDEX_MODEL_URI,
+    }
+
+
+def _yandex_completion(content: str):
+    from unittest.mock import MagicMock
+
+    response = MagicMock()
+    response.choices[0].message.content = content
+    response.usage.prompt_tokens = 11
+    response.usage.completion_tokens = 7
+    response.usage.total_tokens = 18
+    response.id = "chatcmpl_yandex_1"
+    return response
+
+
+@override_settings(
+    ROOT_URLCONF="config.urls",
+    ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"],
+)
+class YandexCommandInterpreterTests(SimpleTestCase):
+    def test_yandex_provider_is_selected_without_openai_fallback(self) -> None:
+        from agents.human_surface.command_understanding import select_command_provider
+        from agents.human_surface.yandex_command_interpreter import YandexCommandInterpreter
+
+        with patch.dict(os.environ, _yandex_env(), clear=False), patch(
+            "agents.human_surface.openai_command_interpreter.build_openai_provider"
+        ) as openai_builder:
+            selected = select_command_provider("yandex")
+        openai_builder.assert_not_called()
+        self.assertIsInstance(selected, YandexCommandInterpreter)
+
+    def test_missing_key_fails_closed_without_a_request_or_resolver(self) -> None:
+        from agents.human_surface.command_understanding import select_command_provider
+        from agents.human_surface.yandex_command_interpreter import interpret_with_yandex
+
+        blocked = {**_yandex_env(), "YANDEX_API_KEY": ""}
+        with patch.dict(os.environ, blocked, clear=False), patch("openai.OpenAI") as client_cls, patch(
+            "agents.human_surface.yandex_command_interpreter.resolve_extraction"
+        ) as resolver, patch(
+            "agents.human_surface.openai_command_interpreter.build_openai_provider"
+        ) as openai_builder:
+            selected = select_command_provider("yandex")
+            attempt = interpret_with_yandex(
+                command_id="cmd-yandex",
+                raw_text="бхк ноябрь",
+                catalog=_scope_catalog(),
+            )
+        self.assertIsNone(selected)
+        client_cls.assert_not_called()
+        resolver.assert_not_called()
+        openai_builder.assert_not_called()
+        self.assertIsNone(attempt.result.extraction)
+        self.assertEqual(attempt.result.usage.provider_call_count, 0)
+        self.assertEqual(attempt.result.usage.retry_count, 0)
+        self.assertFalse(attempt.result.usage.schema_validation_pass)
+        self.assertFalse(attempt.deterministic_resolution_pass)
+        self.assertFalse(attempt.mission_created)
+        self.assertFalse(attempt.constructor_run_created)
+
+    def test_client_uses_configured_endpoint_once_without_retries_or_tools(self) -> None:
+        import json
+
+        from agents.human_surface.yandex_command_interpreter import (
+            MAX_SDK_RETRIES,
+            YandexCommandInterpreter,
+            yandex_configuration,
+            yandex_key_present,
+        )
+
+        self.assertTrue(yandex_key_present())
+        public = yandex_configuration()
+        self.assertEqual(public["base_url"], _YANDEX_BASE_URL)
+        self.assertEqual(public["model"], _YANDEX_MODEL_URI)
+        self.assertEqual(public["folder_id"], _YANDEX_FOLDER_ID)
+        self.assertNotIn("api_key", public)
+        self.assertEqual(MAX_SDK_RETRIES, 0)
+        payload = json.dumps(_accepted_extraction().as_dict(), ensure_ascii=False)
+        with patch.dict(os.environ, _yandex_env(), clear=False), patch("openai.OpenAI") as client_cls:
+            client_cls.return_value.chat.completions.create.return_value = _yandex_completion(payload)
+            result = YandexCommandInterpreter().extract("бхк ноябрь")
+        client_cls.assert_called_once()
+        client_cls.return_value.chat.completions.create.assert_called_once()
+        constructor = client_cls.call_args.kwargs
+        request = client_cls.return_value.chat.completions.create.call_args.kwargs
+        self.assertEqual(constructor["base_url"], _YANDEX_BASE_URL)
+        self.assertEqual(constructor["project"], _YANDEX_FOLDER_ID)
+        self.assertEqual(constructor["max_retries"], 0)
+        self.assertTrue(constructor["api_key"] == _YANDEX_FAKE_KEY)
+        self.assertEqual(request["model"], _YANDEX_MODEL_URI)
+        self.assertEqual(request["temperature"], 0)
+        self.assertEqual(request["max_tokens"], 160)
+        self.assertEqual(request["response_format"], {"type": "json_object"})
+        self.assertNotIn("tools", request)
+        self.assertNotIn("api_key", request)
+        self.assertNotIn(_YANDEX_FAKE_KEY, json.dumps(request, ensure_ascii=False))
+        self.assertTrue(result.usage.schema_validation_pass)
+        self.assertEqual(result.usage.provider, "yandex")
+        self.assertEqual(result.usage.provider_call_count, 1)
+        self.assertEqual(result.usage.retry_count, 0)
+        self.assertEqual(result.usage.input_tokens, 11)
+        self.assertEqual(result.usage.output_tokens, 7)
+        self.assertEqual(result.usage.total_tokens, 18)
+        self.assertEqual(result.extraction.project_hint, "БХК")
+
+    def test_valid_extraction_reaches_the_existing_resolver_once(self) -> None:
+        import json
+
+        from agents.human_surface.yandex_command_interpreter import interpret_with_yandex
+
+        payload = json.dumps(_accepted_extraction().as_dict(), ensure_ascii=False)
+        with patch.dict(os.environ, _yandex_env(), clear=False), patch("openai.OpenAI") as client_cls, patch(
+            "agents.human_surface.openai_command_interpreter.build_openai_provider"
+        ) as openai_builder:
+            client_cls.return_value.chat.completions.create.return_value = _yandex_completion(payload)
+            attempt = interpret_with_yandex(
+                command_id="cmd-yandex",
+                raw_text="бхк нояб 1 очер 16160 13 автоматик",
+                catalog=_scope_catalog(),
+            )
+        client_cls.return_value.chat.completions.create.assert_called_once()
+        openai_builder.assert_not_called()
+        self.assertTrue(attempt.deterministic_resolution_pass)
+        self.assertEqual(attempt.interpretation.resolved_scope["project_code"], "PRJ_001_БХК")
+        self.assertEqual(attempt.interpretation.resolved_scope["month_key"], "ноябрь-2026")
+        self.assertEqual(attempt.interpretation.resolved_scope["queue"], "1")
+        self.assertEqual(attempt.interpretation.resolved_scope["facility"], "16160-13")
+        self.assertEqual(attempt.interpretation.resolved_scope["discipline"], "Автоматизация")
+        self.assertFalse(attempt.interpretation.mission_created)
+        self.assertFalse(attempt.mission_created)
+        self.assertFalse(attempt.constructor_run_created)
+        self.assertEqual(attempt.result.usage.provider_call_count, 1)
+        self.assertEqual(attempt.result.usage.retry_count, 0)
+
+    def test_malformed_response_fails_closed_before_the_resolver(self) -> None:
+        from agents.human_surface.yandex_command_interpreter import interpret_with_yandex
+
+        with patch.dict(os.environ, _yandex_env(), clear=False), patch("openai.OpenAI") as client_cls, patch(
+            "agents.human_surface.yandex_command_interpreter.resolve_extraction"
+        ) as resolver:
+            client_cls.return_value.chat.completions.create.return_value = _yandex_completion(
+                "не json, ключ AQVNunitkeyvalue0001"
+            )
+            attempt = interpret_with_yandex(
+                command_id="cmd-yandex",
+                raw_text="бхк",
+                catalog=_scope_catalog(),
+            )
+        client_cls.return_value.chat.completions.create.assert_called_once()
+        resolver.assert_not_called()
+        self.assertIsNone(attempt.result.extraction)
+        self.assertEqual(attempt.result.failure.category, "response_validation")
+        self.assertFalse(attempt.result.usage.schema_validation_pass)
+        self.assertFalse(attempt.deterministic_resolution_pass)
+        self.assertFalse(attempt.mission_created)
+        self.assertFalse(attempt.constructor_run_created)
+        self.assertNotIn(_YANDEX_FAKE_KEY, attempt.result.failure.safe_error_message)
+        self.assertNotIn("AQVN", attempt.result.failure.safe_error_message)
+
+    def test_provider_error_does_not_resolve_or_create_a_mission(self) -> None:
+        from openai import AuthenticationError
+
+        from agents.human_surface.yandex_command_interpreter import interpret_with_yandex
+
+        secret_message = "rejected key AQVNunitkeyvalue0001 and sk-liveSecretValue123"
+        with patch.dict(os.environ, _yandex_env(), clear=False), patch("openai.OpenAI") as client_cls, patch(
+            "agents.human_surface.yandex_command_interpreter.resolve_extraction"
+        ) as resolver, self.assertLogs("dynamis.command_interpreter", level="INFO") as captured:
+            client_cls.return_value.chat.completions.create.side_effect = _status_error(
+                AuthenticationError,
+                401,
+                "invalid_api_key",
+                message=secret_message,
+            )
+            attempt = interpret_with_yandex(
+                command_id="cmd-yandex",
+                raw_text="бхк",
+                catalog=_scope_catalog(),
+            )
+        client_cls.return_value.chat.completions.create.assert_called_once()
+        resolver.assert_not_called()
+        self.assertEqual(attempt.result.failure.category, "authentication")
+        self.assertEqual(attempt.result.failure.http_status, 401)
+        self.assertEqual(attempt.result.failure.error_code, "invalid_api_key")
+        self.assertEqual(attempt.result.usage.provider, "yandex")
+        self.assertEqual(attempt.result.usage.provider_call_count, 1)
+        self.assertEqual(attempt.result.usage.retry_count, 0)
+        self.assertFalse(attempt.result.usage.success)
+        self.assertFalse(attempt.result.usage.schema_validation_pass)
+        self.assertFalse(attempt.deterministic_resolution_pass)
+        self.assertIsNone(attempt.interpretation)
+        self.assertFalse(attempt.mission_created)
+        self.assertFalse(attempt.constructor_run_created)
+        self.assertNotIn(_YANDEX_FAKE_KEY, attempt.result.failure.safe_error_message)
+        self.assertNotIn("sk-", attempt.result.failure.safe_error_message)
+        logged = "\n".join(captured.output)
+        self.assertNotIn(_YANDEX_FAKE_KEY, logged)
+        self.assertNotIn("sk-liveSecretValue123", logged)
+
+    def test_adapter_has_no_runtime_or_provider_fallback(self) -> None:
+        source = Path(__file__).resolve().parents[2].joinpath(
+            "agents", "human_surface", "yandex_command_interpreter.py"
+        ).read_text(encoding="utf-8").casefold()
+        self.assertEqual(source.count("chat.completions.create"), 1)
+        self.assertNotIn("responses.create", source)
+        self.assertNotIn("build_openai_provider", source)
+        self.assertNotIn("launch_monthly_plan", source)
+        self.assertNotIn("supabase", source)
+        self.assertNotIn("create_run", source)
+        self.assertNotIn("append_event", source)

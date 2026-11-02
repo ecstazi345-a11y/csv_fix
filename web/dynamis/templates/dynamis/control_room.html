@@ -65,6 +65,9 @@
                 {% if command_received %}
                 <p class="cr-kicker">Статус команды</p>
                 <p class="cr-command-status">{{ command_status }}</p>
+                {% if interpretation_channel == "openai" %}<p class="cr-muted">Интерпретация: OpenAI + проверка DYNAMIS</p>
+                {% elif interpretation_channel == "deterministic" %}<p class="cr-muted">Интерпретация: deterministic</p>
+                {% elif interpretation_channel == "unavailable" %}<p class="cr-muted">Интеллектуальная интерпретация недоступна.</p>{% endif %}
                 {% if interpretation_headline %}<p class="cr-kicker">{{ interpretation_headline }}</p>{% endif %}
                 {% if interpretation_facts %}
                 <dl class="cr-facts">

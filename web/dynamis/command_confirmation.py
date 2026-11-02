@@ -17,6 +17,11 @@ from agents.human_surface.command_interpretation import (
     STATE_NEEDS_CONFIRMATION,
     interpret_command,
 )
+from agents.human_surface.command_interpreter_provider import (
+    ExtractionRejected,
+    resolve_extraction,
+    validate_extraction,
+)
 from agents.human_surface.work_context import WorkContextCatalog, load_work_context_catalog
 
 from .command_interpretation import INTERPRETATION_SESSION_KEY
@@ -55,7 +60,9 @@ def accept_command_confirmation(
         catalog=catalog,
     )
     if not _stored_agrees(stored, fresh, command):
-        return _rejected()
+        fresh = _fresh_from_extraction(stored, command.command_id, catalog)
+        if fresh is None or not _stored_agrees(stored, fresh, command):
+            return _rejected()
     try:
         confirmation = confirm_typed_draft(
             fresh,
@@ -161,6 +168,15 @@ def _stored_agrees(stored: Mapping[str, object], fresh: object, command: HumanCo
     if _texts(stored.get("ambiguities")) != fresh.ambiguities:
         return False
     return same_scope(stored.get("resolved_scope"), fresh.resolved_scope)
+
+
+def _fresh_from_extraction(stored: Mapping[str, object], command_id: str, catalog: WorkContextCatalog):
+    """Replay stored hints through the resolver. This does not call a provider."""
+    try:
+        extraction = validate_extraction(stored.get("validated_extraction"))
+    except ExtractionRejected:
+        return None
+    return resolve_extraction(extraction, catalog, command_id=command_id)
 
 
 def _texts(value: object) -> Optional[tuple[str, ...]]:

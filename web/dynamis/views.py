@@ -32,13 +32,18 @@ def control_room(request):
         from .human_command import accept_human_command
 
         receipt = accept_human_command(request.session, request.POST.get("raw_text", ""))
-        if receipt.accepted:
+        if receipt.accepted and receipt.command is not None:
+            from .command_interpretation import remember_command_interpretation
+
+            remember_command_interpretation(request.session, receipt.command)
             return redirect("control_room")
         command_notice = receipt.notice
     context = control_room_context()
     from .human_command import human_command_template_context
+    from .command_interpretation import command_interpretation_template_context
 
     context.update(human_command_template_context(request.session))
+    context.update(command_interpretation_template_context(request.session))
     context["command_notice"] = command_notice
     try:
         from .constructor_read_model import load_constructor_control_room

@@ -63,9 +63,24 @@
                 <p class="cr-kicker">Команда человека</p>
                 <blockquote class="cr-command">{% if command_received %}{{ command_text }}{% else %}{{ command_example }}{% endif %}</blockquote>
                 {% if command_received %}
-                <p class="cr-kicker">Статус</p>
+                <p class="cr-kicker">Статус команды</p>
                 <p class="cr-command-status">{{ command_status }}</p>
-                <p class="cr-muted">Constructor не запущен. Команда ещё не стала миссией.</p>
+                {% if interpretation_headline %}<p class="cr-kicker">{{ interpretation_headline }}</p>{% endif %}
+                {% if interpretation_facts %}
+                <dl class="cr-facts">
+                  {% for label, value in interpretation_facts %}
+                  <div>
+                    <dt>{{ label }}</dt>
+                    <dd>{{ value }}</dd>
+                  </div>
+                  {% endfor %}
+                </dl>
+                {% endif %}
+                {% if interpretation_note %}<p class="cr-muted">{{ interpretation_note }}</p>{% endif %}
+                <p class="cr-muted">{{ interpretation_law }}</p>
+                {% if interpretation_can_confirm %}
+                <button type="button" class="cr-btn" disabled>Подтвердить поручение</button>
+                {% endif %}
                 {% else %}
                 <p class="cr-kicker">DYNAMIS понимает команду</p>
                 <dl class="cr-facts">

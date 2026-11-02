@@ -282,7 +282,14 @@ class ControlRoomShellTests(SimpleTestCase):
         room = Path(__file__).with_name("control_room_state.py").read_text(encoding="utf-8")
         adapter = Path(__file__).with_name("constructor_read_model.py").read_text(encoding="utf-8")
         commands = Path(__file__).with_name("human_command.py").read_text(encoding="utf-8")
-        for blob in (room_view, room, adapter, commands):
+        preview = Path(__file__).with_name("command_interpretation.py").read_text(encoding="utf-8")
+        interpreter = (
+            Path(__file__).resolve().parents[2]
+            / "agents"
+            / "human_surface"
+            / "command_interpretation.py"
+        ).read_text(encoding="utf-8")
+        for blob in (room_view, room, adapter, commands, preview, interpreter):
             lowered = blob.lower()
             self.assertNotIn("launch_monthly_plan_mission", blob)
             self.assertNotIn("submit_human_review", blob)
@@ -291,6 +298,10 @@ class ControlRoomShellTests(SimpleTestCase):
             self.assertNotIn("create_run", blob)
             self.assertNotIn("append_event", blob)
             self.assertNotIn("executescript", lowered)
+            self.assertNotIn("openai", lowered)
+            self.assertNotIn("yandex", lowered)
+            self.assertNotIn("deepseek", lowered)
+            self.assertNotIn("launch_monthly_plan_mission", blob)
         self.assertIn("control_room_context()", room_view)
         self.assertIn("load_constructor_control_room", room_view)
         self.assertIn("AgentControlRoomQueryPort", adapter)
@@ -749,7 +760,7 @@ class HumanCommandInputTests(SimpleTestCase):
         body = response.content.decode("utf-8")
         self.assertIn(_ACCEPTED_COMMAND, body)
         self.assertIn("Команда получена", body)
-        self.assertIn("Constructor не запущен", body)
+        self.assertIn("Constructor ещё не запущен", body)
         self.assertNotIn("DYNAMIS понимает команду", body)
         self.assertNotIn("все дисциплины", body)
         stored = self.client.session["dynamis_human_command"]
@@ -837,4 +848,163 @@ class HumanCommandInputTests(SimpleTestCase):
         self.assertIn(_ACCEPTED_RUN_ID, body)
         self.assertIn(_ACCEPTED_COMMAND, body)
         self.assertIn('data-splitter="left"', body)
+        self.assertIn('data-splitter="bottom"', body)
+
+
+def _scope_catalog():
+    import pandas as pd
+
+    from agents.human_surface.work_context import catalog_from_frame
+
+    frame = pd.DataFrame(
+        [
+            {
+                "project_code": "PRJ_001_БХК",
+                "facility_building": "16160-13",
+                "construction_discipline": "Автоматизация",
+            },
+            {
+                "project_code": "PRJ_001_БХК",
+                "facility_building": "16160-17",
+                "construction_discipline": "Автоматизация",
+            },
+            {
+                "project_code": "PRJ_001_БХК",
+                "facility_building": "26160-13",
+                "construction_discipline": "Вентиляция",
+            },
+        ]
+    )
+    return catalog_from_frame(frame)
+
+
+def _interpret(text: str):
+    from agents.human_surface.command_interpretation import interpret_command
+
+    return interpret_command(command_id="cmd-test", raw_text=text, catalog=_scope_catalog())
+
+
+@override_settings(
+    ROOT_URLCONF="config.urls",
+    ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"],
+)
+class CommandInterpretationTests(SimpleTestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+
+    def test_accepted_example_resolves_typed_preview(self) -> None:
+        result = _interpret(_ACCEPTED_COMMAND)
+        self.assertEqual(result.processing_state, "NEEDS_CONFIRMATION")
+        self.assertEqual(result.resolution_status, "INTERPRETED")
+        self.assertEqual(result.target_agent, "MONTHLY_PLAN_CONSTRUCTOR")
+        self.assertEqual(result.intent, "FORM_CANDIDATE_PACKAGE")
+        self.assertEqual(result.resolved_scope["project_code"], "PRJ_001_БХК")
+        self.assertEqual(result.resolved_scope["month_key"], "ноябрь-2026")
+        self.assertEqual(result.resolved_scope["queue"], "1")
+        self.assertEqual(result.resolved_scope["facility"], "16160-13")
+        self.assertEqual(result.resolved_scope["discipline"], "Автоматизация")
+        self.assertEqual(result.unresolved_fields, ())
+        self.assertEqual(result.ambiguities, ())
+        self.assertFalse(result.mission_created)
+        preview = dict(result.preview)
+        self.assertEqual(preview["Агент"], "Constructor")
+        self.assertEqual(preview["Проект"], "PRJ_001_БХК / БХК")
+        self.assertEqual(preview["Период"], "ноябрь 2026")
+        self.assertEqual(preview["Статус"], "Ожидается подтверждение")
+
+    def test_vocabulary_is_not_one_hardcoded_sentence(self) -> None:
+        result = _interpret(
+            "Собери кандидатный состав на ноябрь-2026 по БХК, 1-я очередь, титул 16160-17, автоматизация."
+        )
+        self.assertEqual(result.processing_state, "NEEDS_CONFIRMATION")
+        self.assertEqual(result.resolved_scope["month_key"], "ноябрь-2026")
+        self.assertEqual(result.resolved_scope["queue"], "1")
+        self.assertEqual(result.resolved_scope["facility"], "16160-17")
+        self.assertEqual(result.resolved_scope["discipline"], "Автоматизация")
+
+    def test_unknown_project_needs_clarification(self) -> None:
+        result = _interpret("Сформируй кандидатный состав по проекту ABCXYZ")
+        self.assertEqual(result.processing_state, "NEEDS_CLARIFICATION")
+        self.assertNotIn("project_code", result.resolved_scope)
+        self.assertIn("project", result.unresolved_fields)
+        self.assertFalse(result.mission_created)
+
+    def test_ambiguous_title_needs_clarification(self) -> None:
+        result = _interpret(
+            "Сформируй кандидатный состав на ноябрь 2026 по БХК, титул 13, автоматика."
+        )
+        self.assertEqual(result.processing_state, "NEEDS_CLARIFICATION")
+        self.assertNotIn("facility", result.resolved_scope)
+        self.assertTrue(result.ambiguities)
+
+    def test_live_catalog_resolves_the_accepted_example(self) -> None:
+        from agents.human_surface.command_interpretation import interpret_command
+        from agents.human_surface.work_context import load_work_context_catalog
+
+        catalog = load_work_context_catalog()
+        self.assertFalse(catalog.error)
+        self.assertTrue(catalog.facts)
+        result = interpret_command(
+            command_id="live",
+            raw_text=_ACCEPTED_COMMAND,
+            catalog=catalog,
+        )
+        self.assertEqual(result.processing_state, "NEEDS_CONFIRMATION")
+        self.assertEqual(result.resolved_scope["project_code"], "PRJ_001_БХК")
+        self.assertEqual(result.resolved_scope["facility"], "16160-13")
+        self.assertEqual(result.resolved_scope["discipline"], "Автоматизация")
+        self.assertFalse(result.mission_created)
+
+    def test_unprofessional_text_creates_no_mission_draft(self) -> None:
+        result = _interpret("привет")
+        self.assertEqual(result.processing_state, "REJECTED")
+        self.assertEqual(result.resolved_scope, {})
+        self.assertEqual(result.preview, ())
+        self.assertFalse(result.mission_created)
+
+    def test_control_room_shows_preview_without_new_constructor_run(self) -> None:
+        from dynamis.constructor_read_model import (
+            constructor_runtime_store_path,
+            load_constructor_control_room,
+        )
+
+        store = constructor_runtime_store_path()
+        self.assertIsNotNone(store)
+        assert store is not None
+        before_files = _file_fingerprint(store.parent)
+        before = load_constructor_control_room()["read_model_meta"]["run_id"]
+        with patch(
+            "dynamis.command_interpretation.load_work_context_catalog",
+            return_value=_scope_catalog(),
+        ):
+            response = self.client.post(
+                reverse("control_room"),
+                {"raw_text": _ACCEPTED_COMMAND},
+                follow=True,
+            )
+        after = load_constructor_control_room()["read_model_meta"]["run_id"]
+        after_files = _file_fingerprint(store.parent)
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode("utf-8")
+        self.assertIn("Поручение понято", body)
+        self.assertIn("PRJ_001_БХК / БХК", body)
+        self.assertIn("ноябрь 2026", body)
+        self.assertIn("16160-13", body)
+        self.assertIn("Автоматизация", body)
+        self.assertIn("Ожидается подтверждение", body)
+        self.assertIn("Constructor ещё не запущен", body)
+        self.assertIn("Подтвердить поручение", body)
+        self.assertIn("disabled", body)
+        self.assertNotIn('type="submit">Подтвердить поручение', body)
+        self.assertIn(_ACCEPTED_RUN_ID, body)
+        self.assertEqual(before, _ACCEPTED_RUN_ID)
+        self.assertEqual(after, before)
+        self.assertEqual(before_files, after_files)
+        stored = self.client.session["dynamis_command_interpretation"]
+        self.assertEqual(stored["processing_state"], "NEEDS_CONFIRMATION")
+        self.assertFalse(stored["mission_created"])
+        self.assertTrue(stored["interpretation_id"])
+        self.assertEqual(stored["command_id"], self.client.session["dynamis_human_command"]["command_id"])
+        self.assertIn('data-splitter="left"', body)
+        self.assertIn('data-splitter="right"', body)
         self.assertIn('data-splitter="bottom"', body)

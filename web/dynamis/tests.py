@@ -283,13 +283,20 @@ class ControlRoomShellTests(SimpleTestCase):
         adapter = Path(__file__).with_name("constructor_read_model.py").read_text(encoding="utf-8")
         commands = Path(__file__).with_name("human_command.py").read_text(encoding="utf-8")
         preview = Path(__file__).with_name("command_interpretation.py").read_text(encoding="utf-8")
+        confirmation = Path(__file__).with_name("command_confirmation.py").read_text(encoding="utf-8")
         interpreter = (
             Path(__file__).resolve().parents[2]
             / "agents"
             / "human_surface"
             / "command_interpretation.py"
         ).read_text(encoding="utf-8")
-        for blob in (room_view, room, adapter, commands, preview, interpreter):
+        authority = (
+            Path(__file__).resolve().parents[2]
+            / "agents"
+            / "human_surface"
+            / "command_confirmation.py"
+        ).read_text(encoding="utf-8")
+        for blob in (room_view, room, adapter, commands, preview, confirmation, interpreter, authority):
             lowered = blob.lower()
             self.assertNotIn("launch_monthly_plan_mission", blob)
             self.assertNotIn("submit_human_review", blob)
@@ -994,8 +1001,9 @@ class CommandInterpretationTests(SimpleTestCase):
         self.assertIn("Ожидается подтверждение", body)
         self.assertIn("Constructor ещё не запущен", body)
         self.assertIn("Подтвердить поручение", body)
-        self.assertIn("disabled", body)
-        self.assertNotIn('type="submit">Подтвердить поручение', body)
+        self.assertIn('name="action" value="confirm"', body)
+        self.assertNotIn("Поручение подтверждено", body)
+        self.assertIn('type="button" class="cr-btn cr-btn-primary" data-demo="launch"', body)
         self.assertIn(_ACCEPTED_RUN_ID, body)
         self.assertEqual(before, _ACCEPTED_RUN_ID)
         self.assertEqual(after, before)
@@ -1008,3 +1016,264 @@ class CommandInterpretationTests(SimpleTestCase):
         self.assertIn('data-splitter="left"', body)
         self.assertIn('data-splitter="right"', body)
         self.assertIn('data-splitter="bottom"', body)
+
+
+def _catalog_patches():
+    catalog = _scope_catalog()
+    return catalog, (
+        patch("dynamis.command_interpretation.load_work_context_catalog", return_value=catalog),
+        patch("dynamis.command_confirmation.load_work_context_catalog", return_value=catalog),
+    )
+
+
+@override_settings(
+    ROOT_URLCONF="config.urls",
+    ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"],
+)
+class CommandConfirmationTests(SimpleTestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+
+    def _confirm_page(self, text: str = _ACCEPTED_COMMAND):
+        from services.monthly_plan_constructor_read_service import load_constructor_scope
+
+        _catalog, patches = _catalog_patches()
+        with patches[0], patches[1], patch(
+            "services.monthly_plan_constructor_read_service.load_constructor_scope",
+            wraps=load_constructor_scope,
+        ) as scope_load:
+            posted = self.client.post(reverse("control_room"), {"raw_text": text}, follow=True)
+            confirmed = self.client.post(reverse("control_room"), {"action": "confirm"}, follow=True)
+        return posted, confirmed, scope_load
+
+    def test_valid_draft_can_be_confirmed(self) -> None:
+        from agents.human_surface.command_confirmation import confirm_typed_draft
+
+        draft = _interpret(_ACCEPTED_COMMAND)
+        confirmed = confirm_typed_draft(
+            draft,
+            catalog=_scope_catalog(),
+            source_text=_ACCEPTED_COMMAND,
+        )
+        self.assertEqual(confirmed.confirmation_state, "CONFIRMED")
+        self.assertEqual(confirmed.command_id, draft.command_id)
+        self.assertEqual(confirmed.interpretation_id, draft.interpretation_id)
+        self.assertEqual(confirmed.target_agent, "MONTHLY_PLAN_CONSTRUCTOR")
+        self.assertFalse(confirmed.as_dict()["mission_created"])
+        self.assertFalse(confirmed.as_dict()["constructor_run_created"])
+        _posted, response, _scope_load = self._confirm_page()
+        body = response.content.decode("utf-8")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Поручение подтверждено", body)
+        self.assertIn("Constructor ещё не запущен", body)
+        self.assertNotIn("Подтвердить поручение", body)
+        self.assertNotIn("Ожидается подтверждение", body)
+        self.assertEqual(self.client.session["dynamis_command_confirmation"]["confirmation_state"], "CONFIRMED")
+
+    def test_confirmation_stores_exact_scope_snapshot(self) -> None:
+        from agents.human_surface.command_confirmation import confirm_typed_draft
+
+        draft = _interpret(_ACCEPTED_COMMAND)
+        confirmed = confirm_typed_draft(
+            draft,
+            catalog=_scope_catalog(),
+            source_text=_ACCEPTED_COMMAND,
+        )
+        self.assertEqual(
+            dict(confirmed.resolved_scope),
+            {
+                "project_code": "PRJ_001_БХК",
+                "project_label": "БХК",
+                "month_key": "ноябрь-2026",
+                "planning_month": "ноябрь 2026",
+                "queue": "1",
+                "facility": "16160-13",
+                "discipline": "Автоматизация",
+            },
+        )
+        with self.assertRaises(TypeError):
+            confirmed.resolved_scope["facility"] = "16160-17"
+        _posted, _response, _scope_load = self._confirm_page()
+        stored = self.client.session["dynamis_command_confirmation"]["resolved_scope"]
+        self.assertEqual(stored["project_code"], "PRJ_001_БХК")
+        self.assertEqual(stored["month_key"], "ноябрь-2026")
+        self.assertEqual(stored["queue"], "1")
+        self.assertEqual(stored["facility"], "16160-13")
+        self.assertEqual(stored["discipline"], "Автоматизация")
+
+    def test_confirmed_command_does_not_create_constructor_run(self) -> None:
+        from dynamis.constructor_read_model import (
+            constructor_runtime_store_path,
+            load_constructor_control_room,
+        )
+
+        store = constructor_runtime_store_path()
+        self.assertIsNotNone(store)
+        assert store is not None
+        before_files = _file_fingerprint(store.parent)
+        django_db = Path(__file__).resolve().parents[1] / "db.sqlite3"
+        django_before = django_db.stat().st_mtime_ns if django_db.exists() else None
+        before = load_constructor_control_room()["read_model_meta"]
+        _posted, response, scope_load = self._confirm_page()
+        after = load_constructor_control_room()["read_model_meta"]
+        self.assertEqual(before["run_id"], _ACCEPTED_RUN_ID)
+        self.assertEqual(after["run_id"], before["run_id"])
+        self.assertEqual(after["mission_id"], before["mission_id"])
+        self.assertEqual(after["package_id"], before["package_id"])
+        self.assertEqual(before_files, _file_fingerprint(store.parent))
+        if django_before is not None:
+            self.assertEqual(django_db.stat().st_mtime_ns, django_before)
+        body = response.content.decode("utf-8")
+        self.assertIn(_ACCEPTED_RUN_ID, body)
+        self.assertIn(_ACCEPTED_COMMAND, body)
+        self.assertIn("Поручение подтверждено", body)
+        self.assertNotIn("dynamis_command_confirmation", body)
+        scope_load.assert_not_called()
+
+    def test_unresolved_draft_cannot_be_confirmed(self) -> None:
+        from agents.human_surface.command_confirmation import ConfirmationRejected, confirm_typed_draft
+
+        draft = _interpret("Сформируй кандидатный состав по проекту ABCXYZ")
+        with self.assertRaises(ConfirmationRejected):
+            confirm_typed_draft(
+                draft,
+                catalog=_scope_catalog(),
+                source_text="Сформируй кандидатный состав по проекту ABCXYZ",
+            )
+        _catalog, patches = _catalog_patches()
+        with patches[0], patches[1]:
+            self.client.post(
+                reverse("control_room"),
+                {"raw_text": "Сформируй кандидатный состав по проекту ABCXYZ"},
+                follow=True,
+            )
+            response = self.client.post(reverse("control_room"), {"action": "confirm"})
+        self.assertIn("Поручение не подтверждено", response.content.decode("utf-8"))
+        self.assertNotIn("dynamis_command_confirmation", self.client.session)
+
+    def test_ambiguous_draft_cannot_be_confirmed(self) -> None:
+        from agents.human_surface.command_confirmation import ConfirmationRejected, confirm_typed_draft
+
+        text = "Сформируй кандидатный состав на ноябрь 2026 по БХК, титул 13, автоматика."
+        draft = _interpret(text)
+        self.assertTrue(draft.ambiguities)
+        with self.assertRaises(ConfirmationRejected):
+            confirm_typed_draft(draft, catalog=_scope_catalog(), source_text=text)
+        _catalog, patches = _catalog_patches()
+        with patches[0], patches[1]:
+            self.client.post(reverse("control_room"), {"raw_text": text}, follow=True)
+            response = self.client.post(reverse("control_room"), {"action": "confirm"})
+        self.assertIn("Поручение не подтверждено", response.content.decode("utf-8"))
+        self.assertNotIn("dynamis_command_confirmation", self.client.session)
+        self.assertEqual(
+            self.client.session["dynamis_command_interpretation"]["processing_state"],
+            "NEEDS_CLARIFICATION",
+        )
+
+    def _write_session(self, session) -> None:
+        from django.conf import settings
+
+        session.save()
+        self.client.cookies[settings.SESSION_COOKIE_NAME] = session.session_key
+
+    def test_changed_command_invalidates_prior_confirmation(self) -> None:
+        self._confirm_page()
+        previous = self.client.session["dynamis_command_confirmation"]["confirmation_id"]
+        session = self.client.session
+        command = dict(session["dynamis_human_command"])
+        command["raw_text"] = command["raw_text"] + "\nуточнение"
+        session["dynamis_human_command"] = command
+        self._write_session(session)
+        edited = self.client.get(reverse("control_room"))
+        self.assertNotIn("Поручение подтверждено", edited.content.decode("utf-8"))
+        _catalog, patches = _catalog_patches()
+        with patches[0], patches[1]:
+            response = self.client.post(
+                reverse("control_room"),
+                {
+                    "raw_text": (
+                        "Собери кандидатный состав на ноябрь-2026 по БХК, "
+                        "1-я очередь, титул 16160-17, автоматизация."
+                    )
+                },
+                follow=True,
+            )
+        body = response.content.decode("utf-8")
+        self.assertNotIn("Поручение подтверждено", body)
+        self.assertIn("Подтвердить поручение", body)
+        self.assertNotEqual(
+            self.client.session["dynamis_command_confirmation"]["command_id"],
+            self.client.session["dynamis_human_command"]["command_id"],
+        )
+        self.assertEqual(self.client.session["dynamis_command_confirmation"]["confirmation_id"], previous)
+
+    def test_changed_interpretation_invalidates_prior_confirmation(self) -> None:
+        self._confirm_page()
+        session = self.client.session
+        stored = dict(session["dynamis_command_interpretation"])
+        original_id = stored["interpretation_id"]
+        stored["interpretation_id"] = "changed-interpretation"
+        session["dynamis_command_interpretation"] = stored
+        self._write_session(session)
+        hidden = self.client.get(reverse("control_room"))
+        self.assertNotIn("Поручение подтверждено", hidden.content.decode("utf-8"))
+        self.assertIn("Подтвердить поручение", hidden.content.decode("utf-8"))
+        session = self.client.session
+        stored = dict(session["dynamis_command_interpretation"])
+        stored["interpretation_id"] = original_id
+        scope = dict(stored["resolved_scope"])
+        scope["facility"] = "16160-17"
+        stored["resolved_scope"] = scope
+        session["dynamis_command_interpretation"] = stored
+        self._write_session(session)
+        shifted = self.client.get(reverse("control_room"))
+        self.assertNotIn("Поручение подтверждено", shifted.content.decode("utf-8"))
+
+    def test_empty_confirmation_request_fails_safe(self) -> None:
+        from dataclasses import replace
+
+        from agents.human_surface.command_confirmation import ConfirmationRejected, confirm_typed_draft
+
+        response = self.client.post(reverse("control_room"), {"action": "confirm"})
+        body = response.content.decode("utf-8")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Поручение не подтверждено", body)
+        self.assertNotIn("dynamis_command_confirmation", self.client.session)
+        self.assertNotIn("Команда получена", body)
+        forged = self.client.post(
+            reverse("control_room"),
+            {"action": "confirm", "project_code": "PRJ_001_БХК", "confirmation_id": "forged"},
+        )
+        self.assertIn("Поручение не подтверждено", forged.content.decode("utf-8"))
+        self.assertNotIn("dynamis_command_confirmation", self.client.session)
+        draft = _interpret(_ACCEPTED_COMMAND)
+        with self.assertRaises(ConfirmationRejected):
+            confirm_typed_draft(
+                replace(draft, target_agent="UNKNOWN_AGENT"),
+                catalog=_scope_catalog(),
+                source_text=_ACCEPTED_COMMAND,
+            )
+        with self.assertRaises(ConfirmationRejected):
+            confirm_typed_draft(
+                replace(draft, resolved_scope={**draft.resolved_scope, "month_key": "not-a-month"}),
+                catalog=_scope_catalog(),
+                source_text=_ACCEPTED_COMMAND,
+            )
+
+    def test_confirmation_page_keeps_existing_run_and_layout(self) -> None:
+        _posted, response, _scope_load = self._confirm_page()
+        body = response.content.decode("utf-8")
+        css = (
+            Path(__file__).resolve().parent / "static" / "dynamis" / "control_room.css"
+        ).read_text(encoding="utf-8")
+        self.assertIn(_ACCEPTED_RUN_ID, body)
+        self.assertIn('data-splitter="left"', body)
+        self.assertIn('data-splitter="right"', body)
+        self.assertIn('data-splitter="bottom"', body)
+        self.assertIn("grid-template-columns: 188px minmax(0, 1fr);", css)
+        self.assertIn(
+            "grid-template-columns: minmax(0, 24fr) 12px minmax(0, 52fr) 12px minmax(0, 24fr);",
+            css,
+        )
+        self.assertIn("grid-template-rows: minmax(0, 68fr) 12px minmax(0, 32fr);", css)
+        self.assertIn('type="button" class="cr-btn cr-btn-primary" data-demo="launch"', body)

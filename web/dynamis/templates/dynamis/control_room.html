@@ -71,15 +71,20 @@
                   {% for label, value in interpretation_facts %}
                   <div>
                     <dt>{{ label }}</dt>
-                    <dd>{{ value }}</dd>
+                    <dd>{% if confirmation_received and label == "Статус" %}{{ confirmation_label }}{% else %}{{ value }}{% endif %}</dd>
                   </div>
                   {% endfor %}
                 </dl>
                 {% endif %}
                 {% if interpretation_note %}<p class="cr-muted">{{ interpretation_note }}</p>{% endif %}
+                {% if confirmation_received %}<p class="cr-command-status">{{ confirmation_label }}</p>{% endif %}
                 <p class="cr-muted">{{ interpretation_law }}</p>
-                {% if interpretation_can_confirm %}
-                <button type="button" class="cr-btn" disabled>Подтвердить поручение</button>
+                {% if interpretation_can_confirm and not confirmation_received %}
+                <form method="post" action="{% url 'control_room' %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="confirm">
+                  <button type="submit" class="cr-btn">Подтвердить поручение</button>
+                </form>
                 {% endif %}
                 {% else %}
                 <p class="cr-kicker">DYNAMIS понимает команду</p>

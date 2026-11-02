@@ -26,9 +26,16 @@ def home(request):
 
 @require_http_methods(["GET", "POST"])
 def control_room(request):
-    """Control Room shell. Constructor state is read; a human command is only received."""
+    """Control Room shell. A ready draft can be confirmed. Constructor is only read."""
     command_notice = ""
-    if request.method == "POST":
+    if request.method == "POST" and str(request.POST.get("action") or "").strip() == "confirm":
+        from .command_confirmation import accept_command_confirmation
+
+        receipt = accept_command_confirmation(request.session)
+        if receipt.accepted:
+            return redirect("control_room")
+        command_notice = receipt.notice
+    elif request.method == "POST":
         from .human_command import accept_human_command
 
         receipt = accept_human_command(request.session, request.POST.get("raw_text", ""))
@@ -41,9 +48,11 @@ def control_room(request):
     context = control_room_context()
     from .human_command import human_command_template_context
     from .command_interpretation import command_interpretation_template_context
+    from .command_confirmation import command_confirmation_template_context
 
     context.update(human_command_template_context(request.session))
     context.update(command_interpretation_template_context(request.session))
+    context.update(command_confirmation_template_context(request.session))
     context["command_notice"] = command_notice
     try:
         from .constructor_read_model import load_constructor_control_room

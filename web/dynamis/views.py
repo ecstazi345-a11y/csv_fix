@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from django.contrib import messages
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
 
 from services.labor_norm_decisions import (
@@ -24,10 +24,22 @@ def home(request):
     return render(request, "dynamis/home.html")
 
 
-@require_http_methods(["GET"])
+@require_http_methods(["GET", "POST"])
 def control_room(request):
-    """Control Room shell. Constructor state is read through the official query port."""
+    """Control Room shell. Constructor state is read; a human command is only received."""
+    command_notice = ""
+    if request.method == "POST":
+        from .human_command import accept_human_command
+
+        receipt = accept_human_command(request.session, request.POST.get("raw_text", ""))
+        if receipt.accepted:
+            return redirect("control_room")
+        command_notice = receipt.notice
     context = control_room_context()
+    from .human_command import human_command_template_context
+
+    context.update(human_command_template_context(request.session))
+    context["command_notice"] = command_notice
     try:
         from .constructor_read_model import load_constructor_control_room
 

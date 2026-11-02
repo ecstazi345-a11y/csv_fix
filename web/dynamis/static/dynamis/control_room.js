@@ -75,10 +75,19 @@
   });
 
   var form = document.getElementById("command-form");
-  form.addEventListener("submit", function (event) {
-    event.preventDefault();
-    show("Команда остаётся в поле ввода. Интерпретатор и runtime не подключены.");
-  });
+  var commandInput = document.getElementById("command-input");
+  if (form && commandInput) {
+    commandInput.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        if (typeof form.requestSubmit === "function") {
+          form.requestSubmit();
+        } else {
+          form.submit();
+        }
+      }
+    });
+  }
 
   var KEY = "dynamis.control-room.layout";
   var DEFAULTS = { left: 0.24, center: 0.52, right: 0.24, bottom: 0.32 };

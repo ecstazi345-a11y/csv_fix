@@ -266,9 +266,13 @@ class ControlRoomShellTests(SimpleTestCase):
         self.assertEqual(body.count('data-demo="launch"'), 1)
         self.assertEqual(body.count('data-demo="admission"'), 1)
 
-    def test_control_room_post_is_rejected(self) -> None:
-        response = self.client.post(reverse("control_room"), {})
-        self.assertEqual(response.status_code, 405)
+    def test_empty_command_is_not_accepted(self) -> None:
+        response = self.client.post(reverse("control_room"), {"raw_text": "   "})
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode("utf-8")
+        self.assertIn("Пустая команда не отправлена.", body)
+        self.assertNotIn("Команда получена", body)
+        self.assertNotIn("dynamis_human_command", self.client.session)
 
     def test_control_room_view_reads_without_write_actions(self) -> None:
         source = Path(__file__).with_name("views.py").read_text(encoding="utf-8")
@@ -277,7 +281,8 @@ class ControlRoomShellTests(SimpleTestCase):
         room_view = source[start:end]
         room = Path(__file__).with_name("control_room_state.py").read_text(encoding="utf-8")
         adapter = Path(__file__).with_name("constructor_read_model.py").read_text(encoding="utf-8")
-        for blob in (room_view, room, adapter):
+        commands = Path(__file__).with_name("human_command.py").read_text(encoding="utf-8")
+        for blob in (room_view, room, adapter, commands):
             lowered = blob.lower()
             self.assertNotIn("launch_monthly_plan_mission", blob)
             self.assertNotIn("submit_human_review", blob)
@@ -317,6 +322,18 @@ class ControlRoomShellTests(SimpleTestCase):
         self.assertIn("bottom: 0.32", script)
         self.assertNotIn("sqlite", script.lower())
         self.assertNotIn("supabase", script.lower())
+        self.assertIn("shiftKey", script)
+        self.assertIn("requestSubmit", script)
+        self.assertNotIn("paste", script.lower())
+        css = (
+            Path(__file__).resolve().parent / "static" / "dynamis" / "control_room.css"
+        ).read_text(encoding="utf-8")
+        self.assertIn("grid-template-columns: 188px minmax(0, 1fr);", css)
+        self.assertIn(
+            "grid-template-columns: minmax(0, 24fr) 12px minmax(0, 52fr) 12px minmax(0, 24fr);",
+            css,
+        )
+        self.assertIn("grid-template-rows: minmax(0, 68fr) 12px minmax(0, 32fr);", css)
 
 
 def _file_fingerprint(root: Path) -> dict[str, tuple[int, int]]:
@@ -691,3 +708,133 @@ class ConstructorReadModelTests(SimpleTestCase):
         self.assertTrue(run_id)
         self.assertIn(run_id, body)
         self.assertIn("Недоступно в текущем контракте чтения", body)
+
+
+_ACCEPTED_COMMAND = (
+    "Сформируй кандидатный состав на ноябрь 2026 по БХК, "
+    "первая очередь, титул 16160-13, автоматика."
+)
+_ACCEPTED_RUN_ID = "run-3b457b4e-6183-44eb-83e4-803ce595691d"
+
+
+@override_settings(
+    ROOT_URLCONF="config.urls",
+    ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"],
+)
+class HumanCommandInputTests(SimpleTestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+
+    def test_command_bar_is_a_plain_text_control(self) -> None:
+        response = self.client.get(reverse("control_room"))
+        body = response.content.decode("utf-8")
+        self.assertIn("<textarea", body)
+        self.assertIn('name="raw_text"', body)
+        self.assertIn("Отправить", body)
+        self.assertIn('method="post"', body)
+        self.assertNotIn("Команда получена", body)
+        script = (
+            Path(__file__).resolve().parent / "static" / "dynamis" / "control_room.js"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("onpaste", script.lower())
+        self.assertNotIn("clipboard", script.lower())
+
+    def test_submit_shows_received_command_without_interpretation(self) -> None:
+        response = self.client.post(
+            reverse("control_room"),
+            {"raw_text": _ACCEPTED_COMMAND},
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode("utf-8")
+        self.assertIn(_ACCEPTED_COMMAND, body)
+        self.assertIn("Команда получена", body)
+        self.assertIn("Constructor не запущен", body)
+        self.assertNotIn("DYNAMIS понимает команду", body)
+        self.assertNotIn("все дисциплины", body)
+        stored = self.client.session["dynamis_human_command"]
+        self.assertEqual(stored["raw_text"], _ACCEPTED_COMMAND)
+        self.assertEqual(stored["source"], "django_control_room")
+        self.assertEqual(stored["input_mode"], "text")
+        self.assertEqual(stored["processing_state"], "RECEIVED")
+        self.assertTrue(stored["command_id"])
+        self.assertTrue(stored["created_at"])
+
+    def test_multiline_cyrillic_command_is_kept_verbatim(self) -> None:
+        text = "Первая строка поручения\nВторая строка, без разбора полей"
+        response = self.client.post(
+            reverse("control_room"),
+            {"raw_text": f"  {text}  "},
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.session["dynamis_human_command"]["raw_text"], text)
+        body = response.content.decode("utf-8")
+        self.assertIn("Первая строка поручения", body)
+        self.assertIn("Вторая строка, без разбора полей", body)
+
+    def test_rejected_command_keeps_the_previous_draft(self) -> None:
+        from dynamis.human_command import MAX_HUMAN_COMMAND_LENGTH
+
+        self.client.post(
+            reverse("control_room"),
+            {"raw_text": _ACCEPTED_COMMAND},
+            follow=True,
+        )
+        kept = self.client.session["dynamis_human_command"]["command_id"]
+        response = self.client.post(reverse("control_room"), {"raw_text": "  "})
+        body = response.content.decode("utf-8")
+        self.assertIn("Пустая команда не отправлена.", body)
+        self.assertIn(_ACCEPTED_COMMAND, body)
+        self.assertEqual(self.client.session["dynamis_human_command"]["command_id"], kept)
+        too_long = "я" * (MAX_HUMAN_COMMAND_LENGTH + 1)
+        response = self.client.post(reverse("control_room"), {"raw_text": too_long})
+        self.assertIn("не отправлена", response.content.decode("utf-8"))
+        self.assertEqual(self.client.session["dynamis_human_command"]["raw_text"], _ACCEPTED_COMMAND)
+        self.assertEqual(self.client.session["dynamis_human_command"]["command_id"], kept)
+
+    def test_long_command_is_rejected(self) -> None:
+        from dynamis.human_command import MAX_HUMAN_COMMAND_LENGTH
+
+        too_long = "я" * (MAX_HUMAN_COMMAND_LENGTH + 1)
+        response = self.client.post(reverse("control_room"), {"raw_text": too_long})
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode("utf-8")
+        self.assertIn("не отправлена", body)
+        self.assertNotIn("Команда получена", body)
+        self.assertNotIn(too_long, body)
+        self.assertNotIn("dynamis_human_command", self.client.session)
+
+    def test_accepted_command_does_not_replace_or_write_constructor_run(self) -> None:
+        from dynamis.constructor_read_model import (
+            constructor_runtime_store_path,
+            load_constructor_control_room,
+        )
+
+        store = constructor_runtime_store_path()
+        self.assertIsNotNone(store)
+        assert store is not None
+        before_files = _file_fingerprint(store.parent)
+        django_db = Path(__file__).resolve().parents[1] / "db.sqlite3"
+        django_before = django_db.stat().st_mtime_ns if django_db.exists() else None
+        before = load_constructor_control_room()["read_model_meta"]
+        response = self.client.post(
+            reverse("control_room"),
+            {"raw_text": _ACCEPTED_COMMAND},
+            follow=True,
+        )
+        after = load_constructor_control_room()["read_model_meta"]
+        after_files = _file_fingerprint(store.parent)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(before["run_id"], _ACCEPTED_RUN_ID)
+        self.assertEqual(after["run_id"], before["run_id"])
+        self.assertEqual(after["mission_id"], before["mission_id"])
+        self.assertEqual(after["package_id"], before["package_id"])
+        self.assertEqual(before_files, after_files)
+        if django_before is not None:
+            self.assertEqual(django_db.stat().st_mtime_ns, django_before)
+        body = response.content.decode("utf-8")
+        self.assertIn(_ACCEPTED_RUN_ID, body)
+        self.assertIn(_ACCEPTED_COMMAND, body)
+        self.assertIn('data-splitter="left"', body)
+        self.assertIn('data-splitter="bottom"', body)

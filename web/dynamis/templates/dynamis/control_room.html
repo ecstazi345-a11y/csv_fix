@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DYNAMIS — Digital Workforce Control Room</title>
-  <link rel="stylesheet" href="{% static 'dynamis/control_room.css' %}?v=4">
+  <link rel="stylesheet" href="{% static 'dynamis/control_room.css' %}?v=5">
 </head>
 <body>
   <div class="cr">
@@ -61,7 +61,12 @@
               </div>
               <div class="cr-tabpanel" data-panel="chat">
                 <p class="cr-kicker">Команда человека</p>
-                <blockquote class="cr-command">{{ command_example }}</blockquote>
+                <blockquote class="cr-command">{% if command_received %}{{ command_text }}{% else %}{{ command_example }}{% endif %}</blockquote>
+                {% if command_received %}
+                <p class="cr-kicker">Статус</p>
+                <p class="cr-command-status">{{ command_status }}</p>
+                <p class="cr-muted">Constructor не запущен. Команда ещё не стала миссией.</p>
+                {% else %}
                 <p class="cr-kicker">DYNAMIS понимает команду</p>
                 <dl class="cr-facts">
                   {% for label, value in understood %}
@@ -71,6 +76,7 @@
                   </div>
                   {% endfor %}
                 </dl>
+                {% endif %}
                 <button type="button" class="cr-btn cr-btn-primary" data-demo="launch">Запустить Constructor Agent</button>
                 <p class="cr-kicker">История диалога</p>
                 <ul class="cr-history">
@@ -83,14 +89,16 @@
                 <p class="cr-muted">Голосовой ввод на этом шаге только обозначен. Распознавание речи не подключено.</p>
               </div>
             </div>
-            <form class="cr-composer" id="command-form">
-              <label class="cr-sr" for="command-input">Команда</label>
-              <input id="command-input" type="text" placeholder="Команда для DYNAMIS" autocomplete="off">
+            <form class="cr-composer" id="command-form" method="post" action="{% url 'control_room' %}">
+              {% csrf_token %}
+              <label class="cr-sr" for="command-input">Команда для DYNAMIS</label>
+              <textarea id="command-input" name="raw_text" rows="2" placeholder="Команда для DYNAMIS" autocomplete="off"></textarea>
+              <button type="submit" class="cr-send">Отправить</button>
               <button type="button" class="cr-mic" data-demo="mic" aria-label="Микрофон, пока не подключён">
                 <span aria-hidden="true"></span>
               </button>
             </form>
-            <p class="cr-notice" id="cr-notice" hidden></p>
+            <p class="cr-notice" id="cr-notice" {% if not command_notice %}hidden{% endif %}>{{ command_notice }}</p>
           </section>
           <div class="cr-splitter" data-splitter="left" role="separator" aria-orientation="vertical" aria-label="Ширина диалога" tabindex="0"></div>
 
@@ -297,6 +305,6 @@
       </div>
     </div>
   </div>
-  <script src="{% static 'dynamis/control_room.js' %}?v=4"></script>
+  <script src="{% static 'dynamis/control_room.js' %}?v=5"></script>
 </body>
 </html>

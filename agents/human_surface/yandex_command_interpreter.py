@@ -31,14 +31,37 @@ PROVIDER_NAME = "yandex"
 MAX_OUTPUT_TOKENS = 160
 TEMPERATURE = 0
 MAX_SDK_RETRIES = 0
+# Bounded transport timeouts for Yandex only. OpenAI provider keeps SDK defaults.
+CONNECT_TIMEOUT_SECONDS = 20.0
+READ_TIMEOUT_SECONDS = 60.0
+WRITE_TIMEOUT_SECONDS = 30.0
+POOL_TIMEOUT_SECONDS = 20.0
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _LOG = logging.getLogger("dynamis.command_interpreter")
 _YANDEX_SECRET = re.compile(r"(AQVN[A-Za-z0-9_\-]{8,})|(sk-[A-Za-z0-9_\-]{8,})|(Bearer\s+\S+)", re.IGNORECASE)
 _INSTRUCTION = (
-    "Извлеки поля одной команды. Верни только JSON с ключами "
-    "intent, target_agent_hint, project_hint, period_hint, queue_hint, "
-    "title_hint, discipline_hint, system_hint, iwp_hint. "
-    "Не присваивай коды проектов. Без пояснений."
+    "Извлеки поля одной команды планировщика. Верни РОВНО один JSON-объект "
+    "и только эти ключи: intent, target_agent_hint, project_hint, period_hint, "
+    "queue_hint, title_hint, discipline_hint, system_hint, iwp_hint. "
+    "Все значения — только строки (string). Не используй null. "
+    "Не добавляй другие поля. Без markdown и без code fences. "
+    "Не присваивай коды проектов (PRJ_...), mission ID или run ID. "
+    "intent: только FORM_CANDIDATE_PACKAGE, если просят сформировать, собрать "
+    "или подготовить кандидатный состав или кандидатов; "
+    "только FORM_MONTHLY_COMMITMENT, если просят месячное обязательство, "
+    "месячное производственное обязательство или плановое обязательство на месяц; "
+    "не своди месячное обязательство к FORM_CANDIDATE_PACKAGE; иначе пустая строка \"\". "
+    "target_agent_hint: только constructor, если речь о конструкторе или "
+    "кандидатном составе; иначе пустая строка \"\". "
+    "Не пиши MONTHLY_PLAN_CONSTRUCTOR, Constructor Agent или иные обозначения агента. "
+    "project_hint: название проекта словами, без кода. "
+    "period_hint: месяц и год, например ноябрь 2026; пустая строка, если месяца нет. "
+    "queue_hint: 1 или 2; пустая строка, если очередь не названа. "
+    "title_hint: код титула с дефисом, если человек назвал его части, например 16160-13. "
+    "Не выдумывай титул. "
+    "discipline_hint: дисциплина словами человека. "
+    "system_hint и iwp_hint: пустые строки \"\", если их не назвали. "
+    "Без пояснений."
 )
 
 
@@ -172,6 +195,7 @@ def yandex_client():
     if settings is None:
         raise RuntimeError("Yandex command interpreter is not configured")
     _load_env()
+    import httpx
     from openai import OpenAI
 
     return OpenAI(
@@ -179,6 +203,12 @@ def yandex_client():
         base_url=settings["base_url"],
         project=settings["folder_id"],
         max_retries=MAX_SDK_RETRIES,
+        timeout=httpx.Timeout(
+            connect=CONNECT_TIMEOUT_SECONDS,
+            read=READ_TIMEOUT_SECONDS,
+            write=WRITE_TIMEOUT_SECONDS,
+            pool=POOL_TIMEOUT_SECONDS,
+        ),
     )
 
 

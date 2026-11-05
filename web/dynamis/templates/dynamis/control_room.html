@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DYNAMIS — Digital Workforce Control Room</title>
-  <link rel="stylesheet" href="{% static 'dynamis/control_room.css' %}?v=5">
+  <link rel="stylesheet" href="{% static 'dynamis/control_room.css' %}?v=6">
 </head>
 <body>
   <div class="cr">
@@ -61,13 +61,64 @@
               </div>
               <div class="cr-tabpanel" data-panel="chat">
                 <p class="cr-kicker">Команда человека</p>
-                <blockquote class="cr-command">{% if command_received %}{{ command_text }}{% else %}{{ command_example }}{% endif %}</blockquote>
+                <blockquote class="cr-command">{% if command_received %}{% if clarification_fragment %}{{ clarification_fragment }}{% else %}{{ command_text }}{% endif %}{% else %}{{ command_example }}{% endif %}</blockquote>
+                {% if command_received and clarification_fragment and clarification_fragment != command_text %}
+                <p class="cr-kicker">Исходное поручение</p>
+                <p class="cr-muted">{{ command_text }}</p>
+                {% endif %}
                 {% if command_received %}
                 <p class="cr-kicker">Статус команды</p>
-                <p class="cr-command-status">{{ command_status }}</p>
-                {% if interpretation_channel == "openai" %}<p class="cr-muted">Интерпретация: OpenAI + проверка DYNAMIS</p>
+                <p class="cr-command-status">{% if clarification_applied %}{{ clarification_message }}{% else %}{{ command_status }}{% endif %}</p>
+                {% if interpretation_channel == "yandex" %}<p class="cr-muted">Интерпретация: YandexGPT + проверка DYNAMIS</p>
+                {% elif interpretation_channel == "openai" %}<p class="cr-muted">Интерпретация: OpenAI + проверка DYNAMIS</p>
                 {% elif interpretation_channel == "deterministic" %}<p class="cr-muted">Интерпретация: deterministic</p>
                 {% elif interpretation_channel == "unavailable" %}<p class="cr-muted">Интеллектуальная интерпретация недоступна.</p>{% endif %}
+                {% if provider_error_safe %}<p class="cr-muted">Ошибка провайдера: {{ provider_error_safe }}</p>{% endif %}
+                {% if llm_view_visible %}
+                <p class="cr-kicker">Что поняла LLM</p>
+                <dl class="cr-facts">
+                  <div><dt>Provider</dt><dd>{{ llm_provider }}</dd></div>
+                  <div><dt>Model</dt><dd>{{ llm_model }}</dd></div>
+                  <div><dt>Intent</dt><dd>{{ llm_intent }}</dd></div>
+                  <div><dt>Agent hint</dt><dd>{{ llm_agent_hint }}</dd></div>
+                  <div><dt>Project hint</dt><dd>{{ llm_project_hint }}</dd></div>
+                  <div><dt>Period hint</dt><dd>{{ llm_period_hint }}</dd></div>
+                  <div><dt>Queue hint</dt><dd>{{ llm_queue_hint }}</dd></div>
+                  <div><dt>Title hint</dt><dd>{{ llm_title_hint }}</dd></div>
+                  <div><dt>Discipline hint</dt><dd>{{ llm_discipline_hint }}</dd></div>
+                  <div><dt>System hint</dt><dd>{{ llm_system_hint }}</dd></div>
+                  <div><dt>IWP hint</dt><dd>{{ llm_iwp_hint }}</dd></div>
+                </dl>
+                {% endif %}
+                <p class="cr-kicker">Что подтвердил DYNAMIS</p>
+                <dl class="cr-facts">
+                  <div><dt>Canonical agent</dt><dd>{{ canonical_agent }}</dd></div>
+                  <div><dt>Canonical project</dt><dd>{{ canonical_project }}</dd></div>
+                  <div><dt>Canonical period</dt><dd>{{ canonical_period }}</dd></div>
+                  <div><dt>Canonical queue</dt><dd>{{ canonical_queue }}</dd></div>
+                  {% if canonical_queue_source %}<div><dt>Queue source</dt><dd>{{ canonical_queue_source }}</dd></div>{% endif %}
+                  <div><dt>Canonical title</dt><dd>{{ canonical_title }}</dd></div>
+                  <div><dt>Canonical discipline</dt><dd>{{ canonical_discipline }}</dd></div>
+                  {% if canonical_discipline_source %}<div><dt>Discipline source</dt><dd>{{ canonical_discipline_source }}</dd></div>{% endif %}
+                </dl>
+                <p class="cr-kicker">Статус</p>
+                <dl class="cr-facts">
+                  <div><dt>Interpretation state</dt><dd>{{ status_interpretation_state }}</dd></div>
+                  <div><dt>Schema validation</dt><dd>{{ status_schema_validation }}</dd></div>
+                  <div><dt>Deterministic resolution</dt><dd>{{ status_deterministic_resolution }}</dd></div>
+                </dl>
+                {% if telemetry_visible %}
+                <p class="cr-kicker">LLM telemetry</p>
+                <dl class="cr-facts">
+                  <div><dt>Input tokens</dt><dd>{{ telemetry_input_tokens }}</dd></div>
+                  <div><dt>Output tokens</dt><dd>{{ telemetry_output_tokens }}</dd></div>
+                  <div><dt>Total tokens</dt><dd>{{ telemetry_total_tokens }}</dd></div>
+                  <div><dt>Latency ms</dt><dd>{{ telemetry_latency_ms }}</dd></div>
+                  <div><dt>Provider calls</dt><dd>{{ telemetry_provider_calls }}</dd></div>
+                  <div><dt>Retries</dt><dd>{{ telemetry_retries }}</dd></div>
+                  {% if telemetry_request_id %}<div><dt>Request id</dt><dd>{{ telemetry_request_id }}</dd></div>{% endif %}
+                </dl>
+                {% endif %}
                 {% if interpretation_headline %}<p class="cr-kicker">{{ interpretation_headline }}</p>{% endif %}
                 {% if interpretation_facts %}
                 <dl class="cr-facts">
@@ -328,6 +379,6 @@
       </div>
     </div>
   </div>
-  <script src="{% static 'dynamis/control_room.js' %}?v=5"></script>
+  <script src="{% static 'dynamis/control_room.js' %}?v=6"></script>
 </body>
 </html>

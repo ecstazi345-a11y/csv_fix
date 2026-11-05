@@ -24,7 +24,7 @@ from agents.human_surface.command_interpreter_provider import (
 )
 from agents.human_surface.work_context import WorkContextCatalog, load_work_context_catalog
 
-from .command_interpretation import INTERPRETATION_SESSION_KEY
+from .command_interpretation import CLARIFICATION_SESSION_KEY, INTERPRETATION_SESSION_KEY
 from .human_command import HumanCommand, load_human_command
 
 CONFIRMATION_SESSION_KEY = "dynamis_command_confirmation"
@@ -87,6 +87,7 @@ def accept_command_confirmation(
         source_text=command.raw_text,
     )
     session[CONFIRMATION_SESSION_KEY] = confirmation.as_dict()
+    session.pop(CLARIFICATION_SESSION_KEY, None)
     _touch(session)
     return ConfirmationReceipt(accepted=True, notice="", confirmation=confirmation)
 

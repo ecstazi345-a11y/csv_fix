@@ -1,3 +1,40 @@
+function bindCommandSubmit(form, commandInput, submitButton, show) {
+  var isSubmitting = false;
+
+  function beginSubmit(event) {
+    if (isSubmitting) {
+      event.preventDefault();
+      return;
+    }
+    var text = String(commandInput.value || "").replace(/^\s+|\s+$/g, "");
+    if (!text) {
+      event.preventDefault();
+      return;
+    }
+    isSubmitting = true;
+    if (submitButton) submitButton.disabled = true;
+    if (typeof show === "function") show("DYNAMIS обрабатывает поручение…");
+  }
+
+  form.addEventListener("submit", beginSubmit);
+  commandInput.addEventListener("keydown", function (event) {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    event.preventDefault();
+    if (isSubmitting) return;
+    if (typeof form.requestSubmit === "function") {
+      form.requestSubmit(submitButton || undefined);
+      return;
+    }
+    beginSubmit({ preventDefault: function () {} });
+    if (isSubmitting) form.submit();
+  });
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { bindCommandSubmit: bindCommandSubmit };
+}
+
+if (typeof document !== "undefined") {
 (function () {
   var notice = document.getElementById("cr-notice");
   var messages = {
@@ -77,16 +114,7 @@
   var form = document.getElementById("command-form");
   var commandInput = document.getElementById("command-input");
   if (form && commandInput) {
-    commandInput.addEventListener("keydown", function (event) {
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        if (typeof form.requestSubmit === "function") {
-          form.requestSubmit();
-        } else {
-          form.submit();
-        }
-      }
-    });
+    bindCommandSubmit(form, commandInput, form.querySelector(".cr-send"), show);
   }
 
   var KEY = "dynamis.control-room.layout";
@@ -354,3 +382,4 @@
   window.addEventListener("resize", apply);
   apply();
 })();
+}

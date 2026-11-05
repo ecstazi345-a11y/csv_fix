@@ -757,6 +757,117 @@ class HumanCommandInputTests(SimpleTestCase):
         ).read_text(encoding="utf-8")
         self.assertNotIn("onpaste", script.lower())
         self.assertNotIn("clipboard", script.lower())
+        self.assertIn("bindCommandSubmit", script)
+        self.assertIn("DYNAMIS обрабатывает поручение…", script)
+        self.assertIn("isSubmitting", script)
+
+    def test_command_submit_lock_allows_one_enter_and_one_click(self) -> None:
+        import shutil
+        import subprocess
+        import tempfile
+
+        cscript = shutil.which("cscript")
+        self.assertTrue(cscript)
+        source = (
+            Path(__file__).resolve().parent / "static" / "dynamis" / "control_room.js"
+        ).read_text(encoding="utf-8")
+        start = source.index("function bindCommandSubmit")
+        end = source.index("if (typeof module", start)
+        function_source = source[start:end]
+        harness = function_source + r"""
+function target() {
+  var listeners = {};
+  return {
+    addEventListener: function (type, fn) {
+      if (!listeners[type]) listeners[type] = [];
+      listeners[type].push(fn);
+    },
+    emit: function (type, event) {
+      var list = listeners[type] || [];
+      for (var i = 0; i < list.length; i++) list[i](event);
+    }
+  };
+}
+function press(input, key, shiftKey) {
+  var event = { key: key, shiftKey: !!shiftKey, prevented: false, preventDefault: function () { this.prevented = true; } };
+  input.emit("keydown", event);
+  return event;
+}
+function bind(text) {
+  var form = target();
+  var input = target();
+  input.value = text;
+  var button = { disabled: false };
+  var notices = [];
+  var submits = 0;
+  var emit = form.emit;
+  form.emit = function (type, event) {
+    emit(type, event);
+    if (type === "submit" && !event.prevented) submits += 1;
+  };
+  form.requestSubmit = function () {
+    var event = { prevented: false, preventDefault: function () { this.prevented = true; } };
+    form.emit("submit", event);
+  };
+  form.submit = function () { submits += 1; };
+  bindCommandSubmit(form, input, button, function (notice) { notices.push(notice); });
+  return { form: form, input: input, button: button, notices: notices, count: function () { return submits; } };
+}
+var enter = bind("discipline");
+var firstEnter = press(enter.input, "Enter", false);
+press(enter.input, "Enter", false);
+var click = bind("discipline");
+var firstClick = { prevented: false, preventDefault: function () { this.prevented = true; } };
+click.form.emit("submit", firstClick);
+var secondClick = { prevented: false, preventDefault: function () { this.prevented = true; } };
+click.form.emit("submit", secondClick);
+var shift = bind("line");
+var shiftEnter = press(shift.input, "Enter", true);
+var empty = bind("   ");
+press(empty.input, "Enter", false);
+var expectedNotice = "DYNAMIS обрабатывает поручение…";
+WScript.Echo([
+  firstEnter.prevented ? 1 : 0,
+  enter.count(),
+  enter.button.disabled ? 1 : 0,
+  enter.notices[0] === expectedNotice ? "NOTICE_OK" : "NOTICE_BAD",
+  firstClick.prevented ? 1 : 0,
+  secondClick.prevented ? 1 : 0,
+  click.count(),
+  click.button.disabled ? 1 : 0,
+  shiftEnter.prevented ? 1 : 0,
+  shift.count(),
+  empty.count(),
+  empty.button.disabled ? 1 : 0
+].join("|"));
+"""
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".js", delete=False, encoding="utf-16"
+        ) as handle:
+            handle.write(harness)
+            harness_path = handle.name
+        completed = subprocess.run(
+            [cscript, "//Nologo", harness_path],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="cp866",
+            errors="replace",
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
+        parts = completed.stdout.strip().split("|")
+        self.assertEqual(parts[0], "1")
+        self.assertEqual(parts[1], "1")
+        self.assertEqual(parts[2], "1")
+        self.assertEqual(parts[3], "NOTICE_OK")
+        self.assertEqual(parts[4], "0")
+        self.assertEqual(parts[5], "1")
+        self.assertEqual(parts[6], "1")
+        self.assertEqual(parts[7], "1")
+        self.assertEqual(parts[8], "0")
+        self.assertEqual(parts[9], "0")
+        self.assertEqual(parts[10], "0")
+        self.assertEqual(parts[11], "0")
 
     def test_submit_shows_received_command_without_interpretation(self) -> None:
         response = self.client.post(
@@ -1592,7 +1703,7 @@ class CommandInterpreterProviderTests(SimpleTestCase):
             "dynamis.command_confirmation.load_work_context_catalog",
             return_value=catalog,
         ), patch(
-            "agents.human_surface.openai_command_interpreter.build_openai_provider",
+            "dynamis.command_interpretation.resolve_command_provider",
             return_value=provider,
         ):
             preview = self.client.post(
@@ -1702,8 +1813,14 @@ class YandexCommandInterpreterTests(SimpleTestCase):
     def test_client_uses_configured_endpoint_once_without_retries_or_tools(self) -> None:
         import json
 
+        import httpx
+
         from agents.human_surface.yandex_command_interpreter import (
+            CONNECT_TIMEOUT_SECONDS,
             MAX_SDK_RETRIES,
+            POOL_TIMEOUT_SECONDS,
+            READ_TIMEOUT_SECONDS,
+            WRITE_TIMEOUT_SECONDS,
             YandexCommandInterpreter,
             yandex_configuration,
             yandex_key_present,
@@ -1728,11 +1845,22 @@ class YandexCommandInterpreterTests(SimpleTestCase):
         self.assertEqual(constructor["project"], _YANDEX_FOLDER_ID)
         self.assertEqual(constructor["max_retries"], 0)
         self.assertTrue(constructor["api_key"] == _YANDEX_FAKE_KEY)
+        timeout = constructor["timeout"]
+        self.assertIsInstance(timeout, httpx.Timeout)
+        self.assertEqual(timeout.connect, CONNECT_TIMEOUT_SECONDS)
+        self.assertEqual(timeout.connect, 20.0)
+        self.assertEqual(timeout.read, READ_TIMEOUT_SECONDS)
+        self.assertEqual(timeout.read, 60.0)
+        self.assertEqual(timeout.write, WRITE_TIMEOUT_SECONDS)
+        self.assertEqual(timeout.write, 30.0)
+        self.assertEqual(timeout.pool, POOL_TIMEOUT_SECONDS)
+        self.assertEqual(timeout.pool, 20.0)
         self.assertEqual(request["model"], _YANDEX_MODEL_URI)
         self.assertEqual(request["temperature"], 0)
         self.assertEqual(request["max_tokens"], 160)
         self.assertEqual(request["response_format"], {"type": "json_object"})
         self.assertNotIn("tools", request)
+        self.assertNotIn("timeout", request)
         self.assertNotIn("api_key", request)
         self.assertNotIn(_YANDEX_FAKE_KEY, json.dumps(request, ensure_ascii=False))
         self.assertTrue(result.usage.schema_validation_pass)
@@ -1843,9 +1971,884 @@ class YandexCommandInterpreterTests(SimpleTestCase):
             "agents", "human_surface", "yandex_command_interpreter.py"
         ).read_text(encoding="utf-8").casefold()
         self.assertEqual(source.count("chat.completions.create"), 1)
+        self.assertIn("httpx.timeout(", source)
         self.assertNotIn("responses.create", source)
         self.assertNotIn("build_openai_provider", source)
         self.assertNotIn("launch_monthly_plan", source)
         self.assertNotIn("supabase", source)
         self.assertNotIn("create_run", source)
         self.assertNotIn("append_event", source)
+        self.assertNotIn("monthly_plan_constructor -> constructor", source)
+        self.assertNotIn("normalize", source)
+
+    def test_yandex_instruction_requires_exact_string_contract(self) -> None:
+        from agents.human_surface.command_interpreter_provider import EXTRACTION_FIELDS
+        from agents.human_surface.yandex_command_interpreter import (
+            _INSTRUCTION,
+            yandex_request_arguments,
+        )
+
+        text = _INSTRUCTION
+        for key in EXTRACTION_FIELDS:
+            self.assertIn(key, text)
+        self.assertIn("FORM_CANDIDATE_PACKAGE", text)
+        self.assertIn("constructor", text)
+        self.assertIn("string", text.casefold())
+        self.assertIn("null", text.casefold())
+        self.assertIn("markdown", text.casefold())
+        self.assertIn("MONTHLY_PLAN_CONSTRUCTOR", text)
+        self.assertIn('""', text)
+        request = yandex_request_arguments("бхк ноябрь", _YANDEX_MODEL_URI)
+        self.assertEqual(request["messages"][0]["content"], _INSTRUCTION)
+        self.assertNotIn("PRJ_001", _INSTRUCTION)
+
+    def test_invalid_extraction_preserves_safe_rejection_detail(self) -> None:
+        import json
+
+        from agents.human_surface.yandex_command_interpreter import interpret_with_yandex
+
+        bad = _accepted_extraction().as_dict()
+        bad["target_agent_hint"] = "MONTHLY_PLAN_CONSTRUCTOR"
+        with patch.dict(os.environ, _yandex_env(), clear=False), patch("openai.OpenAI") as client_cls, patch(
+            "agents.human_surface.yandex_command_interpreter.resolve_extraction"
+        ) as resolver:
+            client_cls.return_value.chat.completions.create.return_value = _yandex_completion(
+                json.dumps(bad, ensure_ascii=False)
+            )
+            attempt = interpret_with_yandex(
+                command_id="cmd-yandex",
+                raw_text="бхк",
+                catalog=_scope_catalog(),
+            )
+        client_cls.return_value.chat.completions.create.assert_called_once()
+        resolver.assert_not_called()
+        self.assertIsNone(attempt.result.extraction)
+        self.assertEqual(attempt.result.failure.category, "response_validation")
+        self.assertEqual(attempt.result.failure.error_type, "ExtractionRejected")
+        detail = attempt.result.failure.safe_error_message
+        self.assertTrue(detail.startswith("ExtractionRejected:"))
+        self.assertIn("target agent hint is outside the allowed vocabulary", detail)
+        self.assertFalse(attempt.deterministic_resolution_pass)
+        self.assertFalse(attempt.mission_created)
+        self.assertFalse(attempt.constructor_run_created)
+
+    def test_extraction_rejected_secret_text_is_redacted(self) -> None:
+        from agents.human_surface.command_interpreter_provider import ExtractionRejected
+        from agents.human_surface.openai_command_interpreter import classify_provider_failure
+
+        failure = classify_provider_failure(
+            ExtractionRejected("bad key AQVNunitkeyvalue0001 and sk-liveSecretValue123")
+        )
+        self.assertEqual(failure.category, "response_validation")
+        self.assertTrue(failure.safe_error_message.startswith("ExtractionRejected:"))
+        self.assertNotIn("AQVN", failure.safe_error_message)
+        self.assertNotIn("sk-liveSecretValue123", failure.safe_error_message)
+        self.assertIn("[redacted]", failure.safe_error_message)
+
+    def test_openai_provider_keeps_sdk_default_timeout(self) -> None:
+        """Yandex bounded timeout must not leak into the OpenAI provider client."""
+        import json
+        from unittest.mock import MagicMock
+
+        from agents.human_surface.openai_command_interpreter import OpenAICommandInterpreter
+
+        response = MagicMock()
+        response.output_text = json.dumps(_accepted_extraction().as_dict(), ensure_ascii=False)
+        response.usage.input_tokens = 3
+        response.usage.output_tokens = 4
+        response.usage.total_tokens = 7
+        with patch("openai.OpenAI") as client_cls:
+            client_cls.return_value.responses.create.return_value = response
+            OpenAICommandInterpreter().extract(_MESSY_COMMANDS[0])
+        client_cls.assert_called_once_with(max_retries=0)
+        self.assertNotIn("timeout", client_cls.call_args.kwargs)
+
+
+def _partial_yandex_extraction():
+    from agents.human_surface.command_interpreter_provider import CommandExtraction
+
+    return CommandExtraction(
+        intent="FORM_CANDIDATE_PACKAGE",
+        target_agent_hint="constructor",
+        project_hint="БХК",
+        period_hint="ноябрь",
+        queue_hint="1",
+        title_hint="16160-13",
+        discipline_hint="",
+        system_hint="",
+        iwp_hint="",
+    )
+
+
+class _YandexSurfaceProvider:
+    def __init__(self, extraction=None, *, fail: bool = False, leak_secret: bool = False) -> None:
+        from agents.human_surface.command_interpreter_provider import (
+            InterpreterUsage,
+            ProviderExtractionResult,
+            ProviderFailure,
+        )
+
+        self.calls: list[str] = []
+        self.extraction = _accepted_extraction() if extraction is None else extraction
+        self.fail = fail
+        self.leak_secret = leak_secret
+        self._usage = InterpreterUsage(
+            "yandex",
+            _YANDEX_MODEL_URI,
+            11,
+            7,
+            18,
+            42,
+            not fail,
+            provider_call_count=1,
+            retry_count=0,
+            request_id="chatcmpl_yandex_surface",
+            schema_validation_pass=False if fail else True,
+        )
+        self._result_type = ProviderExtractionResult
+        self._failure_type = ProviderFailure
+
+    def extract(self, raw_text: str):
+        self.calls.append(raw_text)
+        if not self.fail:
+            return self._result_type(extraction=self.extraction, usage=self._usage)
+        message = (
+            "rejected key AQVNunitkeyvalue0001 and sk-liveSecretValue123"
+            if self.leak_secret
+            else "YandexGPT request failed"
+        )
+        return self._result_type(
+            extraction=None,
+            usage=self._usage,
+            failure=self._failure_type(
+                category="provider_error",
+                error_type="ProviderError",
+                error_code="failed",
+                error_param="",
+                http_status=500,
+                request_id="chatcmpl_yandex_surface",
+                safe_error_message=message,
+            ),
+        )
+
+
+@override_settings(
+    ROOT_URLCONF="config.urls",
+    ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"],
+)
+class YandexControlRoomSurfaceTests(SimpleTestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+
+    def _post_with_provider(self, provider, text: str = _MESSY_COMMANDS[0]):
+        catalog = _scope_catalog()
+        with patch(
+            "dynamis.command_interpretation.load_work_context_catalog",
+            return_value=catalog,
+        ), patch(
+            "dynamis.command_interpretation.resolve_command_provider",
+            return_value=provider,
+        ):
+            return self.client.post(reverse("control_room"), {"raw_text": text}, follow=True)
+
+    def test_django_provider_prefers_yandex_without_view_hardcode(self) -> None:
+        from dynamis.command_provider import resolve_command_provider
+        from agents.human_surface.yandex_command_interpreter import YandexCommandInterpreter
+
+        views = Path(__file__).with_name("views.py").read_text(encoding="utf-8")
+        start = views.index("def control_room")
+        end = views.index("\ndef architecture")
+        room_view = views[start:end].casefold()
+        self.assertNotIn("yandex", room_view)
+        self.assertNotIn("openai", room_view)
+        self.assertNotIn("build_yandex_provider", room_view)
+        with patch.dict(os.environ, _yandex_env(), clear=False), patch(
+            "agents.human_surface.openai_command_interpreter.build_openai_provider"
+        ) as openai_builder:
+            selected = resolve_command_provider()
+        openai_builder.assert_not_called()
+        self.assertIsInstance(selected, YandexCommandInterpreter)
+
+    def test_valid_yandex_extraction_is_shown_without_mission_or_constructor(self) -> None:
+        provider = _YandexSurfaceProvider()
+        response = self._post_with_provider(provider)
+        body = response.content.decode("utf-8")
+        self.assertEqual(provider.calls, [_MESSY_COMMANDS[0]])
+        self.assertIn(_MESSY_COMMANDS[0], body)
+        self.assertIn("Интерпретация: YandexGPT + проверка DYNAMIS", body)
+        self.assertIn("Что поняла LLM", body)
+        self.assertIn("yandex", body)
+        self.assertIn(_YANDEX_MODEL_URI, body)
+        self.assertIn("FORM_CANDIDATE_PACKAGE", body)
+        self.assertIn("constructor", body)
+        self.assertIn("БХК", body)
+        self.assertIn("ноябрь 2026", body)
+        self.assertIn("Что подтвердил DYNAMIS", body)
+        self.assertIn("PRJ_001_БХК", body)
+        self.assertIn("ноябрь-2026", body)
+        self.assertIn("Автоматизация", body)
+        self.assertIn("NEEDS_CONFIRMATION", body)
+        self.assertIn("Schema validation</dt><dd>YES</dd>", body)
+        self.assertIn("Deterministic resolution</dt><dd>YES</dd>", body)
+        self.assertIn("LLM telemetry", body)
+        self.assertIn("chatcmpl_yandex_surface", body)
+        self.assertIn("Input tokens</dt><dd>11</dd>", body)
+        self.assertIn("Output tokens</dt><dd>7</dd>", body)
+        self.assertIn("Total tokens</dt><dd>18</dd>", body)
+        self.assertIn("Latency ms</dt><dd>42</dd>", body)
+        stored = self.client.session["dynamis_command_interpretation"]
+        self.assertEqual(stored["interpretation_channel"], "yandex")
+        self.assertFalse(stored["mission_created"])
+        self.assertNotIn("dynamis_command_confirmation", self.client.session)
+        self.assertNotIn(_YANDEX_FAKE_KEY, body)
+        self.assertNotIn("AQVN", body)
+        self.assertNotIn("Authorization", body)
+
+    def test_needs_clarification_is_shown_honestly(self) -> None:
+        provider = _YandexSurfaceProvider(extraction=_partial_yandex_extraction())
+        response = self._post_with_provider(provider)
+        body = response.content.decode("utf-8")
+        self.assertEqual(provider.calls, [_MESSY_COMMANDS[0]])
+        self.assertIn("Что поняла LLM", body)
+        self.assertIn("FORM_CANDIDATE_PACKAGE", body)
+        self.assertIn("constructor", body)
+        self.assertIn("БХК", body)
+        self.assertIn("ноябрь", body)
+        self.assertIn("16160-13", body)
+        self.assertIn("Discipline hint</dt><dd>&quot;&quot;</dd>", body)
+        self.assertIn("NEEDS_CLARIFICATION", body)
+        self.assertIn("Не определено / Требуется уточнение", body)
+        self.assertIn("Не определено:", body)
+        self.assertIn("Schema validation</dt><dd>YES</dd>", body)
+        self.assertIn("Deterministic resolution</dt><dd>NO</dd>", body)
+        stored = self.client.session["dynamis_command_interpretation"]
+        self.assertEqual(stored["processing_state"], "NEEDS_CLARIFICATION")
+        self.assertEqual(stored["interpretation_channel"], "yandex")
+        self.assertFalse(stored["mission_created"])
+        self.assertTrue(stored.get("unresolved_fields"))
+        self.assertNotIn("dynamis_command_confirmation", self.client.session)
+        self.assertNotIn("Поручение подтверждено", body)
+
+    def test_provider_failure_is_fail_closed_and_secret_safe(self) -> None:
+        provider = _YandexSurfaceProvider(fail=True, leak_secret=True)
+        response = self._post_with_provider(provider)
+        body = response.content.decode("utf-8")
+        self.assertEqual(provider.calls, [_MESSY_COMMANDS[0]])
+        self.assertIn("Интеллектуальная интерпретация недоступна.", body)
+        self.assertIn("Ошибка провайдера:", body)
+        self.assertIn("чувствительный фрагмент", body)
+        self.assertNotIn(_YANDEX_FAKE_KEY, body)
+        self.assertNotIn("AQVN", body)
+        self.assertNotIn("sk-liveSecretValue123", body)
+        self.assertIn("LLM telemetry", body)
+        self.assertIn("chatcmpl_yandex_surface", body)
+        stored = self.client.session["dynamis_command_interpretation"]
+        self.assertEqual(stored["interpretation_channel"], "unavailable")
+        self.assertFalse(stored["mission_created"])
+        self.assertNotIn("dynamis_command_confirmation", self.client.session)
+        self.assertNotIn("Поручение подтверждено", body)
+
+    def test_yandex_surface_keeps_d2c_confirmation_semantics(self) -> None:
+        provider = _YandexSurfaceProvider()
+        catalog = _scope_catalog()
+        with patch(
+            "dynamis.command_interpretation.load_work_context_catalog",
+            return_value=catalog,
+        ), patch(
+            "dynamis.command_confirmation.load_work_context_catalog",
+            return_value=catalog,
+        ), patch(
+            "dynamis.command_interpretation.resolve_command_provider",
+            return_value=provider,
+        ):
+            preview = self.client.post(
+                reverse("control_room"),
+                {"raw_text": _MESSY_COMMANDS[0]},
+                follow=True,
+            )
+            confirmed = self.client.post(
+                reverse("control_room"),
+                {"action": "confirm"},
+                follow=True,
+            )
+        body = confirmed.content.decode("utf-8")
+        self.assertIn("Интерпретация: YandexGPT + проверка DYNAMIS", preview.content.decode("utf-8"))
+        self.assertIn("Поручение подтверждено", body)
+        self.assertIn("Constructor ещё не запущен", body)
+        self.assertEqual(
+            self.client.session["dynamis_command_confirmation"]["confirmation_state"],
+            "CONFIRMED",
+        )
+        self.assertFalse(self.client.session["dynamis_command_confirmation"]["mission_created"])
+        self.assertFalse(
+            self.client.session["dynamis_command_confirmation"]["constructor_run_created"]
+        )
+
+
+def _manual_scope_catalog(rows):
+    from agents.human_surface.work_context import ScopeFact, WorkContextCatalog
+
+    facts = tuple(
+        ScopeFact(
+            project_label=row["project_label"],
+            project_code=row["project_code"],
+            queue=row["queue"],
+            facility=row["facility"],
+            title=row["facility"],
+            discipline=row["discipline"],
+            systems=(),
+            packages=(),
+        )
+        for row in rows
+    )
+    return WorkContextCatalog(
+        source="test",
+        error="",
+        months=("ноябрь 2026",),
+        facts=facts,
+    )
+
+
+@override_settings(
+    ROOT_URLCONF="config.urls",
+    ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"],
+)
+def _quoted_human_command(body: str) -> str:
+    marker = '<p class="cr-kicker">Команда человека</p>'
+    start = body.index(marker)
+    open_tag = '<blockquote class="cr-command">'
+    quote_start = body.index(open_tag, start)
+    quote_end = body.index("</blockquote>", quote_start)
+    return body[quote_start + len(open_tag):quote_end]
+
+
+class SemanticScopeD2B2Tests(SimpleTestCase):
+    def test_candidate_package_intent_stays_candidate_package(self) -> None:
+        from agents.human_surface.command_interpretation import INTENT_FORM_CANDIDATE_PACKAGE
+
+        result = _interpret(
+            "Сформируй кандидатный состав на ноябрь 2026 по БХК, "
+            "титул 16160-13, автоматизация."
+        )
+        self.assertEqual(result.intent, INTENT_FORM_CANDIDATE_PACKAGE)
+        self.assertEqual(result.processing_state, "NEEDS_CONFIRMATION")
+        self.assertEqual(result.resolved_scope["queue"], "1")
+        self.assertEqual(result.resolved_scope["queue_source"], "CANONICAL_TITLE_RELATION")
+        self.assertFalse(result.mission_created)
+
+    def test_monthly_commitment_is_not_collapsed_to_candidate_package(self) -> None:
+        from agents.human_surface.command_interpretation import (
+            INTENT_FORM_CANDIDATE_PACKAGE,
+            INTENT_FORM_MONTHLY_COMMITMENT,
+        )
+        from agents.human_surface.command_interpreter_provider import (
+            CommandExtraction,
+            resolve_extraction,
+            validate_extraction,
+        )
+
+        result = _interpret(
+            "Сформируй месячное обязательство на ноябрь 2026 по БХК, "
+            "титул 16160-13, автоматизация."
+        )
+        self.assertEqual(result.intent, INTENT_FORM_MONTHLY_COMMITMENT)
+        self.assertNotEqual(result.intent, INTENT_FORM_CANDIDATE_PACKAGE)
+        self.assertEqual(result.processing_state, "NEEDS_CONFIRMATION")
+        self.assertEqual(result.resolution_status, "INTERPRETED")
+        self.assertEqual(result.unresolved_fields, ())
+        self.assertEqual(result.ambiguities, ())
+        self.assertEqual(result.resolved_scope.get("queue"), "1")
+        self.assertEqual(result.resolved_scope.get("queue_source"), "CANONICAL_TITLE_RELATION")
+        preview = dict(result.preview)
+        self.assertEqual(preview["Цель"], "Месячное обязательство")
+        self.assertEqual(preview["Scope"], "Полностью определён")
+        self.assertIn("кандидатного состава", preview["Первый этап"])
+        self.assertEqual(preview["Закон"], "Месячное обязательство ещё не сформировано")
+        self.assertEqual(
+            preview["Статус"],
+            "Ожидается подтверждение начала первого этапа",
+        )
+        self.assertFalse(result.mission_created)
+        payload = validate_extraction(
+            CommandExtraction(
+                intent=INTENT_FORM_MONTHLY_COMMITMENT,
+                target_agent_hint="constructor",
+                project_hint="БХК",
+                period_hint="ноябрь 2026",
+                queue_hint="",
+                title_hint="16160-13",
+                discipline_hint="автоматизация",
+            ).as_dict()
+        )
+        resolved = resolve_extraction(payload, _scope_catalog(), command_id="monthly")
+        self.assertEqual(resolved.intent, INTENT_FORM_MONTHLY_COMMITMENT)
+        self.assertNotEqual(resolved.intent, INTENT_FORM_CANDIDATE_PACKAGE)
+        self.assertEqual(resolved.processing_state, "NEEDS_CONFIRMATION")
+
+    def test_fully_resolved_monthly_commitment_is_confirmable_without_mission(self) -> None:
+        from agents.human_surface.command_confirmation import confirm_typed_draft
+        from agents.human_surface.command_interpretation import INTENT_FORM_MONTHLY_COMMITMENT
+
+        draft = _interpret(
+            "Сформируй месячное обязательство на ноябрь 2026 по БХК, "
+            "титул 16160-13, автоматизация."
+        )
+        self.assertEqual(draft.intent, INTENT_FORM_MONTHLY_COMMITMENT)
+        self.assertEqual(draft.processing_state, "NEEDS_CONFIRMATION")
+        confirmed = confirm_typed_draft(
+            draft,
+            catalog=_scope_catalog(),
+            source_text=(
+                "Сформируй месячное обязательство на ноябрь 2026 по БХК, "
+                "титул 16160-13, автоматизация."
+            ),
+        )
+        self.assertEqual(confirmed.confirmation_state, "CONFIRMED")
+        self.assertFalse(confirmed.as_dict()["mission_created"])
+        self.assertFalse(confirmed.as_dict()["constructor_run_created"])
+        self.assertFalse(draft.mission_created)
+
+    def test_incomplete_monthly_commitment_still_needs_clarification(self) -> None:
+        from agents.human_surface.command_interpretation import INTENT_FORM_MONTHLY_COMMITMENT
+
+        result = _interpret(
+            "Сформируй месячное обязательство на ноябрь 2026 по БХК, титул 16160-13."
+        )
+        self.assertEqual(result.intent, INTENT_FORM_MONTHLY_COMMITMENT)
+        self.assertEqual(result.processing_state, "NEEDS_CLARIFICATION")
+        self.assertIn("discipline", result.unresolved_fields)
+        self.assertFalse(result.mission_created)
+
+    def test_title_to_queue_unique_relationship_enriches_deterministically(self) -> None:
+        from agents.human_surface.command_interpreter_provider import (
+            CommandExtraction,
+            resolve_extraction,
+        )
+
+        extraction = CommandExtraction(
+            intent="FORM_CANDIDATE_PACKAGE",
+            target_agent_hint="constructor",
+            project_hint="БХК",
+            period_hint="ноябрь 2026",
+            queue_hint="",
+            title_hint="16160-13",
+            discipline_hint="автоматизация",
+        )
+        resolved = resolve_extraction(extraction, _scope_catalog(), command_id="enrich")
+        self.assertEqual(resolved.processing_state, "NEEDS_CONFIRMATION")
+        self.assertEqual(resolved.resolved_scope["queue"], "1")
+        self.assertEqual(resolved.resolved_scope["queue_source"], "CANONICAL_TITLE_RELATION")
+        self.assertEqual(extraction.queue_hint, "")
+
+    def test_ambiguous_title_to_queue_needs_clarification(self) -> None:
+        from agents.human_surface.command_interpretation import interpret_command
+
+        catalog = _manual_scope_catalog(
+            [
+                {
+                    "project_label": "БХК",
+                    "project_code": "PRJ_001_БХК",
+                    "queue": "1",
+                    "facility": "16160-13",
+                    "discipline": "Автоматизация",
+                },
+                {
+                    "project_label": "БХК",
+                    "project_code": "PRJ_001_БХК",
+                    "queue": "2",
+                    "facility": "16160-13",
+                    "discipline": "Автоматизация",
+                },
+            ]
+        )
+        result = interpret_command(
+            command_id="amb",
+            raw_text=(
+                "Сформируй кандидатный состав на ноябрь 2026 по БХК, "
+                "титул 16160-13, автоматизация."
+            ),
+            catalog=catalog,
+        )
+        self.assertEqual(result.processing_state, "NEEDS_CLARIFICATION")
+        self.assertNotIn("queue", result.resolved_scope)
+        self.assertNotIn("queue_source", result.resolved_scope)
+        self.assertIn("queue", result.unresolved_fields)
+
+    def test_missing_title_to_queue_relationship_needs_clarification(self) -> None:
+        from agents.human_surface.command_interpretation import interpret_command
+
+        catalog = _manual_scope_catalog(
+            [
+                {
+                    "project_label": "БХК",
+                    "project_code": "PRJ_001_БХК",
+                    "queue": "",
+                    "facility": "16160-13",
+                    "discipline": "Автоматизация",
+                },
+            ]
+        )
+        result = interpret_command(
+            command_id="miss",
+            raw_text=(
+                "Сформируй кандидатный состав на ноябрь 2026 по БХК, "
+                "титул 16160-13, автоматизация."
+            ),
+            catalog=catalog,
+        )
+        self.assertEqual(result.processing_state, "NEEDS_CLARIFICATION")
+        self.assertNotIn("queue", result.resolved_scope)
+        self.assertNotIn("queue_source", result.resolved_scope)
+        self.assertIn("queue", result.unresolved_fields)
+
+    def test_inferred_queue_provenance_is_canonical_title_relation(self) -> None:
+        result = _interpret(
+            "Сформируй кандидатный состав на ноябрь 2026 по БХК, "
+            "титул 16160-13, автоматизация."
+        )
+        self.assertEqual(result.resolved_scope["queue_source"], "CANONICAL_TITLE_RELATION")
+        spoken = _interpret(_ACCEPTED_COMMAND)
+        self.assertEqual(spoken.resolved_scope["queue"], "1")
+        self.assertNotIn("queue_source", spoken.resolved_scope)
+
+    def test_llm_is_not_authority_for_inferred_queue(self) -> None:
+        from agents.human_surface.command_interpreter_provider import CommandExtraction
+        from agents.human_surface.command_understanding import understand_command
+
+        class _QueueGuessProvider:
+            def __init__(self) -> None:
+                from agents.human_surface.command_interpreter_provider import (
+                    InterpreterUsage,
+                    ProviderExtractionResult,
+                )
+
+                self.calls: list[str] = []
+                self._usage = InterpreterUsage("yandex", "test", 1, 1, 2, 1, True)
+                self._type = ProviderExtractionResult
+
+            def extract(self, raw_text: str):
+                self.calls.append(raw_text)
+                return self._type(
+                    extraction=CommandExtraction(
+                        intent="FORM_CANDIDATE_PACKAGE",
+                        target_agent_hint="constructor",
+                        project_hint="БХК",
+                        period_hint="ноябрь 2026",
+                        queue_hint="",
+                        title_hint="16160-13",
+                        discipline_hint="автоматизация",
+                    ),
+                    usage=self._usage,
+                )
+
+        provider = _QueueGuessProvider()
+        understood = understand_command(
+            command_id="llm-queue",
+            raw_text="бхк нояб 16160 13 автоматик сформируй кандидатов",
+            catalog=_scope_catalog(),
+            provider=provider,
+        )
+        self.assertEqual(provider.calls, ["бхк нояб 16160 13 автоматик сформируй кандидатов"])
+        self.assertEqual(understood.extraction.queue_hint if understood.extraction else None, "")
+        self.assertEqual(understood.interpretation.resolved_scope["queue"], "1")
+        self.assertEqual(
+            understood.interpretation.resolved_scope["queue_source"],
+            "CANONICAL_TITLE_RELATION",
+        )
+
+    def test_clarification_foundation_merges_fragment_and_blocks_confirmed(self) -> None:
+        from agents.human_surface.command_clarification import (
+            ClarificationRejected,
+            apply_clarification_fragment,
+            pending_from_interpretation,
+        )
+        from agents.human_surface.command_interpretation import interpret_command
+
+        catalog = _manual_scope_catalog(
+            [
+                {
+                    "project_label": "БХК",
+                    "project_code": "PRJ_001_БХК",
+                    "queue": "1",
+                    "facility": "99999-01",
+                    "discipline": "Автоматизация",
+                },
+                {
+                    "project_label": "БХК",
+                    "project_code": "PRJ_001_БХК",
+                    "queue": "2",
+                    "facility": "99999-01",
+                    "discipline": "Автоматизация",
+                },
+            ]
+        )
+        source = (
+            "Сформируй кандидатный состав на ноябрь 2026 по БХК, "
+            "титул 99999-01, автоматизация."
+        )
+        draft = interpret_command(command_id="clr", raw_text=source, catalog=catalog)
+        self.assertEqual(draft.processing_state, "NEEDS_CLARIFICATION")
+        self.assertIn("queue", draft.unresolved_fields)
+        pending = pending_from_interpretation(draft, source_text=source)
+        self.assertIsNotNone(pending)
+        assert pending is not None
+        with self.assertRaises(ClarificationRejected):
+            apply_clarification_fragment(
+                pending,
+                "первая очередь",
+                catalog,
+                confirmation_is_active=True,
+            )
+        merged = apply_clarification_fragment(
+            pending,
+            "первая очередь",
+            catalog,
+            confirmation_is_active=False,
+        )
+        self.assertEqual(merged.resolved_scope.get("queue"), "1")
+        self.assertEqual(merged.processing_state, "NEEDS_CONFIRMATION")
+        self.assertFalse(merged.mission_created)
+
+    def test_scope_change_invalidates_prior_confirmation(self) -> None:
+        catalog = _scope_catalog()
+        self.client = Client()
+        with patch(
+            "dynamis.command_interpretation.load_work_context_catalog",
+            return_value=catalog,
+        ), patch(
+            "dynamis.command_confirmation.load_work_context_catalog",
+            return_value=catalog,
+        ), patch(
+            "dynamis.command_interpretation.resolve_command_provider",
+            return_value=None,
+        ):
+            self.client.post(
+                reverse("control_room"),
+                {"raw_text": _ACCEPTED_COMMAND},
+                follow=True,
+            )
+            self.client.post(reverse("control_room"), {"action": "confirm"}, follow=True)
+            self.assertEqual(
+                self.client.session["dynamis_command_confirmation"]["confirmation_state"],
+                "CONFIRMED",
+            )
+            changed = self.client.post(
+                reverse("control_room"),
+                {
+                    "raw_text": (
+                        "Сформируй кандидатный состав на ноябрь 2026 по БХК, "
+                        "титул 16160-17, автоматизация."
+                    )
+                },
+                follow=True,
+            )
+        body = changed.content.decode("utf-8")
+        self.assertNotIn("Поручение подтверждено", body)
+        self.assertIn("16160-17", body)
+        self.assertIn("Ожидается подтверждение", body)
+        self.assertEqual(
+            self.client.session["dynamis_command_interpretation"]["resolved_scope"]["facility"],
+            "16160-17",
+        )
+        self.assertFalse(self.client.session["dynamis_command_interpretation"]["mission_created"])
+
+    def test_discipline_fragment_continues_pending_draft_with_empty_intent(self) -> None:
+        from agents.human_surface.command_interpreter_provider import (
+            CommandExtraction,
+            InterpreterUsage,
+            ProviderExtractionResult,
+        )
+
+        class _FragmentProvider:
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            def extract(self, raw_text: str):
+                self.calls.append(raw_text)
+                if "дисциплин" in raw_text.casefold():
+                    extraction = CommandExtraction(
+                        intent="",
+                        target_agent_hint="",
+                        project_hint="",
+                        period_hint="",
+                        queue_hint="",
+                        title_hint="",
+                        discipline_hint="автоматизация",
+                    )
+                else:
+                    extraction = CommandExtraction(
+                        intent="FORM_CANDIDATE_PACKAGE",
+                        target_agent_hint="constructor",
+                        project_hint="БХК",
+                        period_hint="ноябрь 2026",
+                        queue_hint="",
+                        title_hint="16160-13",
+                        discipline_hint="",
+                    )
+                return ProviderExtractionResult(
+                    extraction=extraction,
+                    usage=InterpreterUsage("yandex", "test-model", 3, 2, 5, 9, True),
+                )
+
+        provider = _FragmentProvider()
+        catalog = _scope_catalog()
+        self.client = Client()
+        first = (
+            "сформируй кандидатный состав по БХК на ноябрь 2026 титул 16160-13"
+        )
+        with patch(
+            "dynamis.command_interpretation.load_work_context_catalog",
+            return_value=catalog,
+        ), patch(
+            "dynamis.command_interpretation.resolve_command_provider",
+            return_value=provider,
+        ):
+            preview = self.client.post(
+                reverse("control_room"),
+                {"raw_text": first},
+                follow=True,
+            )
+            stored = self.client.session["dynamis_command_interpretation"]
+            self.assertEqual(stored["processing_state"], "NEEDS_CLARIFICATION")
+            self.assertIn("discipline", stored["unresolved_fields"])
+            self.assertIsNotNone(self.client.session.get("dynamis_pending_clarification"))
+            continued = self.client.post(
+                reverse("control_room"),
+                {"raw_text": "дисциплина автоматизация"},
+                follow=True,
+            )
+        body = continued.content.decode("utf-8")
+        preview_body = preview.content.decode("utf-8")
+        self.assertEqual(_quoted_human_command(preview_body), first)
+        self.assertNotIn("Исходное поручение", preview_body)
+        self.assertEqual(_quoted_human_command(body), "дисциплина автоматизация")
+        self.assertIn(f'<p class="cr-kicker">Исходное поручение</p>\n                <p class="cr-muted">{first}</p>', body)
+        for line in (
+            "Пирометры перенеси в декабрь.",
+            "Эта позиция выполнена, мастер ошибся.",
+            "Остальные передавай в допуск.",
+        ):
+            self.assertIn(line, preview_body)
+            self.assertIn(line, body)
+        self.assertIn("Уточнение применено к текущему поручению", body)
+        self.assertIn("NEEDS_CONFIRMATION", body)
+        self.assertIn("Schema validation</dt><dd>YES</dd>", body)
+        self.assertIn("Deterministic resolution</dt><dd>YES</dd>", body)
+        self.assertIn("Автоматизация", body)
+        self.assertIn("HUMAN_CLARIFICATION", body)
+        self.assertIn("PRJ_001_БХК", body)
+        self.assertIn("ноябрь-2026", body)
+        self.assertIn("16160-13", body)
+        final = self.client.session["dynamis_command_interpretation"]
+        self.assertEqual(final["processing_state"], "NEEDS_CONFIRMATION")
+        self.assertEqual(final["intent"], "FORM_CANDIDATE_PACKAGE")
+        self.assertEqual(final["resolved_scope"]["project_code"], "PRJ_001_БХК")
+        self.assertEqual(final["resolved_scope"]["month_key"], "ноябрь-2026")
+        self.assertEqual(final["resolved_scope"]["queue"], "1")
+        self.assertEqual(final["resolved_scope"]["facility"], "16160-13")
+        self.assertEqual(final["resolved_scope"]["discipline"], "Автоматизация")
+        self.assertEqual(final["resolved_scope"]["discipline_source"], "HUMAN_CLARIFICATION")
+        self.assertFalse(final["mission_created"])
+        self.assertNotIn("dynamis_command_confirmation", self.client.session)
+        self.assertIsNone(self.client.session.get("dynamis_pending_clarification"))
+        self.assertEqual(self.client.session["dynamis_human_command"]["raw_text"], first)
+        self.assertIn("дисциплина автоматизация", provider.calls)
+        self.assertNotIn("REJECTED", body)
+        self.assertIn(first, preview.content.decode("utf-8"))
+
+    def test_discipline_fragment_without_pending_draft_is_rejected(self) -> None:
+        catalog = _scope_catalog()
+        self.client = Client()
+        with patch(
+            "dynamis.command_interpretation.load_work_context_catalog",
+            return_value=catalog,
+        ), patch(
+            "dynamis.command_interpretation.resolve_command_provider",
+            return_value=None,
+        ):
+            response = self.client.post(
+                reverse("control_room"),
+                {"raw_text": "дисциплина автоматизация"},
+                follow=True,
+            )
+        body = response.content.decode("utf-8")
+        stored = self.client.session["dynamis_command_interpretation"]
+        self.assertIn(stored["processing_state"], {"REJECTED", "NEEDS_CLARIFICATION"})
+        self.assertNotEqual(stored["processing_state"], "NEEDS_CONFIRMATION")
+        self.assertFalse(stored["mission_created"])
+        self.assertNotIn("Уточнение применено к текущему поручению", body)
+        self.assertNotEqual(stored.get("intent"), "FORM_CANDIDATE_PACKAGE")
+        self.assertNotIn("PRJ_001_БХК", stored.get("resolved_scope") or {})
+
+    def test_clarification_does_not_overwrite_resolved_title(self) -> None:
+        from agents.human_surface.command_clarification import (
+            continue_clarification,
+            pending_from_interpretation,
+        )
+        from agents.human_surface.command_interpretation import interpret_command
+        from agents.human_surface.command_interpreter_provider import CommandExtraction
+
+        incomplete = "Сформируй кандидатный состав на ноябрь 2026 по БХК, титул 16160-13"
+        draft = interpret_command(
+            command_id="ow",
+            raw_text=incomplete,
+            catalog=_scope_catalog(),
+        )
+        self.assertEqual(draft.processing_state, "NEEDS_CLARIFICATION")
+        self.assertEqual(draft.resolved_scope.get("facility"), "16160-13")
+        pending = pending_from_interpretation(draft, source_text=incomplete)
+        assert pending is not None
+        result = continue_clarification(
+            pending,
+            "титул 16160-17",
+            _scope_catalog(),
+            fragment_extraction=CommandExtraction(
+                intent="",
+                target_agent_hint="",
+                project_hint="",
+                period_hint="",
+                queue_hint="",
+                title_hint="16160-17",
+                discipline_hint="",
+            ),
+        )
+        self.assertTrue(result.handled)
+        self.assertTrue(result.conflict)
+        self.assertFalse(result.applied)
+        self.assertEqual(result.interpretation.resolved_scope.get("facility"), "16160-13")
+        self.assertNotEqual(result.interpretation.resolved_scope.get("facility"), "16160-17")
+        self.assertEqual(result.interpretation.processing_state, "NEEDS_CLARIFICATION")
+
+    def test_confirmed_draft_blocks_clarification_merge(self) -> None:
+        from agents.human_surface.command_clarification import ClarificationRejected, continue_clarification
+        from agents.human_surface.command_confirmation import confirm_typed_draft
+        from agents.human_surface.command_interpretation import interpret_command
+        from agents.human_surface.command_clarification import pending_from_interpretation
+
+        incomplete = "Сформируй кандидатный состав на ноябрь 2026 по БХК, титул 16160-13"
+        draft = interpret_command(
+            command_id="blocked",
+            raw_text=incomplete,
+            catalog=_scope_catalog(),
+        )
+        pending = pending_from_interpretation(draft, source_text=incomplete)
+        assert pending is not None
+        ready = _interpret(
+            "Сформируй кандидатный состав на ноябрь 2026 по БХК, "
+            "титул 16160-13, автоматизация."
+        )
+        confirm_typed_draft(
+            ready,
+            catalog=_scope_catalog(),
+            source_text=(
+                "Сформируй кандидатный состав на ноябрь 2026 по БХК, "
+                "титул 16160-13, автоматизация."
+            ),
+        )
+        with self.assertRaises(ClarificationRejected):
+            continue_clarification(
+                pending,
+                "дисциплина автоматизация",
+                _scope_catalog(),
+                confirmation_is_active=True,
+            )

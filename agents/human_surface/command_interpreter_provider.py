@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from typing import Mapping, Optional, Protocol
 
 from agents.human_surface.command_interpretation import (
+    INTENT_FORM_CANDIDATE_PACKAGE,
+    INTENT_FORM_MONTHLY_COMMITMENT,
     STATE_NEEDS_CONFIRMATION,
     CommandInterpretation,
     interpret_command,
@@ -28,7 +30,9 @@ EXTRACTION_FIELDS = (
     "system_hint",
     "iwp_hint",
 )
-_ALLOWED_INTENTS = frozenset({"", "FORM_CANDIDATE_PACKAGE"})
+_ALLOWED_INTENTS = frozenset(
+    {"", INTENT_FORM_CANDIDATE_PACKAGE, INTENT_FORM_MONTHLY_COMMITMENT}
+)
 _ALLOWED_AGENT_HINTS = frozenset({"", "constructor"})
 _MAX_HINT = 80
 _CANONICAL_CODE = re.compile(r"prj_|mission-|run-", re.IGNORECASE)
@@ -127,9 +131,12 @@ def validate_extraction(payload: object) -> CommandExtraction:
 
 def extraction_command_text(extraction: CommandExtraction) -> str:
     """Speak the hints in the form the existing resolver already understands."""
-    if extraction.intent != "FORM_CANDIDATE_PACKAGE":
+    if extraction.intent == INTENT_FORM_CANDIDATE_PACKAGE:
+        parts = ["Сформируй кандидатный состав"]
+    elif extraction.intent == INTENT_FORM_MONTHLY_COMMITMENT:
+        parts = ["Сформируй месячное обязательство"]
+    else:
         return ""
-    parts = ["Сформируй кандидатный состав"]
     if extraction.period_hint:
         parts.append("на " + extraction.period_hint)
     if extraction.project_hint:
@@ -155,6 +162,7 @@ def resolve_extraction(
         command_id=command_id,
         raw_text=extraction_command_text(extraction),
         catalog=catalog,
+        forced_intent=extraction.intent or None,
     )
 
 

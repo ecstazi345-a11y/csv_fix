@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from agents.human_surface.command_interpretation import (
+    INTENT_FORM_MONTHLY_COMMITMENT,
     STATE_NEEDS_CLARIFICATION,
     CommandInterpretation,
     interpret_command,
@@ -18,7 +19,6 @@ from agents.human_surface.command_interpreter_provider import (
     CommandInterpreterProvider,
     InterpreterUsage,
     resolve_extraction,
-    resolved_for_confirmation,
 )
 from agents.human_surface.work_context import WorkContextCatalog
 
@@ -33,6 +33,7 @@ class UnderstoodCommand:
     channel: str
     extraction: Optional[CommandExtraction]
     usage: Optional[InterpreterUsage]
+    provider_error: str = ""
 
 
 def understand_command(
@@ -46,6 +47,10 @@ def understand_command(
     direct = interpret_command(command_id=command_id, raw_text=raw_text, catalog=catalog)
     if direct.processing_state != STATE_NEEDS_CLARIFICATION:
         return UnderstoodCommand(direct, CHANNEL_DETERMINISTIC, None, None)
+    # Monthly Commitment is already a professional intent. Do not let a provider
+    # silently collapse it into Candidate Package.
+    if direct.intent == INTENT_FORM_MONTHLY_COMMITMENT:
+        return UnderstoodCommand(direct, CHANNEL_DETERMINISTIC, None, None)
     if provider is None and (catalog.error or not catalog.facts):
         return UnderstoodCommand(direct, CHANNEL_UNAVAILABLE, None, None)
     selected = provider if provider is not None else _default_provider()
@@ -55,12 +60,20 @@ def understand_command(
         result = selected.extract(raw_text)
     except Exception:
         return UnderstoodCommand(direct, CHANNEL_UNAVAILABLE, None, None)
+    error = ""
+    if result.failure is not None:
+        error = str(result.failure.safe_error_message or "").strip()
     if result.extraction is None:
-        return UnderstoodCommand(direct, CHANNEL_UNAVAILABLE, None, result.usage)
+        return UnderstoodCommand(
+            direct,
+            CHANNEL_UNAVAILABLE,
+            None,
+            result.usage,
+            provider_error=error,
+        )
     resolved = resolve_extraction(result.extraction, catalog, command_id=command_id)
     channel = result.usage.provider or CHANNEL_PROVIDER
-    if not resolved_for_confirmation(resolved):
-        return UnderstoodCommand(resolved, channel, None, result.usage)
+    # Keep validated hints visible even when DYNAMIS still needs clarification.
     return UnderstoodCommand(resolved, channel, result.extraction, result.usage)
 
 
@@ -79,8 +92,8 @@ def select_command_provider(name: str) -> Optional[CommandInterpreterProvider]:
 
 
 def _default_provider() -> Optional[CommandInterpreterProvider]:
-    try:
-        from agents.human_surface.openai_command_interpreter import build_openai_provider
-    except Exception:
-        return None
-    return build_openai_provider()
+    """Prefer Yandex when configured; otherwise OpenAI. No cross-provider fallback on failure."""
+    selected = select_command_provider("yandex")
+    if selected is not None:
+        return selected
+    return select_command_provider("openai")

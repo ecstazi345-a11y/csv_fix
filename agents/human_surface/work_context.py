@@ -93,6 +93,9 @@ class WorkContextCatalog:
         return any(item.packages for item in self.facts)
 
 
+QUEUE_SOURCE_CANONICAL_TITLE_RELATION = "CANONICAL_TITLE_RELATION"
+
+
 def queue_from_facility(facility: str) -> str:
     """Same facility rule as the manual constructor. Unknown facilities stay blank."""
     text = str(facility or "")
@@ -101,6 +104,40 @@ def queue_from_facility(facility: str) -> str:
     if "26160-13" in text or "26160-17" in text:
         return "2"
     return ""
+
+
+def unique_queue_for_project_title(
+    catalog: WorkContextCatalog,
+    *,
+    title: str,
+    project_label: str = "",
+    project_code: str = "",
+) -> str:
+    """Return the only catalog queue for project+title. Ambiguous or missing stays blank.
+
+    Reads existing ScopeFact rows only. Does not invent hierarchy and does not
+    call the facility hardcode rule directly.
+    """
+    facility = str(title or "").strip()
+    label = str(project_label or "").strip()
+    code = str(project_code or "").strip()
+    if not facility or (not label and not code):
+        return ""
+    found: list[str] = []
+    for fact in catalog.facts:
+        if label and fact.project_label != label:
+            continue
+        if code and fact.project_code != code:
+            continue
+        if fact.title != facility and fact.facility != facility:
+            continue
+        queue = str(fact.queue or "").strip()
+        if queue:
+            found.append(queue)
+    unique = tuple(dict.fromkeys(found))
+    if len(unique) != 1:
+        return ""
+    return unique[0]
 
 
 def project_label(project_code: str) -> str:

@@ -17,9 +17,11 @@ from agents.human_surface.mission_draft import (
     parse_global_command,
 )
 from agents.human_surface.work_context import (
+    QUEUE_SOURCE_CANONICAL_TITLE_RELATION,
     WorkContextCatalog,
     align_working_context,
     selector_options,
+    unique_queue_for_project_title,
 )
 from agents.human_surface.workforce import CONSTRUCTOR_AGENT_CODE
 from agents.monthly_plan_constructor.mission_scope import (
@@ -29,10 +31,21 @@ from agents.monthly_plan_constructor.mission_scope import (
 from utils.month_key import format_month_key_ru, normalize_month_key
 
 INTENT_FORM_CANDIDATE_PACKAGE = "FORM_CANDIDATE_PACKAGE"
+INTENT_FORM_MONTHLY_COMMITMENT = "FORM_MONTHLY_COMMITMENT"
 STATE_NEEDS_CONFIRMATION = "NEEDS_CONFIRMATION"
 STATE_NEEDS_CLARIFICATION = "NEEDS_CLARIFICATION"
 STATE_REJECTED = "REJECTED"
 RESOLUTION_INTERPRETED = "INTERPRETED"
+_MONTHLY_COMMITMENT_STAGE_NOTE = (
+    "Цель понята: месячное обязательство. Scope полностью определён. "
+    "Доступный первый этап: Constructor / формирование кандидатного состава. "
+    "Месячное обязательство ещё не сформировано. "
+    "Ожидается подтверждение начала первого этапа."
+)
+_MONTHLY_COMMITMENT_INCOMPLETE_NOTE = (
+    "Цель: месячное обязательство. Доступный первый этап: Constructor / "
+    "формирование кандидатного состава. Месячное обязательство ещё не сформировано."
+)
 
 _CONSTRUCTOR_DISPLAY = "Constructor"
 _MONTH_NAME = (
@@ -95,12 +108,13 @@ def interpret_command(
     command_id: str,
     raw_text: str,
     catalog: WorkContextCatalog,
+    forced_intent: Optional[str] = None,
 ) -> CommandInterpretation:
     """Resolve one command against the catalog. Untrusted text is data only."""
     source = str(raw_text or "").strip()
     prepared = _prepare_month_hyphen(source)
     folded = prepared.casefold().replace("ё", "е")
-    intent = _constructor_intent(folded)
+    intent = _select_intent(folded, forced_intent)
     if intent is None and not _looks_like_assignment(folded):
         return _finish(
             command_id=command_id,
@@ -143,6 +157,17 @@ def interpret_command(
         queue=queue,
         spoken=spoken_titles,
     )
+    queue_source = ""
+    if not queue and title and project is not None and not title_ambiguity:
+        inferred = unique_queue_for_project_title(
+            catalog,
+            title=title,
+            project_label=project[0],
+            project_code=project[1],
+        )
+        if inferred:
+            queue = inferred
+            queue_source = QUEUE_SOURCE_CANONICAL_TITLE_RELATION
     discipline_token, discipline, discipline_ambiguity = _resolve_discipline(
         folded,
         catalog,
@@ -174,6 +199,8 @@ def interpret_command(
         unresolved.append("queue")
     else:
         resolved["queue"] = queue
+        if queue_source:
+            resolved["queue_source"] = queue_source
     if title_ambiguity:
         ambiguities.append(title_ambiguity)
     elif not title:
@@ -188,6 +215,17 @@ def interpret_command(
         resolved["discipline"] = discipline
     if title_missing:
         unresolved.append("title")
+
+    if intent == INTENT_FORM_MONTHLY_COMMITMENT:
+        return _finish_monthly_commitment(
+            command_id=command_id,
+            extracted=extracted,
+            resolved=resolved,
+            unresolved=unresolved,
+            ambiguities=ambiguities,
+            title_ambiguity=title_ambiguity,
+            discipline_ambiguity=discipline_ambiguity,
+        )
 
     if not unresolved and not ambiguities:
         try:
@@ -276,8 +314,92 @@ def _finish(
     )
 
 
-def _partial_preview(resolved: dict[str, str]) -> tuple[tuple[str, str], ...]:
+def _finish_monthly_commitment(
+    *,
+    command_id: str,
+    extracted: dict[str, object],
+    resolved: dict[str, str],
+    unresolved: list[str],
+    ambiguities: list[str],
+    title_ambiguity: str,
+    discipline_ambiguity: str,
+) -> CommandInterpretation:
+    """Monthly Commitment goal is not Candidate Package and is never auto-formed."""
+    open_scope = bool(unresolved) or bool(title_ambiguity) or bool(discipline_ambiguity)
+    if not open_scope:
+        try:
+            scope = build_constructor_mission_scope(
+                project_code=resolved["project_code"],
+                month_key=resolved["month_key"],
+                facility_scope=(resolved["facility"],),
+                discipline_scope=(resolved["discipline"],),
+                queue_scope=(resolved["queue"],),
+            )
+        except MissionScopeError:
+            unresolved.append("scope")
+            open_scope = True
+        else:
+            resolved["project_code"] = scope.project_code
+            resolved["month_key"] = (
+                format_month_key_ru(scope.month_key_canonical) or resolved["month_key"]
+            )
+            return _finish(
+                command_id=command_id,
+                target_agent=CONSTRUCTOR_AGENT_CODE,
+                intent=INTENT_FORM_MONTHLY_COMMITMENT,
+                extracted=extracted,
+                resolved=resolved,
+                unresolved=(),
+                ambiguities=(),
+                state=STATE_NEEDS_CONFIRMATION,
+                resolution=RESOLUTION_INTERPRETED,
+                headline="Цель понята: месячное обязательство",
+                status_label="Ожидается подтверждение начала первого этапа",
+                preview=_monthly_ready_preview(resolved),
+            )
+    notes = list(ambiguities)
+    notes.append(_MONTHLY_COMMITMENT_INCOMPLETE_NOTE)
+    return _finish(
+        command_id=command_id,
+        target_agent=CONSTRUCTOR_AGENT_CODE,
+        intent=INTENT_FORM_MONTHLY_COMMITMENT,
+        extracted=extracted,
+        resolved=resolved,
+        unresolved=tuple(dict.fromkeys(unresolved)),
+        ambiguities=tuple(dict.fromkeys(notes)),
+        state=STATE_NEEDS_CLARIFICATION,
+        resolution="AMBIGUOUS" if title_ambiguity or discipline_ambiguity else "INCOMPLETE",
+        headline="Цель: месячное обязательство",
+        status_label="Нужно уточнение",
+        preview=_partial_preview(resolved, monthly_commitment=True),
+    )
+
+
+def _monthly_ready_preview(resolved: dict[str, str]) -> tuple[tuple[str, str], ...]:
+    return (
+        ("Цель", "Месячное обязательство"),
+        ("Scope", "Полностью определён"),
+        ("Первый этап", "Constructor / формирование кандидатного состава"),
+        ("Агент", _CONSTRUCTOR_DISPLAY),
+        ("Проект", f"{resolved['project_code']} / {resolved['project_label']}"),
+        ("Период", resolved["planning_month"]),
+        ("Очередь", resolved["queue"]),
+        ("Титул", resolved["facility"]),
+        ("Дисциплина", resolved["discipline"]),
+        ("Закон", "Месячное обязательство ещё не сформировано"),
+        ("Статус", "Ожидается подтверждение начала первого этапа"),
+    )
+
+
+def _partial_preview(
+    resolved: dict[str, str],
+    *,
+    monthly_commitment: bool = False,
+) -> tuple[tuple[str, str], ...]:
     rows: list[tuple[str, str]] = [("Агент", _CONSTRUCTOR_DISPLAY)]
+    if monthly_commitment:
+        rows.append(("Цель", "Месячное обязательство"))
+        rows.append(("Первый этап", "Constructor / формирование кандидатного состава"))
     if resolved.get("project_code"):
         rows.append(("Проект", f"{resolved['project_code']} / {resolved['project_label']}"))
     if resolved.get("planning_month"):
@@ -292,8 +414,21 @@ def _partial_preview(resolved: dict[str, str]) -> tuple[tuple[str, str], ...]:
     return tuple(rows)
 
 
+def _select_intent(folded: str, forced_intent: Optional[str]) -> Optional[str]:
+    if forced_intent is not None:
+        text = str(forced_intent or "").strip()
+        if text in {INTENT_FORM_CANDIDATE_PACKAGE, INTENT_FORM_MONTHLY_COMMITMENT}:
+            return text
+        if text == "":
+            return None
+        return None
+    return _constructor_intent(folded)
+
+
 def _constructor_intent(folded: str) -> Optional[str]:
     form = any(stem in folded for stem in ("сформир", "собер", "подготов"))
+    if form and "обязательств" in folded:
+        return INTENT_FORM_MONTHLY_COMMITMENT
     if form and "кандидат" in folded:
         return INTENT_FORM_CANDIDATE_PACKAGE
     if form and ("месячн" in folded or "месяц" in folded) and "план" in folded:

@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from agents.human_surface.command_interpretation import (
     INTENT_FORM_CANDIDATE_PACKAGE,
+    INTENT_FORM_MONTHLY_COMMITMENT,
     STATE_NEEDS_CONFIRMATION,
     CommandInterpretation,
 )
@@ -98,7 +99,10 @@ def confirm_typed_draft(
         raise ConfirmationRejected("interpretation still has open questions")
     if interpretation.target_agent != CONSTRUCTOR_AGENT_CODE:
         raise ConfirmationRejected("target agent is not confirmable")
-    if interpretation.intent != INTENT_FORM_CANDIDATE_PACKAGE:
+    if interpretation.intent not in {
+        INTENT_FORM_CANDIDATE_PACKAGE,
+        INTENT_FORM_MONTHLY_COMMITMENT,
+    }:
         raise ConfirmationRejected("intent is not confirmable")
     if interpretation.mission_created:
         raise ConfirmationRejected("a draft must not already be a mission")

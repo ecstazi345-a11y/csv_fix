@@ -32,7 +32,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _LOG = logging.getLogger("dynamis.command_interpreter")
 _SAFE_MESSAGE_LIMIT = 180
 _SECRET_TEXT = re.compile(
-    r"(sk-[A-Za-z0-9_\-]{8,})|(Bearer\s+\S+)|(api[_-]?key\s*[=:]\s*\S+)",
+    r"(AQVN[A-Za-z0-9_\-]{8,})|(sk-[A-Za-z0-9_\-]{8,})|(Bearer\s+\S+)|(api[_-]?key\s*[=:]\s*\S+)",
     re.IGNORECASE,
 )
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
@@ -41,7 +41,10 @@ _INSTRUCTION = (
     "Не присваивай коды проектов, титулов и систем. "
     "Пиши намёки так, как их сказал человек, исправив только явную опечатку. "
     "intent: FORM_CANDIDATE_PACKAGE, если просят сформировать, собрать или подготовить "
-    "кандидатный состав или месячный план. Иначе пустая строка. "
+    "кандидатный состав или кандидатов. "
+    "FORM_MONTHLY_COMMITMENT, если просят месячное обязательство, месячное "
+    "производственное обязательство или плановое обязательство на месяц. "
+    "Не своди месячное обязательство к FORM_CANDIDATE_PACKAGE. Иначе пустая строка. "
     "target_agent_hint: constructor, если речь о конструкторе или кандидатном составе. "
     "Иначе пустая строка. "
     "project_hint: название проекта словами, без кода. "
@@ -57,7 +60,10 @@ _SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
-        "intent": {"type": "string", "enum": ["", "FORM_CANDIDATE_PACKAGE"]},
+        "intent": {
+            "type": "string",
+            "enum": ["", "FORM_CANDIDATE_PACKAGE", "FORM_MONTHLY_COMMITMENT"],
+        },
         "target_agent_hint": {"type": "string", "enum": ["", "constructor"]},
         "project_hint": {"type": "string"},
         "period_hint": {"type": "string"},
@@ -169,9 +175,6 @@ def classify_provider_failure(exc: BaseException) -> ProviderFailure:
     request_id = ""
     if headers is not None:
         request_id = _safe_token(headers.get("x-request-id"))
-    message = getattr(exc, "message", None)
-    if not isinstance(message, str) or not message.strip():
-        message = type(exc).__name__
     return ProviderFailure(
         category=_failure_category(exc, http_status),
         error_type=type(exc).__name__,
@@ -179,8 +182,20 @@ def classify_provider_failure(exc: BaseException) -> ProviderFailure:
         error_param=_safe_token(getattr(exc, "param", None)),
         http_status=http_status,
         request_id=request_id,
-        safe_error_message=_safe_message(message),
+        safe_error_message=_safe_message(_failure_message(exc)),
     )
+
+
+def _failure_message(exc: BaseException) -> str:
+    """Prefer provider message; keep ExtractionRejected/JSON detail for diagnostics."""
+    message = getattr(exc, "message", None)
+    if isinstance(message, str) and message.strip():
+        return message
+    if isinstance(exc, (ExtractionRejected, json.JSONDecodeError)):
+        detail = " ".join(str(exc).split())
+        if detail:
+            return f"{type(exc).__name__}: {detail}"
+    return type(exc).__name__
 
 
 def _failure_category(exc: BaseException, http_status: int | None) -> str:

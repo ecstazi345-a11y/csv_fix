@@ -107,7 +107,39 @@ class InsulationFixtureMathTests(unittest.TestCase):
         self.assertIn("Целевой производительный фонд", result.artifact.human_readable_conclusion)
 
 
+class OverfundDiagnosticTests(unittest.TestCase):
+    def test_overfund_signed_deviation_and_observation(self) -> None:
+        from dataclasses import replace
+
+        from agents.production_shift_auditor.contracts import MathIntegrityStatus
+
+        base = build_insulation_pipeline_fixture()
+        ops = list(base.operations)
+        ops[0] = replace(ops[0], claimed_labor_quantity=90.0)  # +60 → total 1485
+        mutated = replace(base, operations=tuple(ops))
+        art = evaluate_s01(mutated, audit_id="audit_overfund")
+        m = art.s01_metrics
+        self.assertEqual(m.target_fund_man_minutes, 1440.0)
+        self.assertEqual(m.claimed_total_man_minutes, 1485.0)
+        self.assertEqual(m.absolute_deviation_man_minutes, -45.0)  # signed
+        self.assertAlmostEqual(m.fund_coverage_pct or 0.0, 103.125, places=4)
+        self.assertEqual(art.math_integrity_status, MathIntegrityStatus.COHERENT)
+        over_obs = [o for o in art.observations if "Превышение целевого производительного фонда" in o]
+        self.assertTrue(over_obs, "expected explicit overfund diagnostic observation")
+        self.assertIn("OVER_FUND", over_obs[0])
+        self.assertIn("45", over_obs[0])
+        self.assertIn("не доказательство нарушения", over_obs[0])
+        self.assertIn("COHERENT означает арифметическую согласованность", over_obs[0])
+        self.assertIn("≠ табельное", over_obs[0])
+        self.assertIn("OVER_FUND", art.human_readable_conclusion)
+        self.assertIn(
+            "не означает отсутствие отклонений",
+            art.human_readable_conclusion,
+        )
+
+
 class UnprovenHourSemanticsTests(unittest.TestCase):
+
     def test_hour_field_unproven_blocks_totals(self) -> None:
         from agents.production_shift_auditor.contracts import (
             INPUT_SCHEMA_VERSION,
@@ -246,7 +278,7 @@ class PsaaSecurityRegistryTests(unittest.TestCase):
         self.assertTrue(set(SELECT_COLUMNS).issubset(fields))
         self.assertEqual(manifest["write_access"], False)
         self.assertEqual(manifest["llm_enabled"], False)
-        self.assertEqual(manifest["allowed_tools"], ["load_shift_daily_progress"])
+        self.assertEqual(set(manifest["allowed_tools"]), set(PSAA_ALLOWED_TOOLS))
 
     def test_constructor_unchanged_by_psaa_imports(self) -> None:
         # PSAA must not import Constructor professional packages

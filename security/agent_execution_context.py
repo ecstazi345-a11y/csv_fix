@@ -23,6 +23,8 @@ TOOL_LOAD_SCOPE = "load_constructor_scope"
 TOOL_LOAD_ADJUSTMENTS = "load_constructor_adjustments"
 TOOL_LOAD_PLAN_LINES = "load_constructor_month_plan_lines"
 TOOL_LOAD_SHIFT_DAILY_PROGRESS = "load_shift_daily_progress"
+TOOL_PERSIST_SHIFT_AUDIT_HISTORY = "persist_shift_audit_history"
+TOOL_LOAD_SHIFT_AUDIT_HISTORY = "load_shift_audit_history"
 
 MPCA_ALLOWED_TOOLS: tuple[str, ...] = (
     TOOL_LOAD_SCOPE,
@@ -32,6 +34,8 @@ MPCA_ALLOWED_TOOLS: tuple[str, ...] = (
 
 PSAA_ALLOWED_TOOLS: tuple[str, ...] = (
     TOOL_LOAD_SHIFT_DAILY_PROGRESS,
+    TOOL_PERSIST_SHIFT_AUDIT_HISTORY,
+    TOOL_LOAD_SHIFT_AUDIT_HISTORY,
 )
 
 # Trusted static registry — agent cannot invent entries.

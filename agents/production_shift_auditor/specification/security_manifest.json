@@ -7,16 +7,36 @@
   "llm_enabled": false,
   "read_access": true,
   "write_access": false,
+  "product_write_access": false,
+  "controlled_artifact_persist": true,
   "execution_context_required": true,
   "trusted_executor_required": true,
   "project_scope_enforced": true,
   "credential_exposed_to_agent": false,
   "allowed_tools": [
-    "load_shift_daily_progress"
+    "load_shift_daily_progress",
+    "persist_shift_audit_history",
+    "load_shift_audit_history"
   ],
   "allowed_write_tools": [],
+  "allowed_artifact_persist_tools": [
+    "persist_shift_audit_history"
+  ],
   "read_sources": [
-    "daily_progress_active"
+    "daily_progress_active",
+    "psaa_shift_audit_history"
+  ],
+  "write_targets": [
+    "psaa_shift_audit_history"
+  ],
+  "forbidden_write_targets": [
+    "daily_progress_active",
+    "daily_progress_raw",
+    "airtable",
+    "labor_norm_decisions",
+    "monthly_plan_lines_v2",
+    "payroll",
+    "acceptance_decisions"
   ],
   "read_fields_by_source": {
     "daily_progress_active": [
@@ -46,18 +66,48 @@
       "system_label",
       "iwp_id",
       "is_deleted"
+    ],
+    "psaa_shift_audit_history": [
+      "audit_id",
+      "project_code",
+      "work_date",
+      "shift_type",
+      "crew_id",
+      "source_kind",
+      "input_schema_version",
+      "rules_version",
+      "agent_code",
+      "agent_version",
+      "run_id",
+      "audited_at_utc",
+      "persisted_at_utc",
+      "math_integrity_status",
+      "data_completeness_status",
+      "professional_credibility_status",
+      "managerial_acceptance_status",
+      "input_content_hash",
+      "artifact_content_hash",
+      "record_content_hash",
+      "source_record_ids",
+      "uncertainties",
+      "input_snapshot",
+      "artifact_snapshot",
+      "schema_version"
     ]
   },
   "credential_policy": {
     "load_shift_daily_progress": "PUBLISHABLE_READ",
-    "notes": "PUBLISHABLE_READ via SUPABASE_KEY inside trusted executor only. MODEL IS NEVER CREDENTIAL HOLDER."
+    "load_shift_audit_history": "PUBLISHABLE_READ",
+    "persist_shift_audit_history": "CONTROLLED_ARTIFACT_PERSIST",
+    "notes": "Product write_allowed remains false. Artifact persist is narrow, project-scoped, append-only, verified."
   },
   "human_gate_required_for": [
     "product_insert",
     "product_update",
     "product_delete",
     "shift_accept",
-    "shift_reject"
+    "shift_reject",
+    "apply_supabase_migration"
   ],
   "data_classes_allowed": [
     "INTERNAL"
@@ -79,12 +129,12 @@
     "free_text_fields"
   ],
   "secrets_allowed_in_context": false,
-  "external_network_access": "supabase_read_only_via_narrow_tools",
+  "external_network_access": "supabase_read_and_controlled_artifact_persist_via_narrow_tools",
   "arbitrary_sql_allowed": false,
   "arbitrary_shell_allowed": false,
   "arbitrary_code_execution_allowed": false,
   "fail_closed": true,
   "trace_redaction_required": true,
   "kill_switch_required": false,
-  "notes": "EOS-SEC-1.1. Actor LOCAL_APPLICATION is NOT verified human identity. S01 only in v0.1."
+  "notes": "EOS-SEC-1.1. Actor LOCAL_APPLICATION is NOT verified human identity. PSAA-02 adds append-only history persist only."
 }

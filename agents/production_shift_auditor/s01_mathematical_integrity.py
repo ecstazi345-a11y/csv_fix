@@ -228,11 +228,31 @@ def evaluate_s01(
             if conversion_blocked == 0 and audit_input.crew_size > 0
             else DataCompletenessStatus.PARTIAL
         )
-        if abs(abs_dev_mm or 0.0) > 0:
-            observations.append(
-                f"Отклонение от целевого фонда: {abs_dev_mm:.4g} чел·мин "
-                f"({abs_dev_mh:.4g} чел·ч). Не является автоматическим нарушением."
-            )
+        if abs_dev_mm is not None and abs(abs_dev_mm) > 1e-9:
+            # Signed: target − claimed. Negative ⇒ overfund; positive ⇒ underfund.
+            if abs_dev_mm < 0:
+                over_mm = -abs_dev_mm
+                observations.append(
+                    f"Превышение целевого производительного фонда: {over_mm:.4g} чел·мин "
+                    f"({over_mm / 60.0:.4g} чел·ч); направление=OVER_FUND; "
+                    f"signed_deviation(target−claimed)={abs_dev_mm:.4g} чел·мин. "
+                    "COHERENT означает арифметическую согласованность входа, "
+                    "а не отсутствие отклонений. Превышение фонда — диагностическое "
+                    "наблюдение, не доказательство нарушения или недостоверности. "
+                    "Целевой производительный фонд ≠ табельное / фактически доступное "
+                    "рабочее время."
+                )
+            else:
+                observations.append(
+                    f"Недобор относительно целевого производительного фонда: "
+                    f"{abs_dev_mm:.4g} чел·мин ({abs_dev_mh:.4g} чел·ч); "
+                    f"направление=UNDER_FUND; "
+                    f"signed_deviation(target−claimed)={abs_dev_mm:.4g} чел·мин. "
+                    "COHERENT означает арифметическую согласованность входа, "
+                    "а не отсутствие отклонений. Недобор — диагностическое наблюдение, "
+                    "не доказательство нарушения. Целевой производительный фонд ≠ "
+                    "табельное / фактически доступное рабочее время."
+                )
     else:
         math_status = MathIntegrityStatus.NOT_EVALUATED
         completeness = DataCompletenessStatus.INSUFFICIENT
@@ -322,8 +342,21 @@ def _human_conclusion(
             f"({metrics.claimed_total_man_hours:.4g} чел·ч)"
         )
     if metrics.absolute_deviation_man_minutes is not None:
+        signed = metrics.absolute_deviation_man_minutes
+        if signed < 0:
+            lines.append(
+                f"Превышение целевого фонда: {-signed:.4g} чел·мин "
+                f"(signed_deviation={signed:.4g}; OVER_FUND)"
+            )
+        elif signed > 0:
+            lines.append(
+                f"Недобор относительно целевого фонда: {signed:.4g} чел·мин "
+                f"(signed_deviation={signed:.4g}; UNDER_FUND)"
+            )
+        else:
+            lines.append("Отклонение от целевого фонда: 0 чел·мин")
         lines.append(
-            f"Отклонение от целевого фонда: {metrics.absolute_deviation_man_minutes:.4g} чел·мин"
+            "COHERENT = арифметическая согласованность; не означает отсутствие отклонений."
         )
     if metrics.fund_coverage_pct is not None:
         lines.append(f"Покрытие фонда: {metrics.fund_coverage_pct:.4f}%")

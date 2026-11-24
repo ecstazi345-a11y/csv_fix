@@ -22,6 +22,7 @@
 | [PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md) | Checkpoint завершения PSAA-01. |
 | [PSAA_02_AUDIT_HISTORY_CHECKPOINT.md](PSAA_02_AUDIT_HISTORY_CHECKPOINT.md) | Checkpoint завершения PSAA-02 (local durable history). |
 | [PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md](PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md) | Checkpoint завершения PSAA-03 (S10 classification). |
+| [PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md](PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md) | Checkpoint завершения PSAA-04 (S02 engine). |
 | [RECOVERY_CONTEXT.md](RECOVERY_CONTEXT.md) | Как восстановить контекст после паузы. |
 
 ---
@@ -92,6 +93,7 @@ Page52 **не отменяется**. Она остаётся каноном **�
 | [PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md) | Зафиксированное завершение PSAA-01 (S01). |
 | [PSAA_02_AUDIT_HISTORY_CHECKPOINT.md](PSAA_02_AUDIT_HISTORY_CHECKPOINT.md) | Зафиксированное завершение PSAA-02 (append-only history). |
 | [PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md](PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md) | Зафиксированное завершение PSAA-03 (S10 classification). |
+| [PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md](PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md) | Зафиксированное завершение PSAA-04 (S02 technological integrity engine). |
 | [ORCHESTRATION_AND_HANDOFF.md](ORCHESTRATION_AND_HANDOFF.md) | Оркестратор, shared state, structured handoff, pause/resume, Control Room, KPI routine removal. |
 | [LABOR_NORM_RESOLUTION.md](LABOR_NORM_RESOLUTION.md) | LaborNormResolver: иерархия источников, provenance, benchmark vs P50 vs planning norm, continuous learning. |
 | [DECISION_LOG.md](DECISION_LOG.md) | Принятые и отклонённые решения (ADR-like). |
@@ -115,5 +117,6 @@ Page52 **не отменяется**. Она остаётся каноном **�
 - PSAA-01 completion: [PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md)
 - PSAA-02 completion: [PSAA_02_AUDIT_HISTORY_CHECKPOINT.md](PSAA_02_AUDIT_HISTORY_CHECKPOINT.md)
 - PSAA-03 completion: [PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md](PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md)
+- PSAA-04 completion: [PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md](PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md)
 
 Этот README не является журналом программы.

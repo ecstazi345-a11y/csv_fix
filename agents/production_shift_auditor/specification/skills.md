@@ -4,7 +4,7 @@
 |------|------|----------------|
 | S01 | Mathematical Integrity | CURRENT / PROVEN |
 | S02 | Technological Integrity | CURRENT / PROVEN (deterministic; insulation demonstration rules) |
-| S03 | Physical Integrity | TARGET / FUTURE |
+| S03 | Physical Integrity | CURRENT / PROVEN (deterministic; insulation demonstration measurability) |
 | S04 | Operation Cost Analysis | TARGET / FUTURE |
 | S05 | Temporal Integrity | TARGET / FUTURE |
 | S06 | Statistical Anomalies | TARGET / FUTURE |
@@ -51,6 +51,29 @@ Prerequisite CONSISTENT только при shared `physical_object_hint`
 
 Readiness: `S02_ENGINE_IMPLEMENTED` · `DEMONSTRATION_RULES_PROVEN` ·
 `PRODUCTION_KNOWLEDGE_NOT_READY` · `PRODUCTION_VALIDATION_NOT_PROVEN`.
+
+## S03 — Physical Integrity (CURRENT)
+
+Детерминированная проверка заявленных физических результатов: количество, единица,
+идентичность объекта, состояние результата, риск дубликата, связь с BOQ.
+
+Вход: `ShiftAuditInput` + артефакт S10. Метод: **deterministic**. LLM не используется.
+
+Статусы: CONSISTENT_WITH_CHECKED_RULE · INVALID_QUANTITY · UNIT_INCOMPATIBILITY ·
+INSUFFICIENT_CONTEXT · POSSIBLE_DUPLICATE · PROVEN_RECORD_DUPLICATE ·
+NOT_APPLICABLE · NOT_EVALUATED.
+
+Законы: LABOR ≠ PHYSICAL RESULT · CLAIMED ≠ VERIFIED · MANUFACTURED ≠ INSTALLED ·
+INSTALLED ≠ CONTRACT ACCEPTED · OPERATION QTY ≠ BOQ QTY · PROGRESS ≠ EARNED VALUE ·
+MISSING EVIDENCE ≠ PROVEN VIOLATION · SAME DESCRIPTION ≠ SAME OBJECT ·
+POSSIBLE DUPLICATE ≠ PROVEN DUPLICATE · no unit conversion without geometry.
+
+Readiness: `S03_ENGINE_IMPLEMENTED` · `DEMONSTRATION_PHYSICAL_RULES_PROVEN` ·
+`PRODUCTION_PHYSICAL_KNOWLEDGE_NOT_READY` · `PHYSICAL_INSPECTION_NOT_PROVEN`.
+
+Семантика: quantity not required by current rule ≠ not measurable;
+missing geometry ≠ proven unit incompatibility; negative qty rule =
+ordinary execution claim only; PROVEN_RECORD_DUPLICATE = within one audit input.
 
 ## S10 — Operation Classification & Normalization (CURRENT)
 

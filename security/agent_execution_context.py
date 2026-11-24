@@ -22,11 +22,16 @@ ACTOR_ID_EXECUTION_OS_LOCAL_HOST = "EXECUTION_OS_LOCAL_HOST"
 TOOL_LOAD_SCOPE = "load_constructor_scope"
 TOOL_LOAD_ADJUSTMENTS = "load_constructor_adjustments"
 TOOL_LOAD_PLAN_LINES = "load_constructor_month_plan_lines"
+TOOL_LOAD_SHIFT_DAILY_PROGRESS = "load_shift_daily_progress"
 
 MPCA_ALLOWED_TOOLS: tuple[str, ...] = (
     TOOL_LOAD_SCOPE,
     TOOL_LOAD_ADJUSTMENTS,
     TOOL_LOAD_PLAN_LINES,
+)
+
+PSAA_ALLOWED_TOOLS: tuple[str, ...] = (
+    TOOL_LOAD_SHIFT_DAILY_PROGRESS,
 )
 
 # Trusted static registry — agent cannot invent entries.
@@ -37,7 +42,14 @@ _TRUSTED_AGENT_REGISTRY: dict[str, dict[str, Any]] = {
         "permission_tier": "TIER_0_READ_ONLY_DETERMINISTIC",
         "write_allowed": False,
         "security_policy_version": SECURITY_POLICY_VERSION,
-    }
+    },
+    "PRODUCTION_SHIFT_AUDITOR": {
+        "agent_version": "0.1",
+        "allowed_tools": PSAA_ALLOWED_TOOLS,
+        "permission_tier": "TIER_0_READ_ONLY_DETERMINISTIC",
+        "write_allowed": False,
+        "security_policy_version": SECURITY_POLICY_VERSION,
+    },
 }
 
 

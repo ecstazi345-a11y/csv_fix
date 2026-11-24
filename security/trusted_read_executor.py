@@ -18,6 +18,7 @@ from security.agent_execution_context import (
     TOOL_LOAD_ADJUSTMENTS,
     TOOL_LOAD_PLAN_LINES,
     TOOL_LOAD_SCOPE,
+    TOOL_LOAD_SHIFT_DAILY_PROGRESS,
     AgentExecutionContext,
 )
 from security.sanitize import redact_sensitive_text, sanitize_read_error
@@ -394,6 +395,86 @@ def execute_constructor_plan_lines_read(
             security_event=EVENT_READ_SUCCESS,
             row_count=int(len(df)),
             source_code="monthly_plan_lines_v2",
+            credential_policy_code=CREDENTIAL_PUBLISHABLE_READ,
+            t0=t0,
+        )
+    out_meta = {
+        **meta,
+        "error": redact_sensitive_text(err) if err else None,
+        "audit_event": event,
+        "credential_policy_code": CREDENTIAL_PUBLISHABLE_READ,
+        "project_code": context.project_code,
+        "row_count": len(df),
+    }
+    return df, out_meta
+
+
+def execute_shift_daily_progress_read(
+    context: AgentExecutionContext,
+    *,
+    crew_id: str,
+    work_date: str,
+    shift_type: Optional[str] = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """READ daily_progress_active for one shift grain — PUBLISHABLE_READ.
+
+    project_code comes only from AgentExecutionContext.
+    """
+    validate_context_for_tool(context, TOOL_LOAD_SHIFT_DAILY_PROGRESS)
+    t0 = perf_counter()
+    event = _base_event(context, TOOL_LOAD_SHIFT_DAILY_PROGRESS)
+    event["security_event"] = EVENT_TOOL_ALLOWED
+
+    from services.psaa_shift_read_service import load_shift_daily_progress_rows
+
+    try:
+        df, meta = load_shift_daily_progress_rows(
+            project_code=context.project_code,
+            crew_id=crew_id,
+            work_date=work_date,
+            shift_type=shift_type,
+        )
+    except Exception as exc:  # noqa: BLE001
+        safe = sanitize_read_error(exc)
+        event = _finish(
+            event,
+            status="FAILED",
+            security_event=EVENT_READ_FAILED,
+            credential_policy_code=CREDENTIAL_PUBLISHABLE_READ,
+            source_code="daily_progress_active",
+            error_code="READ_FAILED",
+            safe_message=safe,
+            t0=t0,
+        )
+        return pd.DataFrame(), {
+            "error": safe,
+            "error_code": "READ_FAILED",
+            "row_count": 0,
+            "audit_event": event,
+            "credential_policy_code": CREDENTIAL_PUBLISHABLE_READ,
+            "project_code": context.project_code,
+            "live_data_proof": "FAILED",
+        }
+
+    err = meta.get("error")
+    if err:
+        event = _finish(
+            event,
+            status="FAILED",
+            security_event=EVENT_READ_FAILED,
+            source_code="daily_progress_active",
+            credential_policy_code=CREDENTIAL_PUBLISHABLE_READ,
+            error_code="READ_FAILED",
+            safe_message=str(err),
+            t0=t0,
+        )
+    else:
+        event = _finish(
+            event,
+            status="OK",
+            security_event=EVENT_READ_SUCCESS,
+            row_count=int(len(df)),
+            source_code="daily_progress_active",
             credential_policy_code=CREDENTIAL_PUBLISHABLE_READ,
             t0=t0,
         )

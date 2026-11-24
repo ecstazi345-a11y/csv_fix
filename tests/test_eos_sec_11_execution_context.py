@@ -115,6 +115,7 @@ class ExecutionContextIssuerTests(unittest.TestCase):
         for name in (
             "execute_constructor_scope_read",
             "execute_constructor_adjustments_read",
+            "execute_shift_daily_progress_read",
         ):
             sig = inspect.signature(getattr(ex, name))
             self.assertNotIn("project_code", sig.parameters)

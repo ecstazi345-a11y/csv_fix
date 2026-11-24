@@ -2,11 +2,11 @@
 # Production Shift Auditor Agent (PSAA)
 
 **Document:** PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1
-**Version:** v0.1 (S01 + local Audit History + S10 + S02 engine proven)
-**Status:** S01 + PSAA-02 local history + S10 + S02 engine CURRENT / PROVEN · production tech knowledge NOT READY · full auditor NOT COMPLETE · production Supabase persistence NOT COMPLETE · S10/S02 not in durable history
+**Version:** v0.1 (S01 + local Audit History + S10 + S02 + S03 engines proven)
+**Status:** S01 + PSAA-02 local history + S10 + S02 + S03 engines CURRENT / PROVEN · production tech/physical knowledge NOT READY · inspection NOT PROVEN · full auditor NOT COMPLETE · production Supabase persistence NOT COMPLETE · S10/S02/S03 not in durable history
 **Standard:** PROFESSIONAL_PASSPORT_TEMPLATE_V1_0
-**Checkpoints:** [PSAA_01](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_02](PSAA_02_AUDIT_HISTORY_CHECKPOINT.md) · [PSAA_03](PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md) · [PSAA_04](PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md)
-**Latest code commit:** `74a528b37df79f65ef0a25814cde97e58526aed9`
+**Checkpoints:** [PSAA_01](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_02](PSAA_02_AUDIT_HISTORY_CHECKPOINT.md) · [PSAA_03](PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md) · [PSAA_04](PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_05](PSAA_05_PHYSICAL_INTEGRITY_CHECKPOINT.md)
+**Latest code commit:** `eb9d9a0c72222a529f89c71bc35e94579039793f`
 **Branch:** `wip/increment-11c-persistent-shadow-stores`
 
 ---
@@ -37,9 +37,10 @@
 - S01 Mathematical Integrity (детерминированно) — **DONE** (включая Overfund Diagnostic)
 - S10 Operation Classification & Normalization (детерминированно) — **DONE** (insulation working catalog; not Operation Registry)
 - S02 Technological Integrity engine (детерминированно) — **DONE** (`S02_ENGINE_IMPLEMENTED` · `DEMONSTRATION_RULES_PROVEN`; production knowledge NOT READY)
+- S03 Physical Integrity engine (детерминированно) — **DONE** (`S03_ENGINE_IMPLEMENTED` · `DEMONSTRATION_PHYSICAL_RULES_PROVEN`; production physical knowledge NOT READY; inspection NOT PROVEN)
 - Узкий trusted READ adapter (replaceable; legacy `daily_progress_active`)
 - Структурированный профессиональный артефакт с provenance
-- Append-only local Audit History (PSAA-02) — **DONE** (SQLite / in-memory; not production Supabase; S10/S02 not persisted yet)
+- Append-only local Audit History (PSAA-02) — **DONE** (SQLite / in-memory; not production Supabase; S10/S02/S03 not persisted yet)
 
 ### SHARED
 - EOS-SEC AgentExecutionContext / trusted READ + controlled artifact persist
@@ -81,7 +82,7 @@
 
 ## 6. Mission (v0.1)
 
-По входу `ShiftAuditInput` (fixture или trusted READ) выполнить **S01**, **S10** и **S02** (joint `assess_shift`), вернуть математический, классификационный и технологический артефакты; при необходимости сохранить append-only **S01** history record (PSAA-02). S10/S02 пока не пишутся в durable history.
+По входу `ShiftAuditInput` (fixture или trusted READ) выполнить **S01**, **S10**, **S02** и **S03** (joint `assess_shift`), вернуть математический, классификационный, технологический и physical-integrity артефакты; при необходимости сохранить append-only **S01** history record (PSAA-02). S10/S02/S03 пока не пишутся в durable history.
 
 ## 7. Skills
 
@@ -90,8 +91,9 @@
 | S01 | Mathematical Integrity | **DONE / PROVEN** |
 | S10 | Operation Classification & Normalization | **DONE / PROVEN** (deterministic; insulation working catalog) |
 | S02 | Technological Integrity | **DONE / PROVEN** (engine; demo rules only — production knowledge NOT READY) |
-| S03 | Physical Integrity | **NEXT (PSAA-05)** |
-| S04–S09, S11–S12 | (см. Target) | TARGET / FUTURE |
+| S03 | Physical Integrity | **DONE / PROVEN** (engine; demo measurability — production physical knowledge / inspection NOT READY) |
+| S11 | Labor Benchmark | **NEXT (PSAA-06)** |
+| S04–S09, S12 | (см. Target) | TARGET / FUTURE |
 
 ## 8. Tools
 
@@ -115,6 +117,7 @@ Product WRITE tools: **запрещены** (`write_allowed=False`).
 History record stores immutable input + S01 artifact snapshots (append-only by `audit_id`).
 S10 produces a separate `ShiftOperationClassificationArtifact` (classification ≠ acceptance; catalog ≠ registry).
 S02 produces `ShiftTechnologicalIntegrityArtifact` (checked-rule consistency ≠ physical proof ≠ acceptance; demo ≠ approved engineering requirement).
+S03 produces `ShiftPhysicalIntegrityArtifact` (claimed quantity/unit/state checks ≠ verified result ≠ inspection; LABOR ≠ PHYSICAL RESULT; MANUFACTURED ≠ INSTALLED ≠ CONTRACT ACCEPTED).
 
 **Не** ACCEPTED/REJECTED.
 
@@ -137,8 +140,8 @@ Local SQLite history — **DONE**. Production Supabase persist — **NOT COMPLET
 
 | | |
 |--|--|
-| **CURRENT** | S01 DONE; PSAA-02 local durable history DONE (`ff40fb6`); S10 DONE (`a91161f`); S02 engine DONE (`74a528b`); Overfund Diagnostic; EOS-SEC controlled persist |
-| **TARGET** | Supabase history adapter + migration apply + live PG proof; S10/S02 in durable history; production tech knowledge; S03 (PSAA-05) / S04–S09/S11–S12; Django Shift Acceptance; Human Gate acceptance |
+| **CURRENT** | S01 DONE; PSAA-02 local durable history DONE (`ff40fb6`); S10 DONE (`a91161f`); S02 engine DONE (`74a528b`); S03 engine DONE (`eb9d9a0`); Overfund Diagnostic; EOS-SEC controlled persist |
+| **TARGET** | Supabase history adapter + migration apply + live PG proof; S10/S02/S03 in durable history; production tech/physical knowledge; S11 (PSAA-06) / S04–S09/S12; Django Shift Acceptance; Human Gate acceptance |
 | **NOT IN SCOPE (v0.1)** | LLM; UI; Constructor changes; Operation Registry; payroll; auto accept/reject |
 
 ### Limits (mandatory)
@@ -148,9 +151,11 @@ Local SQLite history — **DONE**. Production Supabase persist — **NOT COMPLET
 - SQL_SCHEMA_READY = YES; SUPABASE_STORAGE_ADAPTER_READY = NO; MIGRATION_APPLIED = NO; LIVE_POSTGRESQL_PERSISTENCE_PROVEN = NO
 - SQLite ≠ multi-node production durability
 - `absolute_deviation_*` signed semantics — technical debt (version-aware contract correction required)
-- S10/S02 not in durable audit history; insulation-only working catalog; no industrial classification accuracy proof
+- S10/S02/S03 not in durable audit history; insulation-only working catalogs; no industrial classification/inspection accuracy proof
 - Alias string equality ≠ professional equivalence; catalog candidate ≠ approved Operation Registry
-- S02: `PRODUCTION_KNOWLEDGE_NOT_READY` · `PRODUCTION_VALIDATION_NOT_PROVEN` (5 demo / 0 production rules)
+- S02: `PRODUCTION_KNOWLEDGE_NOT_READY` · `PRODUCTION_VALIDATION_NOT_PROVEN`
+- S03: `PRODUCTION_PHYSICAL_KNOWLEDGE_NOT_READY` · `PHYSICAL_INSPECTION_NOT_PROVEN`
+- Quantity not required by current rule ≠ non-measurability; missing geometry ≠ proven unit incompatibility; claimed MANUFACTURED/INSTALLED ≠ verified fact
 - Same shift ≠ same physical object; missing evidence ≠ proven violation; demo rule ≠ approved engineering requirement
 - Full autonomous auditor — **not created**
 
@@ -163,12 +168,13 @@ Local SQLite history — **DONE**. Production Supabase persist — **NOT COMPLET
 
 ## 14. Next increment
 
-**PSAA-05 / S03 — Physical Integrity** (not started).
+**PSAA-06 / S11 — Labor Benchmark** (not started).
 
-Check measurability, units, physical identity, claimed volume, and result state.
-Distinguish claimed vs confirmed physical result; fabrication vs installation; WIP vs completed contractual work; contractual acceptance vs commercial recognition.
+Compute unit labor intensity and assess fitness of production data for СИНТАРК’s technological labor library.
+Separately model claimed vs verified unit labor, historical observations, benchmark candidates, approved norms, productive vs loss/idle labor, and paid hours without executed quantity / earned value.
+Do not auto-promote claimed unit labor into a production norm; keep unpaid-volume paid hours out of norms.
 
 ## 15. Passport status
 
-**Initial Passport v0.1** + S01 + PSAA-02 local history + S10 classification + S02 engine evidence.
-Final Passport — после production-grade history, production tech knowledge и расширенного professional proof.
+**Initial Passport v0.1** + S01 + PSAA-02 local history + S10 + S02 + S03 engine evidence.
+Final Passport — после production-grade history, production tech/physical knowledge и расширенного professional proof.

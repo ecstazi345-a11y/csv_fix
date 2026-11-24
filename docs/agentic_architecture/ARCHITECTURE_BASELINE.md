@@ -531,12 +531,88 @@ Executability Agent / Commitment Agent / Orchestrator: **NOT_IMPLEMENTED**. Не
 
 ---
 
-## 15. Related documents
+## 15. Compact DYNAMIS technical & business map (canon pointer)
+
+This section **does not** invent a second architecture standard. Product/physical law:
+[DYNAMIS_PHYSICAL_EXECUTION_ARCHITECTURE_RU.md](../architecture/DYNAMIS_PHYSICAL_EXECUTION_ARCHITECTURE_RU.md).
+Security law: `security/*.md`. Methodology: Lessons_2 (external). Progress journal:
+[AGENT_RUNTIME_PROGRESS.md](AGENT_RUNTIME_PROGRESS.md).
+
+### Technical placement (target)
+
+| Layer | Role |
+|-------|------|
+| **Django** | Human Surface (product decisions, execution acceptance surfaces) |
+| **Python + LangGraph** | Independent Agent Runtime for long-lived professional workflows |
+| **SQL + Python** | Deterministic computational tools |
+| **Supabase / PostgreSQL** | Shared state, production data, organizational memory |
+| **Services / Adapters** | Integration of professional components and data sources |
+| **EOS-SEC** | Mandatory security contour |
+| **Lessons_2** | Mandatory evolving methodology for digital employees |
+
+Streamlit remains Agent Control Room for current planning-agent observability.
+Django is the target product Human Surface. Closing a UI must not kill an agent.
+
+### Business chain (fundamental)
+
+```
+DATA → EXECUTABILITY → EXECUTION → ACCEPTANCE → CASH
+```
+
+Contract base, planning, production economics, and organizational memory support this cycle.
+
+### Data contours (current vs SINTARK target)
+
+**Operating projects (current transitional):**
+
+```
+Airtable → Sync → Supabase → Existing Consumers
+```
+
+**New SINTARK projects (target):**
+
+```
+Approved Contract BOQ
+  → Supabase
+  → Django Smart Production Form
+  → Production Fact
+  → Professional Agents
+  → Audit History
+  → Human Decisions
+  → Economics
+```
+
+Airtable is **not** a required component of the SINTARK target architecture.
+No migration is authorized by this documentation checkpoint.
+
+### Production Shift Auditor (PSAA) placement
+
+- Professional role: `PRODUCTION_SHIFT_AUDITOR`
+- Business contour: **EXECUTION**
+- Passport: [PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1.md](PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1.md)
+- Checkpoint: [PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md)
+- S01 Mathematical Integrity: **DONE** (`2912335`)
+- Future Human Surface: Django → Execution → Shift Acceptance
+  (queue · registry · exceptions · expandable drill-down — not one card per operation)
+- PSAA-02 Audit History: **NEXT** (not designed here)
+- Full autonomous auditor / managerial acceptance: **NOT IMPLEMENTED**
+
+Principles retained: SOURCE-NEUTRAL · EXECUTOR-NEUTRAL · MULTI-SHIFT/CREW/WORK ·
+EXCEPTION-DRIVEN · APPEND-ONLY HISTORY (target) · HUMAN GATE for acceptance.
+Keep separate: data check · physical credibility · managerial acceptance ·
+contractual acceptance · cost · compensation. Do not collapse shift audit into payroll.
+
+---
+
+## 16. Related documents
 
 - [MONTHLY_PLAN_CONSTRUCTOR_AGENT.md](MONTHLY_PLAN_CONSTRUCTOR_AGENT.md)
+- [PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1.md](PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1.md)
+- [PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md)
 - [ORCHESTRATION_AND_HANDOFF.md](ORCHESTRATION_AND_HANDOFF.md)
 - [LABOR_NORM_RESOLUTION.md](LABOR_NORM_RESOLUTION.md)
 - [DECISION_LOG.md](DECISION_LOG.md)
 - [RECOVERY_CONTEXT.md](RECOVERY_CONTEXT.md)
+- [DYNAMIS_PHYSICAL_EXECUTION_ARCHITECTURE_RU.md](../architecture/DYNAMIS_PHYSICAL_EXECUTION_ARCHITECTURE_RU.md)
 - `security/*.md` — EOS-SEC
 - Page52 — организационное описание

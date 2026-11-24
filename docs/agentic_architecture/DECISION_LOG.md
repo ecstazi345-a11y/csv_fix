@@ -5,6 +5,18 @@ ADR-like. Новые решения добавлять сверху по дат�
 
 ---
 
+## 2026-11-24 — PSAA-01 Mathematical Integrity accepted; SINTARK contour recorded
+
+**DECISION:** Production Shift Auditor Agent (`PRODUCTION_SHIFT_AUDITOR`) accepted as a separate professional role in the **EXECUTION** contour. PSAA-01 (S01 Mathematical Integrity) is DONE at commit `291233564d646d16977f3d5ed8989f55123c772c`. Professional core is SOURCE-NEUTRAL / EXECUTOR-NEUTRAL; legacy `daily_progress_active` is a replaceable adapter. Airtable is transitional for operating projects and **not** required in the SINTARK target path. Managerial acceptance, payroll, and durable Audit History remain separate concerns; Audit History is the next increment (PSAA-02), not designed here.
+
+**KEEP:** EOS-SEC allowlisted READ; fail-closed grain checks; no silent `direct_work_hours` → man-hour conversion; `COHERENT` ≠ physical proof ≠ acceptance; Constructor packages unchanged.
+
+**REJECTED:** collapsing data check / physical credibility / managerial acceptance / contractual acceptance / cost / compensation into one status; treating PSAA-01 as a complete autonomous auditor; cloning Constructor LangGraph/runtime for S01; building Django Shift Acceptance UI in PSAA-01.
+
+**CANON:** passport `PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1.md`; checkpoint `PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md`; architecture map in `ARCHITECTURE_BASELINE.md` §15 and `DYNAMIS_PHYSICAL_EXECUTION_ARCHITECTURE_RU.md` §11.1–11.4.
+
+---
+
 ## 2026-10-24 — Digital Worker Blueprint as navigation standard
 
 **DECISION:** `DIGITAL_WORKER_BLUEPRINT.md` — навигационный стандарт проектирования цифрового сотрудника. Он указывает, какие действующие источники читать и в каком порядке. Он не является паспортом роли и не заменяет источники истины.

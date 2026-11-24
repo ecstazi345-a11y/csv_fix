@@ -17,7 +17,9 @@
 | [AGENT_RUNTIME_PROGRESS.md](AGENT_RUNTIME_PROGRESS.md) | Где мы сейчас (журнал программы, append-only checkpoints). |
 | [DIGITAL_EMPLOYEE_ANATOMY.md](DIGITAL_EMPLOYEE_ANATOMY.md) | Как профессионально устроен цифровой сотрудник. |
 | [DIGITAL_WORKER_BLUEPRINT.md](DIGITAL_WORKER_BLUEPRINT.md) | Навигационный стандарт проектирования цифрового сотрудника. Не заменяет источники истины. |
-| [ARCHITECTURE_BASELINE.md](ARCHITECTURE_BASELINE.md) | Как устроена целевая архитектура. |
+| [ARCHITECTURE_BASELINE.md](ARCHITECTURE_BASELINE.md) | Как устроена целевая архитектура (в т.ч. компактная карта DYNAMIS / СИНТАРК / PSAA). |
+| [PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1.md](PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1.md) | Паспорт Production Shift Auditor (EXECUTION). |
+| [PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md) | Checkpoint завершения PSAA-01. |
 | [RECOVERY_CONTEXT.md](RECOVERY_CONTEXT.md) | Как восстановить контекст после паузы. |
 
 ---
@@ -82,8 +84,10 @@ Page52 **не отменяется**. Она остаётся каноном **�
 |------|------------|
 | [AGENT_RUNTIME_PROGRESS.md](AGENT_RUNTIME_PROGRESS.md) | Журнал программы: что доказано, где мы, что дальше. |
 | [DIGITAL_EMPLOYEE_ANATOMY.md](DIGITAL_EMPLOYEE_ANATOMY.md) | Учебная анатомия профессионального цифрового сотрудника. |
-| [ARCHITECTURE_BASELINE.md](ARCHITECTURE_BASELINE.md) | Общий закон: stack, AGENT ≠ dashboard, организация цифровых сотрудников, EOS-SEC, LLM boundary, anti-patterns, next release. |
+| [ARCHITECTURE_BASELINE.md](ARCHITECTURE_BASELINE.md) | Общий закон: stack, AGENT ≠ dashboard, организация цифровых сотрудников, EOS-SEC, LLM boundary, anti-patterns, DYNAMIS/СИНТАРК map, next release. |
 | [MONTHLY_PLAN_CONSTRUCTOR_AGENT.md](MONTHLY_PLAN_CONSTRUCTOR_AGENT.md) | Спецификация Агента формирования кандидатного состава: mission, scope, lifecycle, human role, quantity, missing labor norm. |
+| [PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1.md](PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1.md) | Паспорт аудитора сменного исполнения (PSAA). |
+| [PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md) | Зафиксированное завершение PSAA-01 (S01). |
 | [ORCHESTRATION_AND_HANDOFF.md](ORCHESTRATION_AND_HANDOFF.md) | Оркестратор, shared state, structured handoff, pause/resume, Control Room, KPI routine removal. |
 | [LABOR_NORM_RESOLUTION.md](LABOR_NORM_RESOLUTION.md) | LaborNormResolver: иерархия источников, provenance, benchmark vs P50 vs planning norm, continuous learning. |
 | [DECISION_LOG.md](DECISION_LOG.md) | Принятые и отклонённые решения (ADR-like). |
@@ -101,7 +105,9 @@ Page52 **не отменяется**. Она остаётся каноном **�
 - не отменяют EOS-SEC;
 - не делают Page10B runtime агента.
 
-Текущая программа: **Constructor Agent Runtime v0.1** (progress **3 / 10**).<br>
-Следующий шаг: Increment 4 — Labor Norm Resolver integration.
+Актуальное состояние программ смотреть в:
 
-Актуальное состояние смотреть только в [AGENT_RUNTIME_PROGRESS.md](AGENT_RUNTIME_PROGRESS.md). Этот README не является журналом программы.
+- Constructor / control plane: [AGENT_RUNTIME_PROGRESS.md](AGENT_RUNTIME_PROGRESS.md)
+- PSAA-01 completion: [PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md)
+
+Этот README не является журналом программы.

@@ -267,6 +267,56 @@ Skills / tools / services / deterministic nodes остаются внутри а
 - Цифровые сотрудники работают в пределах своей профессиональной роли.
 - Источник истины о физическом состоянии — операционный граф и связанные доказательства, а не страница приложения.
 
+### 11.1 Бизнес-цепочка DYNAMIS
+
+```
+DATA → EXECUTABILITY → EXECUTION → ACCEPTANCE → CASH
+```
+
+Договорная база, планирование, производственная экономика и организационная память поддерживают этот цикл. Не смешивать проверку исполнения с автоматическим начислением вознаграждения.
+
+### 11.2 Техническое размещение (компактная карта)
+
+Канон агентной реализации: `docs/agentic_architecture/ARCHITECTURE_BASELINE.md`.
+Канон безопасности: `security/*.md`. Методология: Lessons_2.
+
+| Слой | Назначение |
+|------|------------|
+| Django | Human Surface |
+| Python + LangGraph | независимый Agent Runtime |
+| SQL + Python | детерминированные вычислительные инструменты |
+| Supabase / PostgreSQL | единое состояние, производственные данные, организационная память |
+| Services / Adapters | интеграция профессиональных компонентов и источников |
+| EOS-SEC | обязательный security contour |
+
+### 11.3 Контуры данных: действующие проекты vs СИНТАРК
+
+**Действующие проекты (переходный контур):**
+
+```
+Airtable → Sync → Supabase → Existing Consumers
+```
+
+**Новые проекты СИНТАРК (целевой контур):**
+
+```
+Approved Contract BOQ → Supabase → Django Smart Production Form
+  → Production Fact → Professional Agents → Audit History
+  → Human Decisions → Economics
+```
+
+Airtable **не** является обязательным компонентом целевой архитектуры СИНТАРК.
+Миграция этим документом **не** авторизуется.
+
+### 11.4 Production Shift Auditor в контуре EXECUTION
+
+Профессиональная роль `PRODUCTION_SHIFT_AUDITOR` работает в бизнес-контуре **EXECUTION**.
+
+Целевая поверхность: **Django → Execution → Shift Acceptance** — очередь приёмки, реестр смен, исключения, раскрываемая детализация (звено / работники / договорная позиция / операции / доказательства). Не отдельная карточка на каждую операцию. UI сейчас не реализуется.
+
+S01 Mathematical Integrity — выполнен (см. `docs/agentic_architecture/PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md`).
+Полноценный автономный аудитор и управленческая приёмка — ещё не созданы. Следующий инкремент: PSAA-02 Audit History.
+
 ---
 
 ## 12. Законы Digital Workforce
@@ -443,24 +493,27 @@ worker_id / agent_id; professional role; version; owner / accountable role; Miss
 
 CURRENT:
 
-- Constructor = первый реально работающий Digital Worker
+- Constructor = первый реально работающий Digital Worker контура планирования
 - Candidate Package существует
-- Human Review target определён, runtime ещё не реализован
-- Reviewed Candidate Package не реализован
+- PSAA = второй профессиональный цифровой сотрудник (контур EXECUTION); S01 Mathematical Integrity **DONE**; полный автономный аудитор **не** создан
+- Human Review / Confirm для Constructor — см. актуальный `AGENT_RUNTIME_PROGRESS.md` (не дублировать здесь)
 - Executability Agent не реализован
 - Commitment Agent не реализован
 - Orchestrator не реализован
+- Durable Shift Audit History не реализована
+- Django Shift Acceptance surface не реализована
 - новая сквозная physical data foundation не реализована
 - universal provenance table не реализована
-- ModelProvider / NeuralDeep adapter не реализованы; Constructor deterministic
+- ModelProvider / NeuralDeep adapter не реализованы; Constructor и PSAA v0.1 deterministic
 - contract event module не реализован
 - robot / drone / fleet runtime не реализован
 
 TARGET:
 
 - governed Digital Workforce
-- replaceable adapters
+- replaceable adapters (в т.ч. native Production Fact без обязательного Airtable для СИНТАРК)
 - persistent Digital Workers
+- PSAA Audit History + Human Gate приёмки смены
 - Human-by-Exception
 - orchestrated workflows
 - unified physical execution state

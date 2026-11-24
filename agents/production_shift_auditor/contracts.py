@@ -77,6 +77,12 @@ class OperationLaborClaim:
     physical_unit: Optional[str] = None
     source_record_ids: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
+    # Optional classification context (never fabricated by S01/S10)
+    material_hint: Optional[str] = None
+    boq_name: Optional[str] = None
+    work_kind_hint: Optional[str] = None
+    physical_object_hint: Optional[str] = None
+    comment: Optional[str] = None
 
 
 @dataclass(frozen=True)

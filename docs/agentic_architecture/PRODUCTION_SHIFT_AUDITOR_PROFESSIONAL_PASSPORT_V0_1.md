@@ -2,11 +2,11 @@
 # Production Shift Auditor Agent (PSAA)
 
 **Document:** PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1
-**Version:** v0.1 (S01 + local Audit History proven)
-**Status:** S01 + PSAA-02 local history CURRENT / PROVEN · full auditor NOT COMPLETE · production Supabase persistence NOT COMPLETE
+**Version:** v0.1 (S01 + local Audit History + S10 classification proven)
+**Status:** S01 + PSAA-02 local history + S10 CURRENT / PROVEN · full auditor NOT COMPLETE · production Supabase persistence NOT COMPLETE · S10 not in durable history
 **Standard:** PROFESSIONAL_PASSPORT_TEMPLATE_V1_0
-**Checkpoints:** [PSAA_01](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_02](PSAA_02_AUDIT_HISTORY_CHECKPOINT.md)
-**Latest code commit:** `ff40fb6f04759a11a5a2f556dc97574c9daac445`
+**Checkpoints:** [PSAA_01](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_02](PSAA_02_AUDIT_HISTORY_CHECKPOINT.md) · [PSAA_03](PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md)
+**Latest code commit:** `a91161fa10f981b8e6bb9f3079d6323da69f8dfb`
 **Branch:** `wip/increment-11c-persistent-shadow-stores`
 
 ---
@@ -35,9 +35,10 @@
 
 ### OWNED (v0.1)
 - S01 Mathematical Integrity (детерминированно) — **DONE** (включая Overfund Diagnostic)
+- S10 Operation Classification & Normalization (детерминированно) — **DONE** (insulation working catalog; not Operation Registry)
 - Узкий trusted READ adapter (replaceable; legacy `daily_progress_active`)
 - Структурированный профессиональный артефакт с provenance
-- Append-only local Audit History (PSAA-02) — **DONE** (SQLite / in-memory; not production Supabase)
+- Append-only local Audit History (PSAA-02) — **DONE** (SQLite / in-memory; not production Supabase; S10 not persisted yet)
 
 ### SHARED
 - EOS-SEC AgentExecutionContext / trusted READ + controlled artifact persist
@@ -79,15 +80,16 @@
 
 ## 6. Mission (v0.1)
 
-По входу `ShiftAuditInput` (fixture или trusted READ) выполнить **S01**, вернуть `ShiftAuditArtifact` и при необходимости сохранить append-only history record (PSAA-02).
+По входу `ShiftAuditInput` (fixture или trusted READ) выполнить **S01** и **S10** (joint `assess_shift`), вернуть математический и классификационный артефакты; при необходимости сохранить append-only **S01** history record (PSAA-02). S10 пока не пишется в durable history.
 
 ## 7. Skills
 
 | Код | Навык | Статус |
 |-----|-------|--------|
 | S01 | Mathematical Integrity | **DONE / PROVEN** |
-| S10 | Operation Classification & Normalization | **NEXT (PSAA-03)** |
-| S02–S09, S11–S12 | (см. Target) | TARGET / FUTURE |
+| S10 | Operation Classification & Normalization | **DONE / PROVEN** (deterministic; insulation working catalog) |
+| S02 | Technological Integrity | **NEXT (PSAA-04)** |
+| S03–S09, S11–S12 | (см. Target) | TARGET / FUTURE |
 
 ## 8. Tools
 
@@ -108,7 +110,8 @@ Product WRITE tools: **запрещены** (`write_allowed=False`).
 - professional credibility (NOT_EVALUATED в v0.1)
 - managerial acceptance (NOT_IN_SCOPE)
 
-History record stores immutable input + artifact snapshots (append-only by `audit_id`).
+History record stores immutable input + S01 artifact snapshots (append-only by `audit_id`).
+S10 produces a separate `ShiftOperationClassificationArtifact` (classification ≠ acceptance; catalog ≠ registry).
 
 **Не** ACCEPTED/REJECTED.
 
@@ -131,8 +134,8 @@ Local SQLite history — **DONE**. Production Supabase persist — **NOT COMPLET
 
 | | |
 |--|--|
-| **CURRENT** | S01 DONE; PSAA-02 local durable history DONE (`ff40fb6`); Overfund Diagnostic; EOS-SEC controlled persist |
-| **TARGET** | Supabase history adapter + migration apply + live PG proof; S10 (PSAA-03); S02–S09/S11–S12; Django Shift Acceptance; Human Gate acceptance |
+| **CURRENT** | S01 DONE; PSAA-02 local durable history DONE (`ff40fb6`); S10 DONE (`a91161f`); Overfund Diagnostic; EOS-SEC controlled persist |
+| **TARGET** | Supabase history adapter + migration apply + live PG proof; S10 in durable history; S02 (PSAA-04) / S03–S09/S11–S12; Django Shift Acceptance; Human Gate acceptance |
 | **NOT IN SCOPE (v0.1)** | LLM; UI; Constructor changes; Operation Registry; payroll; auto accept/reject |
 
 ### Limits (mandatory)
@@ -142,6 +145,8 @@ Local SQLite history — **DONE**. Production Supabase persist — **NOT COMPLET
 - SQL_SCHEMA_READY = YES; SUPABASE_STORAGE_ADAPTER_READY = NO; MIGRATION_APPLIED = NO; LIVE_POSTGRESQL_PERSISTENCE_PROVEN = NO
 - SQLite ≠ multi-node production durability
 - `absolute_deviation_*` signed semantics — technical debt (version-aware contract correction required)
+- S10 not in durable audit history; insulation-only working catalog; no industrial classification accuracy proof
+- Alias string equality ≠ professional equivalence; catalog candidate ≠ approved Operation Registry
 - Full autonomous auditor — **not created**
 
 ## 13. Failure Conditions
@@ -153,11 +158,12 @@ Local SQLite history — **DONE**. Production Supabase persist — **NOT COMPLET
 
 ## 14. Next increment
 
-**PSAA-03 — S10 Operation Classification & Normalization** (not started).
+**PSAA-04 / S02 — Technological Integrity** (not started).
 
-Recognize / classify / normalize operation descriptions while preserving original text, provenance, and uncertainty — foundation for Operation Registry, technological integrity, labor accumulation, and per-operation economics.
+Professional check that claimed operations fit the technological composition of the specific work type.
+Operations may span shifts/crews; absence in one shift ≠ technology violation; requirements need provenance; no invented mandatory sequence without engineering basis.
 
 ## 15. Passport status
 
-**Initial Passport v0.1** + S01 evidence + PSAA-02 local history evidence.
+**Initial Passport v0.1** + S01 + PSAA-02 local history + S10 classification evidence.
 Final Passport — после production-grade history и расширенного professional proof.

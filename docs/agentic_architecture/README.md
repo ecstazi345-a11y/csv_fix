@@ -21,6 +21,7 @@
 | [PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1.md](PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1.md) | Паспорт Production Shift Auditor (EXECUTION). |
 | [PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md) | Checkpoint завершения PSAA-01. |
 | [PSAA_02_AUDIT_HISTORY_CHECKPOINT.md](PSAA_02_AUDIT_HISTORY_CHECKPOINT.md) | Checkpoint завершения PSAA-02 (local durable history). |
+| [PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md](PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md) | Checkpoint завершения PSAA-03 (S10 classification). |
 | [RECOVERY_CONTEXT.md](RECOVERY_CONTEXT.md) | Как восстановить контекст после паузы. |
 
 ---
@@ -90,6 +91,7 @@ Page52 **не отменяется**. Она остаётся каноном **�
 | [PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1.md](PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1.md) | Паспорт аудитора сменного исполнения (PSAA). |
 | [PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md) | Зафиксированное завершение PSAA-01 (S01). |
 | [PSAA_02_AUDIT_HISTORY_CHECKPOINT.md](PSAA_02_AUDIT_HISTORY_CHECKPOINT.md) | Зафиксированное завершение PSAA-02 (append-only history). |
+| [PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md](PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md) | Зафиксированное завершение PSAA-03 (S10 classification). |
 | [ORCHESTRATION_AND_HANDOFF.md](ORCHESTRATION_AND_HANDOFF.md) | Оркестратор, shared state, structured handoff, pause/resume, Control Room, KPI routine removal. |
 | [LABOR_NORM_RESOLUTION.md](LABOR_NORM_RESOLUTION.md) | LaborNormResolver: иерархия источников, provenance, benchmark vs P50 vs planning norm, continuous learning. |
 | [DECISION_LOG.md](DECISION_LOG.md) | Принятые и отклонённые решения (ADR-like). |
@@ -112,5 +114,6 @@ Page52 **не отменяется**. Она остаётся каноном **�
 - Constructor / control plane: [AGENT_RUNTIME_PROGRESS.md](AGENT_RUNTIME_PROGRESS.md)
 - PSAA-01 completion: [PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md)
 - PSAA-02 completion: [PSAA_02_AUDIT_HISTORY_CHECKPOINT.md](PSAA_02_AUDIT_HISTORY_CHECKPOINT.md)
+- PSAA-03 completion: [PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md](PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md)
 
 Этот README не является журналом программы.

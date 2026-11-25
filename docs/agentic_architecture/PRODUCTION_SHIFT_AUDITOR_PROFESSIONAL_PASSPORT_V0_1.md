@@ -2,11 +2,11 @@
 # Production Shift Auditor Agent (PSAA)
 
 **Document:** PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1
-**Version:** v0.1 (S01 + local Audit History + S10 + S02 + S03 + S11 + S04 + S05 + S06 engines proven)
-**Status:** S01 + PSAA-02 local history + S10 + S02 + S03 + S11 + S04 + S05 + S06 engines CURRENT / PROVEN · **8 of 12 professional skill engines implemented** (engine count ≠ production readiness) · descriptive statistics PROVEN · historical anomaly-candidate method PROVEN within demo fixtures · production statistical anomaly NOT PROVEN · VIOLATION_NOT_PROVEN · mathematical time balance COMPUTABLE · conditional duration bounds PROVEN · actual chronology NOT VERIFIED · evidence-supported actual participation NOT PROVEN · scenario direct labor cost PROVEN · actual incurred cost NOT PROVEN · full execution cost NOT COMPUTABLE · COST_DEVIATION_BOUNDARIES_ONLY · verified labor observations NOT PROVEN · approved labor norms NOT CREATED · production tech/physical knowledge NOT READY · inspection NOT PROVEN · full auditor NOT COMPLETE · production Supabase persistence NOT COMPLETE · S10/S02/S03/S11/S04/S05/S06 not in durable history
+**Version:** v0.1 (S01 + local Audit History + S10 + S02 + S03 + S11 + S04 + S05 + S06 + S07 engines proven)
+**Status:** S01 + PSAA-02 local history + S10 + S02 + S03 + S11 + S04 + S05 + S06 + S07 engines CURRENT / PROVEN · **9 of 12 professional skill engines implemented** (engine count ≠ production readiness) · demonstration hypothesis generation PROVEN · typed causal context PROVEN within tested scope · production root-cause proof NOT PROVEN · ESTABLISHED_CAUSE = NO · descriptive statistics PROVEN · historical anomaly-candidate method PROVEN within demo fixtures · production statistical anomaly NOT PROVEN · VIOLATION_NOT_PROVEN · mathematical time balance COMPUTABLE · conditional duration bounds PROVEN · actual chronology NOT VERIFIED · evidence-supported actual participation NOT PROVEN · scenario direct labor cost PROVEN · actual incurred cost NOT PROVEN · full execution cost NOT COMPUTABLE · COST_DEVIATION_BOUNDARIES_ONLY · verified labor observations NOT PROVEN · approved labor norms NOT CREATED · production tech/physical knowledge NOT READY · inspection NOT PROVEN · full auditor NOT COMPLETE · production Supabase persistence NOT COMPLETE · S10/S02/S03/S11/S04/S05/S06/S07 not in durable history
 **Standard:** PROFESSIONAL_PASSPORT_TEMPLATE_V1_0
-**Checkpoints:** [PSAA_01](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_02](PSAA_02_AUDIT_HISTORY_CHECKPOINT.md) · [PSAA_03](PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md) · [PSAA_04](PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_05](PSAA_05_PHYSICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_06](PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md) · [PSAA_07](PSAA_07_EXECUTION_COST_CHECKPOINT.md) · [PSAA_08](PSAA_08_TEMPORAL_INTEGRITY_CHECKPOINT.md) · [PSAA_09](PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md)
-**Latest code commit:** `66fb64a3e3738694c99b4044328221979abff2d2`
+**Checkpoints:** [PSAA_01](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_02](PSAA_02_AUDIT_HISTORY_CHECKPOINT.md) · [PSAA_03](PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md) · [PSAA_04](PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_05](PSAA_05_PHYSICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_06](PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md) · [PSAA_07](PSAA_07_EXECUTION_COST_CHECKPOINT.md) · [PSAA_08](PSAA_08_TEMPORAL_INTEGRITY_CHECKPOINT.md) · [PSAA_09](PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md) · [PSAA_10](PSAA_10_ROOT_CAUSE_CHECKPOINT.md)
+**Latest code commit:** `aa53122db409db9d2750c03968499f94252d9c39`
 **Branch:** `wip/increment-11c-persistent-shadow-stores`
 
 ---
@@ -42,9 +42,10 @@
 - S04 Execution Cost Analysis (детерминированно) — **DONE** (`S04_ENGINE_IMPLEMENTED`; scenario direct labor PROVEN; actual incurred / full cost NOT PROVEN)
 - S05 Temporal Integrity (детерминированно) — **DONE** (`S05_ENGINE_IMPLEMENTED`; time balance COMPUTABLE; conditional bounds PROVEN; actual chronology / evidence-supported participation NOT PROVEN)
 - S06 Statistical Anomaly Detection (детерминированно) — **DONE** (`S06_ENGINE_IMPLEMENTED`; descriptive statistics PROVEN; demo historical anomaly-candidate method PROVEN; production statistical anomaly NOT PROVEN; VIOLATION_NOT_PROVEN)
+- S07 Root Cause Analysis (детерминированно) — **DONE** (`S07_ENGINE_IMPLEMENTED`; demonstration hypothesis generation PROVEN; typed causal context PROVEN within tested scope; production root-cause proof NOT PROVEN; ESTABLISHED_CAUSE = NO)
 - Узкий trusted READ adapter (replaceable; legacy `daily_progress_active`)
 - Структурированный профессиональный артефакт с provenance
-- Append-only local Audit History (PSAA-02) — **DONE** (SQLite / in-memory; not production Supabase; S10/S02/S03/S11/S04/S05/S06 not persisted yet)
+- Append-only local Audit History (PSAA-02) — **DONE** (SQLite / in-memory; not production Supabase; S10/S02/S03/S11/S04/S05/S06/S07 not persisted yet)
 
 ### SHARED
 - EOS-SEC AgentExecutionContext / trusted READ + controlled artifact persist
@@ -86,7 +87,7 @@
 
 ## 6. Mission (v0.1)
 
-По входу `ShiftAuditInput` (fixture или trusted READ) выполнить **S01**, **S10**, **S02**, **S03**, **S11**, **S04**, **S05** и **S06** (joint `assess_shift`), вернуть математический, классификационный, технологический, physical-integrity, labor-benchmark, execution-cost, temporal-integrity и statistical-anomaly артефакты; при необходимости сохранить append-only **S01** history record (PSAA-02). S10/S02/S03/S11/S04/S05/S06 пока не пишутся в durable history.
+По входу `ShiftAuditInput` (fixture или trusted READ) выполнить **S01**, **S10**, **S02**, **S03**, **S11**, **S04**, **S05**, **S06** и **S07** (joint `assess_shift`), вернуть математический, классификационный, технологический, physical-integrity, labor-benchmark, execution-cost, temporal-integrity, statistical-anomaly и root-cause артефакты; при необходимости сохранить append-only **S01** history record (PSAA-02). S10/S02/S03/S11/S04/S05/S06/S07 пока не пишутся в durable history.
 
 ## 7. Skills
 
@@ -100,8 +101,8 @@
 | S04 | Execution Cost Analysis | **DONE / PROVEN** (engine; scenario direct labor only — actual incurred / full cost NOT PROVEN) |
 | S05 | Temporal Integrity | **DONE / PROVEN** (engine; claimed time only — actual chronology / evidence-supported participation NOT PROVEN) |
 | S06 | Statistical Anomaly Detection | **DONE / PROVEN** (engine; descriptive + demo historical candidate method — production anomaly NOT PROVEN; VIOLATION_NOT_PROVEN) |
-| S07 | Root Cause Analysis | **NEXT (PSAA-10)** |
-| S08 | Evidence Validation (+ Spatial Execution Evidence direction) | TARGET / FUTURE |
+| S07 | Root Cause Analysis | **DONE / PROVEN** (engine; demo hypotheses + typed context — production root cause NOT PROVEN; ESTABLISHED_CAUSE = NO) |
+| S08 | Evidence Validation (+ Spatial Execution Evidence direction) | **NEXT (PSAA-11)** |
 | S09 | Shift Acceptance Recommendation | TARGET / FUTURE |
 | S12 | Production Intelligence | TARGET / FUTURE |
 
@@ -132,6 +133,7 @@ S11 produces `ShiftLaborBenchmarkArtifact` (claimed unit labor / productivity / 
 S04 produces `ShiftExecutionCostArtifact` (claimed direct labor cost from typed rate; SCENARIO ≠ ACTUAL; DIRECT ≠ FULL COST; UNKNOWN ≠ ZERO; no payroll / margin / revenue).
 S05 produces `ShiftTemporalIntegrityArtifact` (S01 time balance reuse; conditional duration bounds under stated assumptions; claimed intervals half-open; chronology NOT_PROVEN; scenario capacity ≠ proven physical conflict; no timesheet / scheduling / fraud).
 S06 produces `ShiftStatisticalAnomalyArtifact` (descriptive concentration/rounding; median+MAD modified Z on typed claimed historical refs; ZERO_DISPERSION without ÷0; COST_DEVIATION_BOUNDARIES_ONLY; VIOLATION_NOT_PROVEN; no worker ranking / root cause).
+S07 produces `ShiftRootCauseArtifact` (relevant hypotheses from prior findings; typed supporting/contradicting context; evidence requirements; clarification questions/roles; CAUSE_NOT_ESTABLISHED; no autonomous investigation / blame / causal cost allocation).
 
 **Не** ACCEPTED/REJECTED.
 
@@ -154,9 +156,9 @@ Local SQLite history — **DONE**. Production Supabase persist — **NOT COMPLET
 
 | | |
 |--|--|
-| **CURRENT** | S01 DONE; PSAA-02 local durable history DONE (`ff40fb6`); S10 DONE (`a91161f`); S02 engine DONE (`74a528b`); S03 engine DONE (`eb9d9a0`); S11 engine DONE (`252af32`); S04 engine DONE (`e0d5179`); S05 engine DONE (`e7c475c`); S06 engine DONE (`66fb64a`); **8/12 skill engines**; Overfund Diagnostic; EOS-SEC controlled persist |
-| **TARGET** | Supabase history adapter + migration apply + live PG proof; S10/S02/S03/S11/S04/S05/S06 in durable history; production tech/physical knowledge; S07 (PSAA-10) / S08–S09/S12; Spatial Execution Evidence (S08 direction); Django Shift Acceptance; Human Gate acceptance; integrate PSAA with existing agentic architecture and live production processes (**no new agent architecture**) |
-| **NOT IN SCOPE (v0.1)** | LLM; UI; Constructor changes; Operation Registry; payroll; TCE replacement; auto accept/reject; auto norm/rate approval; margin/revenue; timesheet/scheduling engine; ML anomaly platform; worker ranking |
+| **CURRENT** | S01 DONE; PSAA-02 local durable history DONE (`ff40fb6`); S10 DONE (`a91161f`); S02 engine DONE (`74a528b`); S03 engine DONE (`eb9d9a0`); S11 engine DONE (`252af32`); S04 engine DONE (`e0d5179`); S05 engine DONE (`e7c475c`); S06 engine DONE (`66fb64a`); S07 engine DONE (`aa53122`); **9/12 skill engines**; Overfund Diagnostic; EOS-SEC controlled persist |
+| **TARGET** | Supabase history adapter + migration apply + live PG proof; S10/S02/S03/S11/S04/S05/S06/S07 in durable history; production tech/physical knowledge; S08 (PSAA-11) / S09/S12; Spatial Execution Evidence (S08 direction); Django Shift Acceptance; Human Gate acceptance; integrate PSAA with existing Agent Runtime, Supabase and live production processes (**no new agent architecture**) |
+| **NOT IN SCOPE (v0.1)** | LLM; UI; Constructor changes; Operation Registry; payroll; TCE replacement; auto accept/reject; auto norm/rate approval; margin/revenue; timesheet/scheduling engine; ML anomaly platform; worker ranking; autonomous investigation; causal cost allocation |
 
 ### Limits (mandatory)
 
@@ -165,7 +167,7 @@ Local SQLite history — **DONE**. Production Supabase persist — **NOT COMPLET
 - SQL_SCHEMA_READY = YES; SUPABASE_STORAGE_ADAPTER_READY = NO; MIGRATION_APPLIED = NO; LIVE_POSTGRESQL_PERSISTENCE_PROVEN = NO
 - SQLite ≠ multi-node production durability
 - `absolute_deviation_*` signed semantics — technical debt (version-aware contract correction required)
-- S10/S02/S03/S11/S04/S05/S06 not in durable audit history; insulation-only working catalogs; no industrial classification/inspection accuracy proof
+- S10/S02/S03/S11/S04/S05/S06/S07 not in durable audit history; insulation-only working catalogs; no industrial classification/inspection accuracy proof
 - Alias string equality ≠ professional equivalence; catalog candidate ≠ approved Operation Registry
 - S02: `PRODUCTION_KNOWLEDGE_NOT_READY` · `PRODUCTION_VALIDATION_NOT_PROVEN`
 - S03: `PRODUCTION_PHYSICAL_KNOWLEDGE_NOT_READY` · `PHYSICAL_INSPECTION_NOT_PROVEN`
@@ -173,14 +175,16 @@ Local SQLite history — **DONE**. Production Supabase persist — **NOT COMPLET
 - S04: `ACTUAL_COST_NOT_PROVEN` · `FULL_EXECUTION_COST_NOT_COMPUTABLE` · production cost-rate READ adapter NOT IMPLEMENTED · full multi-rate/worker allocation NOT IMPLEMENTED
 - S05: `CHRONOLOGY_NOT_PROVEN` · `WORKER_ALLOCATION_NOT_PROVEN` · evidence-supported actual participation NOT PROVEN · live BHK temporal context insufficient · no timesheet/scheduling engine
 - S06: `PRODUCTION_STATISTICAL_ANOMALY_NOT_PROVEN` · `COST_DEVIATION_BOUNDARIES_ONLY` · no production historical READ adapter · demonstration thresholds ≠ approved norms · live BHK comparable history insufficient
+- S07: `PRODUCTION_ROOT_CAUSE_PROOF_NOT_PROVEN` · `CAUSE_NOT_ESTABLISHED` · no production causal-context READ adapter · demonstration cause catalog ≠ approved KB · live BHK causal context insufficient · autonomous investigation NOT IMPLEMENTED
 - Quantity not required by current rule ≠ non-measurability; missing geometry ≠ proven unit incompatibility; claimed MANUFACTURED/INSTALLED ≠ verified fact
 - Same shift ≠ same physical object; missing evidence ≠ proven violation; demo rule ≠ approved engineering requirement
 - CLAIMED UNIT LABOR ≠ VERIFIED ≠ APPROVED NORM; labor without quantity ≠ automatic loss; same operation code ≠ automatic comparability
 - CLAIMED LABOR COST ≠ ACTUAL; SCENARIO ≠ APPROVED; DIRECT ≠ FULL; UNKNOWN ≠ ZERO; estimate ≠ payroll
 - MAN-MINUTES ≠ ELAPSED; CREW SIZE ≠ ALLOCATION; CLAIMED CHRONOLOGY ≠ VERIFIED; SCENARIO CAPACITY EXCEEDANCE ≠ PROVEN PHYSICAL CONFLICT; UNALLOCATED ≠ IDLE; NO DETECTED CONFLICT ≠ VERIFIED SHIFT
 - DESCRIPTIVE ≠ ANOMALY ≠ PROVEN VIOLATION; ROUNDING ≠ FABRICATION; CLAIMED HISTORICAL ≠ VERIFIED; HIGH REVIEW PRIORITY ≠ HIGH EVIDENCE AUTHORITY; ANOMALY SIGNAL ≠ ROOT CAUSE
+- ANOMALY ≠ ROOT CAUSE; CORRELATION ≠ CAUSATION; POSSIBLE ≠ ESTABLISHED; SUPPORTING CONTEXT ≠ PROVEN CAUSAL RELATIONSHIP; SUGGESTED ROLE ≠ RESPONSIBLE PARTY
 - Constructor handoff_store / governance baseline string — PRE_EXISTING defects (baseline `2c038a3`)
-- Full autonomous auditor — **not created**; 8/12 engines ≠ production readiness
+- Full autonomous auditor — **not created**; 9/12 engines ≠ production readiness
 
 ## 13. Failure Conditions
 
@@ -237,24 +241,30 @@ PDF.js + SVG/Canvas overlay + Django/Supabase.
 
 ## 15. Next increment
 
-**PSAA-10 / S07 — Root Cause Analysis** (not started).
+**PSAA-11 / S08 — Evidence Validation** (not started; Spatial Execution Evidence direction retained).
 
-Transform detected deviations and limitations into concrete testable causal
-hypotheses; identify required evidence; form addressed clarification questions.
+S07 defines evidence needs. S08 validates supplied evidence.
 
-Distinguish: observed signal · possible cause · supported hypothesis ·
-contradictory evidence · missing evidence · established cause.
+Target professional surface (do **not** implement in this documentation
+checkpoint): evidence identity/provenance; evidence-to-event applicability;
+physical object and operation identity; RD sheet/revision; plan / axonometry /
+section; elevation; point/line/area/object spatial references; historical
+execution events; claimed and previously confirmed quantities; remaining
+quantity; potential duplicate claims; evidence sufficiency; supporting and
+contradicting evidence.
 
-Do **not** establish cause from statistical correlation alone.
-Do **not** assign blame.
-Do **not** implement S07 in this documentation checkpoint.
+Laws retained: ONE PHYSICAL OBJECT ≠ ONE DRAWING REPRESENTATION ·
+MARKUP ≠ VERIFIED PHYSICAL EXECUTION · ATTACHED EVIDENCE ≠ VALIDATED EVIDENCE.
+One physical result on plan and axonometry must not be counted twice.
+Minimal contract compatibility with a future interactive engineering map is
+expected — RD editor, auto drawing recognition, spatial algorithms, BIM and
+Django UI remain out of scope until separately authorized.
 
-Remaining skill engines after S06: **S07**, **S08** (incl. Spatial Execution
-Evidence), **S09**, **S12**. After the professional core, integrate PSAA with
-the existing agentic architecture and live production processes — **do not**
-create a new overall agent architecture.
+Remaining skill engines after S07: **S08**, **S09**, **S12**. After the
+professional core, integrate PSAA with the existing Agent Runtime, Supabase and
+live production processes — **do not** create a new overall agent architecture.
 
 ## 16. Passport status
 
-**Initial Passport v0.1** + S01 + PSAA-02 local history + S10 + S02 + S03 + S11 + S04 + S05 + S06 engine evidence (**8 of 12 skill engines**; not production readiness).
+**Initial Passport v0.1** + S01 + PSAA-02 local history + S10 + S02 + S03 + S11 + S04 + S05 + S06 + S07 engine evidence (**9 of 12 skill engines**; not production readiness).
 Final Passport — после production-grade history, production tech/physical knowledge и расширенного professional proof.

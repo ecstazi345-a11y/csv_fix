@@ -8,7 +8,7 @@
 | S04 | Execution Cost Analysis | CURRENT / PROVEN (deterministic; claimed direct labor only) |
 | S05 | Temporal Integrity | CURRENT / PROVEN (deterministic; claimed time only) |
 | S06 | Statistical Anomaly Detection | CURRENT / PROVEN (deterministic; claimed signals only) |
-| S07 | Causal Investigation | TARGET / FUTURE |
+| S07 | Root Cause Analysis | CURRENT / PROVEN (deterministic; hypotheses only — cause not established) |
 | S08 | Evidence Verification | TARGET / FUTURE |
 | S09 | Shift Acceptance Conclusion | TARGET / FUTURE |
 | S10 | Operation Classification & Normalization | CURRENT / PROVEN (deterministic, insulation working catalog) |
@@ -181,6 +181,44 @@ MISSING HISTORY ≠ NORMAL PERFORMANCE.
 
 Readiness: `S06_ENGINE_IMPLEMENTED` · `VIOLATION_NOT_PROVEN`.
 Production historical READ adapter: **NOT IMPLEMENTED** — typed references only.
+
+## S07 — Root Cause Analysis (CURRENT)
+
+Детерминированное преобразование findings предыдущих навыков в проверяемые
+причинные гипотезы, ожидаемые доказательства и адресные уточняющие вопросы.
+
+Вход: joint S01–S06/S10/S11 (+ optional typed `CausalContextItem`).
+Метод: **deterministic**. LLM не используется. Автономное расследование /
+коммуникация / task assignment — **не** реализованы.
+
+Цикл: OBSERVED FINDING → CAUSAL QUESTION → POSSIBLE CAUSE → EXPECTED EVIDENCE →
+SUPPORTING/CONTRADICTING CONTEXT → TARGETED CLARIFICATION → CURRENT CAUSAL STATUS.
+
+Статусы: HYPOTHESIS_GENERATED · INSUFFICIENT_CONTEXT ·
+SUPPORTING_CONTEXT_AVAILABLE · CONTRADICTORY_CONTEXT_AVAILABLE ·
+CONFLICTING_CONTEXT · HYPOTHESIS_NOT_SUPPORTED · CAUSE_NOT_ESTABLISHED.
+
+Законы: ANOMALY ≠ ROOT CAUSE · CORRELATION ≠ CAUSATION ·
+TEMPORAL ASSOCIATION ≠ CAUSATION · POSSIBLE ≠ ESTABLISHED ·
+SUPPORTING CONTEXT ≠ PROVEN CAUSAL RELATIONSHIP ·
+MISSING EVIDENCE ≠ CONTRADICTING EVIDENCE ·
+MULTIPLE HYPOTHESES ≠ MULTIPLE INDEPENDENT LOSSES ·
+SUGGESTED CLARIFICATION ROLE ≠ RESPONSIBLE PARTY ·
+DATA QUALITY ≠ PRODUCTION INEFFICIENCY ·
+NO ESTABLISHED CAUSE ≠ VERIFIED NORMAL PERFORMANCE.
+
+Working catalog `psaa.s07.cause_categories.v0.1` — **DEMONSTRATION**
+(не утверждённая production causality knowledge base).
+Descriptive concentration/rounding не порождают обязательное расследование.
+S08 Evidence Validation / Spatial Execution Evidence — **не** реализованы.
+
+Readiness: `S07_ENGINE_IMPLEMENTED` ·
+`DEMONSTRATION_HYPOTHESIS_GENERATION_PROVEN` ·
+`TYPED_CAUSAL_CONTEXT_HANDLING_PROVEN` ·
+`PRODUCTION_ROOT_CAUSE_PROOF_NOT_PROVEN` ·
+`CAUSE_NOT_ESTABLISHED`.
+Cost path: `COST_DEVIATION_ENGINE_IMPLEMENTED=NO` ·
+`COST_DEVIATION_BOUNDARIES_ONLY=YES`.
 
 ## S11 — Labor Benchmark & Observation Eligibility (CURRENT)
 

@@ -12,7 +12,7 @@
 | S08 | Evidence Verification | TARGET / FUTURE |
 | S09 | Shift Acceptance Conclusion | TARGET / FUTURE |
 | S10 | Operation Classification & Normalization | CURRENT / PROVEN (deterministic, insulation working catalog) |
-| S11 | Labor Benchmark Comparison | TARGET / FUTURE |
+| S11 | Labor Benchmark & Observation Eligibility | CURRENT / PROVEN (deterministic; claimed metrics only) |
 | S12 | Labor Intelligence Preparation | TARGET / FUTURE |
 
 ## S01 — Mathematical Integrity (CURRENT)
@@ -91,3 +91,40 @@ NO AUTOMATIC TIME DISTRIBUTION · NO AUTOMATIC UNIT CONVERSION ·
 NO AUTOMATIC REGISTRY APPROVAL.
 
 Каталог — working example, не утверждённый Operation Registry.
+
+## S11 — Labor Benchmark & Observation Eligibility (CURRENT)
+
+Детерминированный расчёт заявленной удельной трудоёмкости / производительности
+и пригодности наблюдения для последующего анализа.
+
+Вход: `ShiftAuditInput` + артефакты S01/S10/S02/S03 (+ optional benchmarks /
+historical observations). Метод: **deterministic**. LLM не используется.
+
+Статусы расчёта: COMPUTABLE_CLAIMED_OBSERVATION · INSUFFICIENT_DATA ·
+INVALID_INPUT · COMPOSITE_NOT_ALLOCATABLE · UNIT_LABOR_NOT_COMPUTABLE ·
+LABOR_WITHOUT_POSITIVE_QUANTITY.
+
+Eligibility: HISTORICAL_ANALYSIS_CANDIDATE · COMPUTABLE_BUT_CLAIMED_ONLY ·
+NOT_ELIGIBLE_FOR_BENCHMARK.
+
+Comparability: FULL_COMPARABILITY_NOT_PROVEN · COMPARABILITY_CONTEXT_INCOMPLETE ·
+BUCKET_COMPARABLE_WITH_LIMITATIONS · NOT_COMPARABLE (code+unit ≠ full
+comparability; geometry/physical/technology/conditions required).
+
+Benchmark: BENCHMARK_NOT_AVAILABLE · BENCHMARK_COMPARISON_NOT_APPLICABLE ·
+BENCHMARK_COMPARED_CLAIMED_ONLY · BENCHMARK_INCOMPATIBLE.
+External inject ≠ approved production norm. Labor Norm READ adapter: not implemented.
+
+Законы: CLAIMED ≠ VERIFIED ≠ APPROVED NORM ·
+HISTORICAL AVERAGE ≠ PRODUCTION STANDARD ·
+LABOR WITHOUT QUANTITY ≠ AUTOMATIC LOSS ·
+PAID LABOR ≠ PRODUCTIVE LABOR ·
+BENCHMARK DEVIATION ≠ PROVEN INEFFICIENCY ·
+SAME OPERATION CODE ≠ AUTOMATIC COMPARABILITY ·
+NO SILENT LABOR CONVERSION · NO COMPOSITE ALLOCATION ·
+NO NORM MUTATION · NO INVENTED BENCHMARKS.
+
+Средневзвешенная трудоёмкость = sum(eligible labor) / sum(quantity).
+Демонстрационные S02/S03 findings не создают verified observation.
+Readiness: `S11_ENGINE_IMPLEMENTED` · `CLAIMED_UNIT_LABOR_COMPUTABLE_WHEN_DATA_ALLOWS` ·
+`VERIFIED_OBSERVATIONS_NOT_PROVEN` · `APPROVED_LABOR_NORMS_NOT_CREATED`.

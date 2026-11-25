@@ -27,7 +27,8 @@
 
 **READ (узкий) → ANALYZE (детерминированно) → ARTIFACT → TRACE**
 
-Реализован только навык **S01 — Mathematical Integrity**.
-Skills S02–S12 — TARGET / FUTURE, не реализованы.
+Реализованы навыки: **S01**, **S10**, **S02**, **S03**, **S11** (deterministic).
+S04–S09, S12 — TARGET / FUTURE.
+S11 считает заявленную удельную трудоёмкость и eligibility; не утверждает нормы.
 LLM не используется.
-Product writes запрещены.
+Product writes запрещены. Нормы труда не мутируются.

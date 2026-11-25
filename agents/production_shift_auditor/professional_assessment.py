@@ -1,4 +1,4 @@
-"""Combine S01 + S10 + S02 + S03 + S11 + S04 without mutating contract schemas."""
+"""Combine S01 + S10 + S02 + S03 + S11 + S04 + S05 without mutating contract schemas."""
 
 from __future__ import annotations
 
@@ -22,6 +22,12 @@ from agents.production_shift_auditor.s04_contracts import (
     ShiftExecutionCostArtifact,
 )
 from agents.production_shift_auditor.s04_execution_cost import evaluate_s04
+from agents.production_shift_auditor.s05_contracts import (
+    OperationTemporalClaim,
+    ShiftTemporalContext,
+    ShiftTemporalIntegrityArtifact,
+)
+from agents.production_shift_auditor.s05_temporal_integrity import evaluate_s05
 from agents.production_shift_auditor.s10_contracts import ShiftOperationClassificationArtifact
 from agents.production_shift_auditor.s10_operation_classification import evaluate_s10
 from agents.production_shift_auditor.s11_contracts import (
@@ -34,7 +40,7 @@ from agents.production_shift_auditor.s11_labor_benchmark import evaluate_s11
 
 @dataclass(frozen=True)
 class ShiftProfessionalAssessment:
-    """Joint S01+S10+S02+S03+S11+S04. Not managerial acceptance. Not a new SoT model."""
+    """Joint S01+S10+S02+S03+S11+S04+S05. Not managerial acceptance. Not a new SoT model."""
 
     audit_input: ShiftAuditInput
     s01: ShiftAuditArtifact
@@ -43,6 +49,7 @@ class ShiftProfessionalAssessment:
     s03: ShiftPhysicalIntegrityArtifact
     s11: ShiftLaborBenchmarkArtifact
     s04: ShiftExecutionCostArtifact
+    s05: ShiftTemporalIntegrityArtifact
 
 
 def assess_shift(
@@ -56,6 +63,8 @@ def assess_shift(
     benchmarks: Sequence[BenchmarkReference] = (),
     historical_observations: Sequence[HistoricalLaborObservation] = (),
     cost_rates: Sequence[LaborCostRateReference] = (),
+    temporal_claims: Sequence[OperationTemporalClaim] = (),
+    shift_temporal_context: Optional[ShiftTemporalContext] = None,
 ) -> ShiftProfessionalAssessment:
     s01 = evaluate_s01(audit_input, audit_id=audit_id, run_id=run_id)
     s10 = evaluate_s10(
@@ -100,6 +109,19 @@ def assess_shift(
         run_id=run_id,
         cost_rates=cost_rates,
     )
+    s05 = evaluate_s05(
+        audit_input,
+        s01,
+        s10,
+        s02,
+        s03,
+        s11,
+        s04,
+        audit_id=s01.audit_id,
+        run_id=run_id,
+        temporal_claims=temporal_claims,
+        shift_temporal_context=shift_temporal_context,
+    )
     return ShiftProfessionalAssessment(
         audit_input=audit_input,
         s01=s01,
@@ -108,4 +130,5 @@ def assess_shift(
         s03=s03,
         s11=s11,
         s04=s04,
+        s05=s05,
     )

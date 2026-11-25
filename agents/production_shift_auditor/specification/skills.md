@@ -6,7 +6,7 @@
 | S02 | Technological Integrity | CURRENT / PROVEN (deterministic; insulation demonstration rules) |
 | S03 | Physical Integrity | CURRENT / PROVEN (deterministic; insulation demonstration measurability) |
 | S04 | Execution Cost Analysis | CURRENT / PROVEN (deterministic; claimed direct labor only) |
-| S05 | Temporal Integrity | TARGET / FUTURE |
+| S05 | Temporal Integrity | CURRENT / PROVEN (deterministic; claimed time only) |
 | S06 | Statistical Anomalies | TARGET / FUTURE |
 | S07 | Causal Investigation | TARGET / FUTURE |
 | S08 | Evidence Verification | TARGET / FUTURE |
@@ -115,6 +115,41 @@ COST ESTIMATION ≠ PAYROLL · UNKNOWN COST ≠ ZERO.
 
 Readiness: `S04_ENGINE_IMPLEMENTED` · `ACTUAL_COST_NOT_PROVEN` ·
 `FULL_EXECUTION_COST_NOT_COMPUTABLE`.
+
+## S05 — Temporal Integrity (CURRENT)
+
+Детерминированная оценка временной достоверности заявленного исполнения на трёх
+уровнях: (A) математический баланс времени из S01; (B) условная feasibility при
+явно обозначенных assumptions; (C) evidence-supported chronology.
+
+Вход: `ShiftAuditInput` + S01/S10/S02/S03/S11/S04 (+ optional
+`OperationTemporalClaim` / `ShiftTemporalContext`). Метод: **deterministic**.
+LLM не используется. Timestamps и worker allocations не изобретаются.
+
+Статусы: TIME_BALANCE_COMPUTABLE · TEMPORAL_CONTEXT_INSUFFICIENT ·
+CONDITIONAL_DURATION_BOUND_COMPUTED · INVALID_TIME_INTERVAL ·
+OUTSIDE_KNOWN_SHIFT_INTERVAL · CLAIMED_INTERVAL_OVERLAP ·
+EXCLUSIVE_WORKER_ALLOCATION_CONFLICT · SCENARIO_CAPACITY_LIMIT_EXCEEDED ·
+CAPACITY_CONFLICT · CHRONOLOGY_NOT_PROVEN · WORKER_ALLOCATION_NOT_PROVEN.
+
+Capacity authority: SCENARIO_ASSUMPTION ≠ CONFIRMED_AVAILABLE_CREW_CAPACITY ≠
+EVIDENCE_SUPPORTED_ACTUAL_PARTICIPATION. Half-open intervals `[start, end)`.
+
+Законы: MAN-MINUTES ≠ ELAPSED MINUTES ·
+CREW SIZE ≠ ACTUAL OPERATION WORKER ALLOCATION ·
+REPORT ROW ORDER ≠ EXECUTION CHRONOLOGY ·
+REGISTRATION TIMESTAMP ≠ EXECUTION TIMESTAMP ·
+ARITHMETIC LABOR BALANCE ≠ VERIFIED TEMPORAL FEASIBILITY ·
+TARGET PRODUCTIVE FUND ≠ ACTUAL ATTENDANCE ·
+PARALLEL OPERATIONS ≠ AUTOMATIC TIME CONFLICT ·
+OVERLAPPING INTERVALS ≠ AUTOMATIC FRAUD ·
+UNALLOCATED TIME ≠ AUTOMATIC IDLE TIME ·
+MISSING TIMESTAMPS ≠ PROVEN VIOLATION ·
+CONDITIONAL DURATION BOUND ≠ ACTUAL OPERATION DURATION ·
+CLAIMED CHRONOLOGY ≠ VERIFIED CHRONOLOGY.
+
+Readiness: `S05_ENGINE_IMPLEMENTED` · `CHRONOLOGY_NOT_PROVEN` ·
+`WORKER_ALLOCATION_NOT_PROVEN`.
 
 ## S11 — Labor Benchmark & Observation Eligibility (CURRENT)
 

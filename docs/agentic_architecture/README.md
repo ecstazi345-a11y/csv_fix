@@ -25,6 +25,7 @@
 | [PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md](PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md) | Checkpoint завершения PSAA-04 (S02 engine). |
 | [PSAA_05_PHYSICAL_INTEGRITY_CHECKPOINT.md](PSAA_05_PHYSICAL_INTEGRITY_CHECKPOINT.md) | Checkpoint завершения PSAA-05 (S03 engine). |
 | [PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md](PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md) | Checkpoint завершения PSAA-06 (S11 labor benchmark). |
+| [PSAA_07_EXECUTION_COST_CHECKPOINT.md](PSAA_07_EXECUTION_COST_CHECKPOINT.md) | Checkpoint завершения PSAA-07 (S04 execution cost). |
 | [RECOVERY_CONTEXT.md](RECOVERY_CONTEXT.md) | Как восстановить контекст после паузы. |
 
 ---
@@ -98,6 +99,7 @@ Page52 **не отменяется**. Она остаётся каноном **�
 | [PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md](PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md) | Зафиксированное завершение PSAA-04 (S02 technological integrity engine). |
 | [PSAA_05_PHYSICAL_INTEGRITY_CHECKPOINT.md](PSAA_05_PHYSICAL_INTEGRITY_CHECKPOINT.md) | Зафиксированное завершение PSAA-05 (S03 physical integrity engine). |
 | [PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md](PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md) | Зафиксированное завершение PSAA-06 (S11 labor benchmark & observation eligibility). |
+| [PSAA_07_EXECUTION_COST_CHECKPOINT.md](PSAA_07_EXECUTION_COST_CHECKPOINT.md) | Зафиксированное завершение PSAA-07 (S04 direct labor execution cost). |
 | [ORCHESTRATION_AND_HANDOFF.md](ORCHESTRATION_AND_HANDOFF.md) | Оркестратор, shared state, structured handoff, pause/resume, Control Room, KPI routine removal. |
 | [LABOR_NORM_RESOLUTION.md](LABOR_NORM_RESOLUTION.md) | LaborNormResolver: иерархия источников, provenance, benchmark vs P50 vs planning norm, continuous learning. |
 | [DECISION_LOG.md](DECISION_LOG.md) | Принятые и отклонённые решения (ADR-like). |
@@ -124,5 +126,6 @@ Page52 **не отменяется**. Она остаётся каноном **�
 - PSAA-04 completion: [PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md](PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md)
 - PSAA-05 completion: [PSAA_05_PHYSICAL_INTEGRITY_CHECKPOINT.md](PSAA_05_PHYSICAL_INTEGRITY_CHECKPOINT.md)
 - PSAA-06 completion: [PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md](PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md)
+- PSAA-07 completion: [PSAA_07_EXECUTION_COST_CHECKPOINT.md](PSAA_07_EXECUTION_COST_CHECKPOINT.md)
 
 Этот README не является журналом программы.

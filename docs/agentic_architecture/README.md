@@ -27,6 +27,7 @@
 | [PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md](PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md) | Checkpoint завершения PSAA-06 (S11 labor benchmark). |
 | [PSAA_07_EXECUTION_COST_CHECKPOINT.md](PSAA_07_EXECUTION_COST_CHECKPOINT.md) | Checkpoint завершения PSAA-07 (S04 execution cost). |
 | [PSAA_08_TEMPORAL_INTEGRITY_CHECKPOINT.md](PSAA_08_TEMPORAL_INTEGRITY_CHECKPOINT.md) | Checkpoint завершения PSAA-08 (S05 temporal integrity). |
+| [PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md](PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md) | Checkpoint завершения PSAA-09 (S06 statistical anomaly). |
 | [RECOVERY_CONTEXT.md](RECOVERY_CONTEXT.md) | Как восстановить контекст после паузы. |
 
 ---
@@ -102,6 +103,7 @@ Page52 **не отменяется**. Она остаётся каноном **�
 | [PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md](PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md) | Зафиксированное завершение PSAA-06 (S11 labor benchmark & observation eligibility). |
 | [PSAA_07_EXECUTION_COST_CHECKPOINT.md](PSAA_07_EXECUTION_COST_CHECKPOINT.md) | Зафиксированное завершение PSAA-07 (S04 direct labor execution cost). |
 | [PSAA_08_TEMPORAL_INTEGRITY_CHECKPOINT.md](PSAA_08_TEMPORAL_INTEGRITY_CHECKPOINT.md) | Зафиксированное завершение PSAA-08 (S05 temporal integrity). |
+| [PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md](PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md) | Зафиксированное завершение PSAA-09 (S06 statistical anomaly detection). |
 | [ORCHESTRATION_AND_HANDOFF.md](ORCHESTRATION_AND_HANDOFF.md) | Оркестратор, shared state, structured handoff, pause/resume, Control Room, KPI routine removal. |
 | [LABOR_NORM_RESOLUTION.md](LABOR_NORM_RESOLUTION.md) | LaborNormResolver: иерархия источников, provenance, benchmark vs P50 vs planning norm, continuous learning. |
 | [DECISION_LOG.md](DECISION_LOG.md) | Принятые и отклонённые решения (ADR-like). |
@@ -130,5 +132,6 @@ Page52 **не отменяется**. Она остаётся каноном **�
 - PSAA-06 completion: [PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md](PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md)
 - PSAA-07 completion: [PSAA_07_EXECUTION_COST_CHECKPOINT.md](PSAA_07_EXECUTION_COST_CHECKPOINT.md)
 - PSAA-08 completion: [PSAA_08_TEMPORAL_INTEGRITY_CHECKPOINT.md](PSAA_08_TEMPORAL_INTEGRITY_CHECKPOINT.md)
+- PSAA-09 completion: [PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md](PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md)
 
 Этот README не является журналом программы.

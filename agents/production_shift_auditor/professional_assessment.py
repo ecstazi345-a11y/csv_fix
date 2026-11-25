@@ -1,4 +1,4 @@
-"""Combine S01 + S10 + S02 + S03 + S11 + S04 + S05 without mutating contract schemas."""
+"""Combine S01 + S10 + S02 + S03 + S11 + S04 + S05 + S06 without mutating contract schemas."""
 
 from __future__ import annotations
 
@@ -28,6 +28,13 @@ from agents.production_shift_auditor.s05_contracts import (
     ShiftTemporalIntegrityArtifact,
 )
 from agents.production_shift_auditor.s05_temporal_integrity import evaluate_s05
+from agents.production_shift_auditor.s06_contracts import (
+    ReportingPrecisionPolicy,
+    ShiftStatisticalAnomalyArtifact,
+    StatisticalReferenceObservation,
+    StatisticalThresholdConfig,
+)
+from agents.production_shift_auditor.s06_statistical_anomaly import evaluate_s06
 from agents.production_shift_auditor.s10_contracts import ShiftOperationClassificationArtifact
 from agents.production_shift_auditor.s10_operation_classification import evaluate_s10
 from agents.production_shift_auditor.s11_contracts import (
@@ -40,7 +47,7 @@ from agents.production_shift_auditor.s11_labor_benchmark import evaluate_s11
 
 @dataclass(frozen=True)
 class ShiftProfessionalAssessment:
-    """Joint S01+S10+S02+S03+S11+S04+S05. Not managerial acceptance. Not a new SoT model."""
+    """Joint S01+S10+S02+S03+S11+S04+S05+S06. Not managerial acceptance."""
 
     audit_input: ShiftAuditInput
     s01: ShiftAuditArtifact
@@ -50,6 +57,7 @@ class ShiftProfessionalAssessment:
     s11: ShiftLaborBenchmarkArtifact
     s04: ShiftExecutionCostArtifact
     s05: ShiftTemporalIntegrityArtifact
+    s06: ShiftStatisticalAnomalyArtifact
 
 
 def assess_shift(
@@ -65,6 +73,12 @@ def assess_shift(
     cost_rates: Sequence[LaborCostRateReference] = (),
     temporal_claims: Sequence[OperationTemporalClaim] = (),
     shift_temporal_context: Optional[ShiftTemporalContext] = None,
+    statistical_threshold_config: Optional[StatisticalThresholdConfig] = None,
+    reporting_precision: Optional[ReportingPrecisionPolicy] = None,
+    statistical_references: Sequence[StatisticalReferenceObservation] = (),
+    authorized_project_scopes: Sequence[str] = (),
+    allow_future_reference_dates: bool = False,
+    evaluation_as_of_date: Optional[str] = None,
 ) -> ShiftProfessionalAssessment:
     s01 = evaluate_s01(audit_input, audit_id=audit_id, run_id=run_id)
     s10 = evaluate_s10(
@@ -122,6 +136,24 @@ def assess_shift(
         temporal_claims=temporal_claims,
         shift_temporal_context=shift_temporal_context,
     )
+    s06 = evaluate_s06(
+        audit_input,
+        s01,
+        s10,
+        s02,
+        s03,
+        s11,
+        s04,
+        s05,
+        audit_id=s01.audit_id,
+        run_id=run_id,
+        threshold_config=statistical_threshold_config,
+        reporting_precision=reporting_precision,
+        statistical_references=statistical_references,
+        authorized_project_scopes=authorized_project_scopes,
+        allow_future_reference_dates=allow_future_reference_dates,
+        evaluation_as_of_date=evaluation_as_of_date,
+    )
     return ShiftProfessionalAssessment(
         audit_input=audit_input,
         s01=s01,
@@ -131,4 +163,5 @@ def assess_shift(
         s11=s11,
         s04=s04,
         s05=s05,
+        s06=s06,
     )

@@ -7,7 +7,7 @@
 | S03 | Physical Integrity | CURRENT / PROVEN (deterministic; insulation demonstration measurability) |
 | S04 | Execution Cost Analysis | CURRENT / PROVEN (deterministic; claimed direct labor only) |
 | S05 | Temporal Integrity | CURRENT / PROVEN (deterministic; claimed time only) |
-| S06 | Statistical Anomalies | TARGET / FUTURE |
+| S06 | Statistical Anomaly Detection | CURRENT / PROVEN (deterministic; claimed signals only) |
 | S07 | Causal Investigation | TARGET / FUTURE |
 | S08 | Evidence Verification | TARGET / FUTURE |
 | S09 | Shift Acceptance Conclusion | TARGET / FUTURE |
@@ -150,6 +150,37 @@ CLAIMED CHRONOLOGY ≠ VERIFIED CHRONOLOGY.
 
 Readiness: `S05_ENGINE_IMPLEMENTED` · `CHRONOLOGY_NOT_PROVEN` ·
 `WORKER_ALLOCATION_NOT_PROVEN`.
+
+## S06 — Statistical Anomaly Detection (CURRENT)
+
+Детерминированные статистические сигналы по заявленным производственным
+показателям: descriptive observation, configured threshold exceedance,
+statistical anomaly candidate при сопоставимой истории.
+
+Вход: joint S01–S05/S10/S11 (+ optional `StatisticalThresholdConfig`,
+`ReportingPrecisionPolicy`, `StatisticalReferenceObservation`).
+Метод: **deterministic** (median + MAD modified Z). LLM не используется.
+
+Статусы: DESCRIPTIVE_OBSERVATION · THRESHOLD_EXCEEDANCE ·
+STATISTICAL_ANOMALY_CANDIDATE · INSUFFICIENT_COMPARABLE_HISTORY ·
+REFERENCE_NOT_AVAILABLE · REFERENCE_NOT_COMPARABLE · ZERO_DISPERSION ·
+REPORTING_PRECISION_UNKNOWN · REVIEW_REQUIRED · VIOLATION_NOT_PROVEN ·
+INHERITED_PROFESSIONAL_FINDING.
+
+Законы: DESCRIPTIVE OBSERVATION ≠ STATISTICAL ANOMALY ·
+STATISTICAL ANOMALY ≠ PROVEN VIOLATION ·
+COST CONCENTRATION ≠ INEFFICIENCY · ROUNDING ≠ FABRICATION ·
+REPEATED VALUE ≠ DUPLICATE EXECUTION ·
+BENCHMARK DEVIATION ≠ PROVEN LOSS ·
+SMALL SAMPLE ≠ RELIABLE PRODUCTION STANDARD ·
+SAME OPERATION CODE ≠ AUTOMATIC COMPARABILITY ·
+SCENARIO COST ≠ ACTUAL COST ·
+HIGH REVIEW PRIORITY ≠ HIGH EVIDENCE AUTHORITY ·
+NO DETECTED ANOMALY ≠ VERIFIED SHIFT ·
+MISSING HISTORY ≠ NORMAL PERFORMANCE.
+
+Readiness: `S06_ENGINE_IMPLEMENTED` · `VIOLATION_NOT_PROVEN`.
+Production historical READ adapter: **NOT IMPLEMENTED** — typed references only.
 
 ## S11 — Labor Benchmark & Observation Eligibility (CURRENT)
 

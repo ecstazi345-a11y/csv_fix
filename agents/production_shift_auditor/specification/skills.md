@@ -5,7 +5,7 @@
 | S01 | Mathematical Integrity | CURRENT / PROVEN |
 | S02 | Technological Integrity | CURRENT / PROVEN (deterministic; insulation demonstration rules) |
 | S03 | Physical Integrity | CURRENT / PROVEN (deterministic; insulation demonstration measurability) |
-| S04 | Operation Cost Analysis | TARGET / FUTURE |
+| S04 | Execution Cost Analysis | CURRENT / PROVEN (deterministic; claimed direct labor only) |
 | S05 | Temporal Integrity | TARGET / FUTURE |
 | S06 | Statistical Anomalies | TARGET / FUTURE |
 | S07 | Causal Investigation | TARGET / FUTURE |
@@ -91,6 +91,30 @@ NO AUTOMATIC TIME DISTRIBUTION · NO AUTOMATIC UNIT CONVERSION ·
 NO AUTOMATIC REGISTRY APPROVAL.
 
 Каталог — working example, не утверждённый Operation Registry.
+
+## S04 — Execution Cost Analysis (CURRENT)
+
+Детерминированный расчёт **прямых трудовых затрат** по заявленным трудозатратам
+операций при явно переданной typed ставке.
+
+Вход: `ShiftAuditInput` + S01/S10/S02/S03/S11 (+ optional `LaborCostRateReference`).
+Метод: **deterministic** Decimal. LLM не используется.
+
+`labor_cost = labor_man_hours × applicable_rate`.
+Production cost-rate READ adapter: **NOT IMPLEMENTED** — inject rate explicitly.
+
+Статусы: SCENARIO_COST_COMPUTED · ESTIMATED_COST_COMPUTED ·
+COST_RATE_NOT_AVAILABLE · COST_RATE_NOT_APPLICABLE · LABOR_SEMANTICS_UNPROVEN ·
+UNIT_COST_NOT_COMPUTABLE · COMPOSITE_COST_UNALLOCATED · PARTIAL_COST_COVERAGE.
+
+Законы: CLAIMED ≠ INCURRED ACTUAL · SCENARIO ≠ APPROVED ·
+WAGE ≠ EMPLOYER COST · DIRECT ≠ FULL COST · PAID ≠ PRODUCTIVE ·
+LABOR WITHOUT QUANTITY ≠ AUTOMATIC FINANCIAL LOSS ·
+OPERATION COST ≠ CONTRACT PRICE · PHYSICAL ≠ REVENUE ·
+COST ESTIMATION ≠ PAYROLL · UNKNOWN COST ≠ ZERO.
+
+Readiness: `S04_ENGINE_IMPLEMENTED` · `ACTUAL_COST_NOT_PROVEN` ·
+`FULL_EXECUTION_COST_NOT_COMPUTABLE`.
 
 ## S11 — Labor Benchmark & Observation Eligibility (CURRENT)
 

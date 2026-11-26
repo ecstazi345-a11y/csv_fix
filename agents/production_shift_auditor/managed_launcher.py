@@ -3,6 +3,11 @@
 Reuses existing Run Control Protocol. No LangGraph. No acceptance authority.
 Process-local result cache — not production durable history.
 
+Production source acquisition (I2-A): pass
+`build_trusted_production_audit_input_resolver()` from
+`agents.production_shift_auditor.production_source` as audit_input_resolver.
+Fixture helper `fixed_audit_input_resolver` remains for tests only.
+
 Security boundary: get_result is an INTERNAL process-local accessor on this
 launcher instance. Knowing a run_id alone is not an authorization grant.
 Callers that hold project scope MUST pass project_code. This is not an

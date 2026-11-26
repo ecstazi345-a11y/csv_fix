@@ -10,7 +10,7 @@
 | S06 | Statistical Anomaly Detection | CURRENT / PROVEN (deterministic; claimed signals only) |
 | S07 | Root Cause Analysis | CURRENT / PROVEN (deterministic; hypotheses only — cause not established) |
 | S08 | Evidence Validation (+ Spatial Execution Evidence compatibility) | CURRENT / PROVEN (deterministic; metadata/applicability only — content/physical verification NOT implemented) |
-| S09 | Shift Acceptance Conclusion | TARGET / FUTURE |
+| S09 | Shift Acceptance Recommendation | CURRENT / PROVEN (deterministic; professional recommendation only — not managerial acceptance) |
 | S10 | Operation Classification & Normalization | CURRENT / PROVEN (deterministic, insulation working catalog) |
 | S11 | Labor Benchmark & Observation Eligibility | CURRENT / PROVEN (deterministic; claimed metrics only) |
 | S12 | Labor Intelligence Preparation | TARGET / FUTURE |
@@ -256,6 +256,51 @@ Readiness: `S08_ENGINE_IMPLEMENTED` ·
 `EVIDENCE_CONTENT_VALIDATION_IMPLEMENTED=NO` ·
 `GEOMETRIC_OVERLAP_ENGINE_IMPLEMENTED=NO` ·
 `PHYSICAL_EXECUTION_VERIFIED=NO`.
+
+## S09 — Shift Acceptance Recommendation (CURRENT)
+
+Детерминированное объединение результатов предыдущих навыков в operation-level и
+shift-level профессиональные рекомендации.
+
+Вход: joint S01–S08/S10/S11 (+ optional `RecommendationPolicy`).
+Метод: **deterministic**. LLM не используется.
+Не выполняет managerial acceptance, contractual recognition, payroll,
+commercial recognition. Не создаёт accepted/rejected quantities.
+
+Цикл: CLAIMED EXECUTION → PROFESSIONAL ASSESSMENTS → CONSOLIDATED FINDINGS →
+APPLICABLE REQUIREMENTS → UNRESOLVED EXCEPTIONS → OPERATION-LEVEL
+RECOMMENDATIONS → SHIFT-LEVEL RECOMMENDATION → HUMAN DECISION REQUIRED.
+
+Статусы: RECOMMEND_ACCEPTANCE_WITHIN_VALIDATED_SCOPE ·
+CLARIFICATION_REQUIRED · EVIDENCE_REQUIRED · CORRECTION_RECOMMENDED ·
+PROFESSIONAL_REVIEW_REQUIRED · INSUFFICIENT_BASIS_FOR_RECOMMENDATION.
+**Не** ACCEPTED / REJECTED.
+
+Законы: CLAIMED ≠ VERIFIED · MATHEMATICAL CONSISTENCY ≠ PHYSICAL ACCEPTANCE ·
+SOFTWARE ENGINE PASS ≠ PRODUCTION VALIDATION ·
+METADATA ≠ CONTENT VALIDATION · STATISTICAL ANOMALY ≠ PROVEN VIOLATION ·
+MISSING EVIDENCE ≠ NON-EXECUTION · POTENTIAL DUPLICATE ≠ PROVEN DUPLICATION ·
+REVIEW PRIORITY ≠ EVIDENCE AUTHORITY · SCENARIO COST ≠ ACTUAL ·
+PROFESSIONAL RECOMMENDATION ≠ MANAGERIAL ACCEPTANCE ·
+PARTIAL RECOMMENDATION ≠ PARTIAL ACCEPTANCE ·
+NO DETECTED ISSUE ≠ VERIFIED SHIFT.
+
+Demonstration policy `psaa.s09.recommendation_policy.v0.1` —
+**не** утверждённая production acceptance policy.
+S08 authority ceiling METADATA_VALIDATED не обходится.
+Positive physical acceptance recommendation — **NOT PROVEN** under current
+evidence ceiling.
+
+Readiness: `S09_ENGINE_IMPLEMENTED` ·
+`OPERATION_RECOMMENDATION_GENERATION_PROVEN` ·
+`SHIFT_RECOMMENDATION_GENERATION_PROVEN` ·
+`FINDING_CONSOLIDATION_PROVEN` ·
+`LABOR_CONSERVATION_PROVEN` ·
+`POSITIVE_PHYSICAL_ACCEPTANCE_RECOMMENDATION_NOT_PROVEN` ·
+`PRODUCTION_ACCEPTANCE_POLICY_NOT_READY` ·
+`PRODUCTION_ACCEPTANCE_RECOMMENDATION_NOT_PROVEN` ·
+`MANAGERIAL_ACCEPTANCE_PERFORMED=NO` ·
+`CONTRACTUAL_RECOGNITION_PERFORMED=NO`.
 
 ## S11 — Labor Benchmark & Observation Eligibility (CURRENT)
 

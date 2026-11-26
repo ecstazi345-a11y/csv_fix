@@ -1,4 +1,4 @@
-"""Combine S01 + S10 + S02 + S03 + S11 + S04 + S05 + S06 + S07 + S08 without mutating contract schemas."""
+"""Combine S01 + S10 + S02 + S03 + S11 + S04 + S05 + S06 + S07 + S08 + S09 without mutating contract schemas."""
 
 from __future__ import annotations
 
@@ -49,6 +49,11 @@ from agents.production_shift_auditor.s08_contracts import (
     ShiftEvidenceValidationArtifact,
 )
 from agents.production_shift_auditor.s08_evidence_validation import evaluate_s08
+from agents.production_shift_auditor.s09_acceptance_recommendation import evaluate_s09
+from agents.production_shift_auditor.s09_contracts import (
+    RecommendationPolicy,
+    ShiftAcceptanceRecommendationArtifact,
+)
 from agents.production_shift_auditor.s10_contracts import ShiftOperationClassificationArtifact
 from agents.production_shift_auditor.s10_operation_classification import evaluate_s10
 from agents.production_shift_auditor.s11_contracts import (
@@ -61,7 +66,7 @@ from agents.production_shift_auditor.s11_labor_benchmark import evaluate_s11
 
 @dataclass(frozen=True)
 class ShiftProfessionalAssessment:
-    """Joint S01+S10+S02+S03+S11+S04+S05+S06+S07+S08. Not managerial acceptance."""
+    """Joint S01+S10+S02+S03+S11+S04+S05+S06+S07+S08+S09. Not managerial acceptance."""
 
     audit_input: ShiftAuditInput
     s01: ShiftAuditArtifact
@@ -74,6 +79,7 @@ class ShiftProfessionalAssessment:
     s06: ShiftStatisticalAnomalyArtifact
     s07: ShiftRootCauseArtifact
     s08: ShiftEvidenceValidationArtifact
+    s09: ShiftAcceptanceRecommendationArtifact
 
 
 def assess_shift(
@@ -103,6 +109,8 @@ def assess_shift(
     allow_future_context: bool = False,
     evaluation_as_of_date: Optional[str] = None,
     production_evidence_requirements_available: bool = False,
+    recommendation_policy: Optional[RecommendationPolicy] = None,
+    production_acceptance_requirements_available: bool = False,
 ) -> ShiftProfessionalAssessment:
     s01 = evaluate_s01(audit_input, audit_id=audit_id, run_id=run_id)
     s10 = evaluate_s10(
@@ -215,6 +223,25 @@ def assess_shift(
         authorized_project_scopes=authorized_project_scopes,
         production_evidence_requirements_available=production_evidence_requirements_available,
     )
+    s09 = evaluate_s09(
+        audit_input,
+        s01,
+        s10,
+        s02,
+        s03,
+        s11,
+        s04,
+        s05,
+        s06,
+        s07,
+        s08,
+        audit_id=s01.audit_id,
+        run_id=run_id,
+        recommendation_policy=recommendation_policy,
+        production_acceptance_requirements_available=(
+            production_acceptance_requirements_available
+        ),
+    )
     return ShiftProfessionalAssessment(
         audit_input=audit_input,
         s01=s01,
@@ -227,4 +254,5 @@ def assess_shift(
         s06=s06,
         s07=s07,
         s08=s08,
+        s09=s09,
     )

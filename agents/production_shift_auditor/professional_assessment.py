@@ -1,4 +1,4 @@
-"""Combine S01 + S10 + S02 + S03 + S11 + S04 + S05 + S06 + S07 + S08 + S09 without mutating contract schemas."""
+"""Combine S01 + S10 + S02 + S03 + S11 + S04 + S05 + S06 + S07 + S08 + S09 + S12 without mutating contract schemas."""
 
 from __future__ import annotations
 
@@ -62,11 +62,16 @@ from agents.production_shift_auditor.s11_contracts import (
     ShiftLaborBenchmarkArtifact,
 )
 from agents.production_shift_auditor.s11_labor_benchmark import evaluate_s11
+from agents.production_shift_auditor.s12_contracts import (
+    ShiftProductionIntelligenceArtifact,
+    SuppliedHumanDecisionRef,
+)
+from agents.production_shift_auditor.s12_production_intelligence import evaluate_s12
 
 
 @dataclass(frozen=True)
 class ShiftProfessionalAssessment:
-    """Joint S01+S10+S02+S03+S11+S04+S05+S06+S07+S08+S09. Not managerial acceptance."""
+    """Joint S01+S10+S02+S03+S11+S04+S05+S06+S07+S08+S09+S12. Not managerial acceptance."""
 
     audit_input: ShiftAuditInput
     s01: ShiftAuditArtifact
@@ -80,6 +85,7 @@ class ShiftProfessionalAssessment:
     s07: ShiftRootCauseArtifact
     s08: ShiftEvidenceValidationArtifact
     s09: ShiftAcceptanceRecommendationArtifact
+    s12: ShiftProductionIntelligenceArtifact
 
 
 def assess_shift(
@@ -111,6 +117,7 @@ def assess_shift(
     production_evidence_requirements_available: bool = False,
     recommendation_policy: Optional[RecommendationPolicy] = None,
     production_acceptance_requirements_available: bool = False,
+    human_decision_refs: Sequence[SuppliedHumanDecisionRef] = (),
 ) -> ShiftProfessionalAssessment:
     s01 = evaluate_s01(audit_input, audit_id=audit_id, run_id=run_id)
     s10 = evaluate_s10(
@@ -242,6 +249,24 @@ def assess_shift(
             production_acceptance_requirements_available
         ),
     )
+    s12 = evaluate_s12(
+        audit_input,
+        s01,
+        s10,
+        s02,
+        s03,
+        s11,
+        s04,
+        s05,
+        s06,
+        s07,
+        s08,
+        s09,
+        audit_id=s01.audit_id,
+        run_id=run_id,
+        human_decision_refs=human_decision_refs,
+        authorized_project_scopes=authorized_project_scopes,
+    )
     return ShiftProfessionalAssessment(
         audit_input=audit_input,
         s01=s01,
@@ -255,4 +280,5 @@ def assess_shift(
         s07=s07,
         s08=s08,
         s09=s09,
+        s12=s12,
     )

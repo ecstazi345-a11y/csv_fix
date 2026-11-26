@@ -13,7 +13,7 @@
 | S09 | Shift Acceptance Recommendation | CURRENT / PROVEN (deterministic; professional recommendation only — not managerial acceptance) |
 | S10 | Operation Classification & Normalization | CURRENT / PROVEN (deterministic, insulation working catalog) |
 | S11 | Labor Benchmark & Observation Eligibility | CURRENT / PROVEN (deterministic; claimed metrics only) |
-| S12 | Labor Intelligence Preparation | TARGET / FUTURE |
+| S12 | Production Intelligence | CURRENT / PROVEN (deterministic; structured observations + knowledge candidates — not approved knowledge / norms) |
 
 ## S01 — Mathematical Integrity (CURRENT)
 
@@ -301,6 +301,46 @@ Readiness: `S09_ENGINE_IMPLEMENTED` ·
 `PRODUCTION_ACCEPTANCE_RECOMMENDATION_NOT_PROVEN` ·
 `MANAGERIAL_ACCEPTANCE_PERFORMED=NO` ·
 `CONTRACTUAL_RECOGNITION_PERFORMED=NO`.
+
+## S12 — Production Intelligence (CURRENT)
+
+Детерминированное преобразование результатов профессионального аудита в
+структурированные производственные наблюдения и ограниченные knowledge
+candidates для контролируемого повторного использования.
+
+Вход: joint S01–S09/S10/S11 (+ optional trusted `SuppliedHumanDecisionRef`).
+Метод: **deterministic**. LLM не используется.
+Не создаёт learning platform, vector DB, autonomous learning, approved norms.
+
+Цикл: SOURCE EXECUTION EVENT → PROFESSIONAL AUDIT → STRUCTURED OBSERVATION →
+AUTHORITY ASSESSMENT → REUSE ELIGIBILITY → KNOWLEDGE CANDIDATE →
+(future validation/approval outside this skill).
+
+Reuse eligibility: RETAIN_AS_CLAIMED_OBSERVATION · REQUIRES_ADDITIONAL_CONTEXT ·
+ELIGIBLE_FOR_EXPLORATORY_COMPARISON · EXCLUDED_FROM_BENCHMARK_USE ·
+KNOWLEDGE_CANDIDATE_WITH_LIMITATIONS ·
+VERIFIED_REUSE_ELIGIBILITY_NOT_ESTABLISHED.
+S11 unit labor / eligibility **reused**, not recalculated.
+
+Законы: CLAIMED OBSERVATION ≠ VERIFIED KNOWLEDGE ·
+AUDITED ≠ VERIFIED PHYSICAL · REPEATED ≠ APPROVED NORM ·
+SAME OPERATION CODE ≠ COMPARABLE · ACCEPTED QUANTITY ≠ VALID BENCHMARK ·
+PROFESSIONAL RECOMMENDATION ≠ HUMAN DECISION ·
+CAUSAL HYPOTHESIS ≠ ESTABLISHED CAUSE · SCENARIO COST ≠ ACTUAL COST KNOWLEDGE ·
+KNOWLEDGE CANDIDATE ≠ APPROVED PRODUCTION KNOWLEDGE ·
+SUGGESTED REUSE ≠ AUTHORIZED REUSE.
+
+Readiness: `S12_ENGINE_IMPLEMENTED` ·
+`STRUCTURED_OBSERVATION_GENERATION_PROVEN` ·
+`KNOWLEDGE_CANDIDATE_GENERATION_PROVEN` ·
+`S11_REUSE_ELIGIBILITY_INTEGRATION_PROVEN` ·
+`OBSERVATION_IDENTITY_HANDLING_PROVEN` ·
+`LABOR_CONSERVATION_PROVEN` ·
+`VERIFIED_PRODUCTION_KNOWLEDGE_GENERATION_NOT_PROVEN` ·
+`APPROVED_PRODUCTION_KNOWLEDGE_CREATED=NO` ·
+`APPROVED_PRODUCTION_LABOR_NORM_CREATED=NO` ·
+`PRODUCTION_KNOWLEDGE_PERSISTENCE_IMPLEMENTED=NO` ·
+`AUTONOMOUS_LEARNING_IMPLEMENTED=NO`.
 
 ## S11 — Labor Benchmark & Observation Eligibility (CURRENT)
 

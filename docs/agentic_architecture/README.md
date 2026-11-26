@@ -33,6 +33,7 @@
 | [PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md](PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md) | Checkpoint завершения PSAA-12 (S09 shift acceptance recommendation). |
 | [PSAA_13_PRODUCTION_INTELLIGENCE_CHECKPOINT.md](PSAA_13_PRODUCTION_INTELLIGENCE_CHECKPOINT.md) | Checkpoint завершения PSAA-13 (S12 production intelligence). |
 | [PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md](PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md) | Freeze профессионального ядра PSAA v0.1 (12/12 engines; production readiness NOT_PROVEN). |
+| [PSAA_I1_MANAGED_RUNTIME_CHECKPOINT.md](PSAA_I1_MANAGED_RUNTIME_CHECKPOINT.md) | Checkpoint завершения I1 (PSAA Managed Runtime Integration). |
 | [RECOVERY_CONTEXT.md](RECOVERY_CONTEXT.md) | Как восстановить контекст после паузы. |
 
 ---
@@ -113,7 +114,8 @@ Page52 **не отменяется**. Она остаётся каноном **�
 | [PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md](PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md) | Зафиксированное завершение PSAA-11 (S08 evidence validation). |
 | [PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md](PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md) | Зафиксированное завершение PSAA-12 (S09 shift acceptance recommendation). |
 | [PSAA_13_PRODUCTION_INTELLIGENCE_CHECKPOINT.md](PSAA_13_PRODUCTION_INTELLIGENCE_CHECKPOINT.md) | Зафиксированное завершение PSAA-13 (S12 production intelligence). |
-| [PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md](PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md) | Freeze PSAA Professional Core v0.1; матрица 12 навыков; technical debt; Integration Preflight NEXT. |
+| [PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md](PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md) | Freeze PSAA Professional Core v0.1; матрица 12 навыков; technical debt. |
+| [PSAA_I1_MANAGED_RUNTIME_CHECKPOINT.md](PSAA_I1_MANAGED_RUNTIME_CHECKPOINT.md) | Зафиксированное завершение I1 (managed runtime + Run Control + assess_shift; I2 NEXT). |
 | [ORCHESTRATION_AND_HANDOFF.md](ORCHESTRATION_AND_HANDOFF.md) | Оркестратор, shared state, structured handoff, pause/resume, Control Room, KPI routine removal. |
 | [LABOR_NORM_RESOLUTION.md](LABOR_NORM_RESOLUTION.md) | LaborNormResolver: иерархия источников, provenance, benchmark vs P50 vs planning norm, continuous learning. |
 | [DECISION_LOG.md](DECISION_LOG.md) | Принятые и отклонённые решения (ADR-like). |
@@ -148,5 +150,6 @@ Page52 **не отменяется**. Она остаётся каноном **�
 - PSAA-12 completion: [PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md](PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md)
 - PSAA-13 completion: [PSAA_13_PRODUCTION_INTELLIGENCE_CHECKPOINT.md](PSAA_13_PRODUCTION_INTELLIGENCE_CHECKPOINT.md)
 - PSAA Professional Core v0.1 freeze: [PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md](PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md)
+- PSAA I1 managed runtime: [PSAA_I1_MANAGED_RUNTIME_CHECKPOINT.md](PSAA_I1_MANAGED_RUNTIME_CHECKPOINT.md)
 
 Этот README не является журналом программы.

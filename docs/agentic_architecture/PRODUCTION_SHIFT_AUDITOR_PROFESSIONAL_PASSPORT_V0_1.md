@@ -2,12 +2,13 @@
 # Production Shift Auditor Agent (PSAA)
 
 **Document:** PRODUCTION_SHIFT_AUDITOR_PROFESSIONAL_PASSPORT_V0_1
-**Version:** v0.1 (S01 + local Audit History + S10 + S02 + S03 + S11 + S04 + S05 + S06 + S07 + S08 + S09 + S12 engines proven)
-**Status:** S01 + PSAA-02 local history + S10 + S02 + S03 + S11 + S04 + S05 + S06 + S07 + S08 + S09 + S12 engines CURRENT / PROVEN · **12 of 12 professional skill engines implemented** (engine count ≠ production readiness) · structured observation generation PROVEN · knowledge candidate generation PROVEN · S11 reuse eligibility integration PROVEN · observation identity handling PROVEN · labor conservation PROVEN · verified production knowledge NOT PROVEN · approved production knowledge NOT CREATED · approved production labor norm NOT CREATED · production knowledge persistence NOT IMPLEMENTED · autonomous learning NOT IMPLEMENTED · operation/shift recommendation generation PROVEN · finding consolidation PROVEN · positive physical acceptance recommendation NOT PROVEN · production acceptance policy NOT READY · production acceptance recommendation NOT PROVEN · managerial acceptance NOT PERFORMED · contractual recognition NOT PERFORMED · evidence metadata validation PROVEN within tested scope · typed spatial reference compatibility PROVEN · multiple-representation identity handling PROVEN within tested scope · demonstration remaining-quantity check PROVEN · production evidence validation NOT PROVEN · evidence content validation NOT IMPLEMENTED · geometric overlap engine NOT IMPLEMENTED · physical execution NOT VERIFIED · demonstration hypothesis generation PROVEN · typed causal context PROVEN within tested scope · production root-cause proof NOT PROVEN · ESTABLISHED_CAUSE = NO · descriptive statistics PROVEN · historical anomaly-candidate method PROVEN within demo fixtures · production statistical anomaly NOT PROVEN · VIOLATION_NOT_PROVEN · mathematical time balance COMPUTABLE · conditional duration bounds PROVEN · actual chronology NOT VERIFIED · evidence-supported actual participation NOT PROVEN · scenario direct labor cost PROVEN · actual incurred cost NOT PROVEN · full execution cost NOT COMPUTABLE · COST_DEVIATION_BOUNDARIES_ONLY · verified labor observations NOT PROVEN · approved labor norms NOT CREATED · production tech/physical knowledge NOT READY · inspection NOT PROVEN · full auditor NOT COMPLETE · production Supabase persistence NOT COMPLETE · S10/S02/S03/S11/S04/S05/S06/S07/S08/S09/S12 not in durable history
+**Version:** v0.1 (S01 + local Audit History + S10 + S02 + S03 + S11 + S04 + S05 + S06 + S07 + S08 + S09 + S12 engines proven · I1 managed runtime DONE)
+**Status:** S01 + PSAA-02 local history + S10 + S02 + S03 + S11 + S04 + S05 + S06 + S07 + S08 + S09 + S12 engines CURRENT / PROVEN · **12 of 12 professional skill engines implemented** (engine count ≠ production readiness) · **I1 Managed Runtime Integration DONE** (`c5b5d3d`) · joint 12-skill managed execution PROVEN · headless / threaded managed execution PROVEN · process-local professional result PROVEN · production trusted source acquisition NOT PROVEN · durable runtime restart NOT PROVEN · structured observation generation PROVEN · knowledge candidate generation PROVEN · S11 reuse eligibility integration PROVEN · observation identity handling PROVEN · labor conservation PROVEN · verified production knowledge NOT PROVEN · approved production knowledge NOT CREATED · approved production labor norm NOT CREATED · production knowledge persistence NOT IMPLEMENTED · autonomous learning NOT IMPLEMENTED · operation/shift recommendation generation PROVEN · finding consolidation PROVEN · positive physical acceptance recommendation NOT PROVEN · production acceptance policy NOT READY · production acceptance recommendation NOT PROVEN · managerial acceptance NOT PERFORMED · contractual recognition NOT PERFORMED · evidence metadata validation PROVEN within tested scope · typed spatial reference compatibility PROVEN · multiple-representation identity handling PROVEN within tested scope · demonstration remaining-quantity check PROVEN · production evidence validation NOT PROVEN · evidence content validation NOT IMPLEMENTED · geometric overlap engine NOT IMPLEMENTED · physical execution NOT VERIFIED · demonstration hypothesis generation PROVEN · typed causal context PROVEN within tested scope · production root-cause proof NOT PROVEN · ESTABLISHED_CAUSE = NO · descriptive statistics PROVEN · historical anomaly-candidate method PROVEN within demo fixtures · production statistical anomaly NOT PROVEN · VIOLATION_NOT_PROVEN · mathematical time balance COMPUTABLE · conditional duration bounds PROVEN · actual chronology NOT VERIFIED · evidence-supported actual participation NOT PROVEN · scenario direct labor cost PROVEN · actual incurred cost NOT PROVEN · full execution cost NOT COMPUTABLE · COST_DEVIATION_BOUNDARIES_ONLY · verified labor observations NOT PROVEN · approved labor norms NOT CREATED · production tech/physical knowledge NOT READY · inspection NOT PROVEN · full auditor NOT COMPLETE · production Supabase persistence NOT COMPLETE · S10/S02/S03/S11/S04/S05/S06/S07/S08/S09/S12 not in durable history
 **Standard:** PROFESSIONAL_PASSPORT_TEMPLATE_V1_0
-**Checkpoints:** [PSAA_01](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_02](PSAA_02_AUDIT_HISTORY_CHECKPOINT.md) · [PSAA_03](PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md) · [PSAA_04](PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_05](PSAA_05_PHYSICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_06](PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md) · [PSAA_07](PSAA_07_EXECUTION_COST_CHECKPOINT.md) · [PSAA_08](PSAA_08_TEMPORAL_INTEGRITY_CHECKPOINT.md) · [PSAA_09](PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md) · [PSAA_10](PSAA_10_ROOT_CAUSE_CHECKPOINT.md) · [PSAA_11](PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md) · [PSAA_12](PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md) · [PSAA_13](PSAA_13_PRODUCTION_INTELLIGENCE_CHECKPOINT.md) · [CORE_V0_1](PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md)
-**Latest code commit:** `35dc6746ef2605f31a9cc13691d7505d955c99ac`
-**Core status:** `PSAA_PROFESSIONAL_CORE_V0_1 = FROZEN` · engines 12/12 · production readiness NOT_PROVEN
+**Checkpoints:** [PSAA_01](PSAA_01_MATHEMATICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_02](PSAA_02_AUDIT_HISTORY_CHECKPOINT.md) · [PSAA_03](PSAA_03_OPERATION_CLASSIFICATION_CHECKPOINT.md) · [PSAA_04](PSAA_04_TECHNOLOGICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_05](PSAA_05_PHYSICAL_INTEGRITY_CHECKPOINT.md) · [PSAA_06](PSAA_06_LABOR_BENCHMARK_CHECKPOINT.md) · [PSAA_07](PSAA_07_EXECUTION_COST_CHECKPOINT.md) · [PSAA_08](PSAA_08_TEMPORAL_INTEGRITY_CHECKPOINT.md) · [PSAA_09](PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md) · [PSAA_10](PSAA_10_ROOT_CAUSE_CHECKPOINT.md) · [PSAA_11](PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md) · [PSAA_12](PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md) · [PSAA_13](PSAA_13_PRODUCTION_INTELLIGENCE_CHECKPOINT.md) · [CORE_V0_1](PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md) · [I1](PSAA_I1_MANAGED_RUNTIME_CHECKPOINT.md)
+**Latest professional-core code commit:** `35dc6746ef2605f31a9cc13691d7505d955c99ac`
+**Latest managed-runtime code commit:** `c5b5d3d8292048e62da23598fdc17827457b13b4`
+**Core status:** `PSAA_PROFESSIONAL_CORE_V0_1 = FROZEN` · engines 12/12 · I1 managed runtime DONE · production readiness NOT_PROVEN
 **Branch:** `wip/increment-11c-persistent-shadow-stores`
 
 ---
@@ -154,16 +155,21 @@ S09 produces `ShiftAcceptanceRecommendationArtifact` (operation-level + shift-le
 
 ## 11. Runtime
 
-Тонкий модуль `agents/production_shift_auditor/runtime.py` + history store.
-LangGraph / Django — **NOT IMPLEMENTED**.
-Local SQLite history — **DONE**. Production Supabase persist — **NOT COMPLETE**.
+Тонкий модуль `agents/production_shift_auditor/runtime.py` + history store (S01 path preserved).
+**I1 Managed Runtime:** `PsaaManagedRuntimeLauncher` + existing Run Control /
+Observability / Query Port — **DONE** (`c5b5d3d`; see
+[`PSAA_I1_MANAGED_RUNTIME_CHECKPOINT.md`](PSAA_I1_MANAGED_RUNTIME_CHECKPOINT.md)).
+Joint assess_shift S01–S12 via managed path — **PROVEN** (fixture).
+Process-local professional result — **YES**; durable 12-skill history — **NO**.
+PSAA-specific LangGraph / Django UI — **NOT IMPLEMENTED**.
+Local SQLite history (PSAA-02) — **DONE**. Production Supabase persist — **NOT COMPLETE**.
 
 ## 12. Current / Proven vs Target
 
 | | |
 |--|--|
-| **CURRENT** | S01 DONE; PSAA-02 local durable history DONE (`ff40fb6`); S10 DONE (`a91161f`); S02 engine DONE (`74a528b`); S03 engine DONE (`eb9d9a0`); S11 engine DONE (`252af32`); S04 engine DONE (`e0d5179`); S05 engine DONE (`e7c475c`); S06 engine DONE (`66fb64a`); S07 engine DONE (`aa53122`); S08 engine DONE (`1b092d1`); S09 engine DONE (`bdf17a1`); S12 engine DONE (`35dc674`); **12/12 skill engines FROZEN as Professional Core v0.1**; joint fixture execution PROVEN; Overfund Diagnostic; EOS-SEC controlled persist |
-| **TARGET** | Integration Preflight (reuse existing Agent Runtime / EOS-SEC / Human Gate / Django surface); Supabase history adapter + migration apply + live PG proof; S10/S02/S03/S11/S04/S05/S06/S07/S08/S09/S12 in durable history; production tech/physical knowledge; Spatial Execution Evidence industrial integration; Django Shift Acceptance; controlled knowledge reuse after validation/approval (**no new agent architecture**) |
+| **CURRENT** | S01 DONE; PSAA-02 local durable history DONE (`ff40fb6`); S10 DONE (`a91161f`); S02 engine DONE (`74a528b`); S03 engine DONE (`eb9d9a0`); S11 engine DONE (`252af32`); S04 engine DONE (`e0d5179`); S05 engine DONE (`e7c475c`); S06 engine DONE (`66fb64a`); S07 engine DONE (`aa53122`); S08 engine DONE (`1b092d1`); S09 engine DONE (`bdf17a1`); S12 engine DONE (`35dc674`); **12/12 skill engines FROZEN as Professional Core v0.1**; joint fixture execution PROVEN; **I1 managed runtime DONE** (`c5b5d3d`); Overfund Diagnostic; EOS-SEC controlled persist |
+| **TARGET** | I2 Supabase & Durable History (trusted production source acquisition + full professional audit durable history / read-back after restart); production tech/physical knowledge; Spatial Execution Evidence industrial integration; Django Shift Acceptance; controlled knowledge reuse after validation/approval (**no new agent architecture**) |
 | **NOT IN SCOPE (v0.1)** | LLM; UI; Constructor changes; Operation Registry; payroll; TCE replacement; auto accept/reject; auto norm/rate approval; margin/revenue; timesheet/scheduling engine; ML anomaly platform; vector DB / RAG; worker ranking; autonomous investigation / learning; causal cost allocation; evidence content validation; geometric overlap engine; physical execution verification; automatic managerial acceptance; automatic knowledge approval |
 
 ### Limits (mandatory)
@@ -196,7 +202,9 @@ Local SQLite history — **DONE**. Production Supabase persist — **NOT COMPLET
 - PROFESSIONAL RECOMMENDATION ≠ MANAGERIAL ACCEPTANCE; PARTIAL RECOMMENDATION ≠ PARTIAL ACCEPTANCE; MANAGERIAL ACCEPTANCE ≠ CONTRACTUAL RECOGNITION; CONTRACTUAL RECOGNITION ≠ PAYROLL AUTHORIZATION; DEMONSTRATION FINDING ≠ APPROVED PRODUCTION BLOCKER; INHERITED REPRESENTATION ≠ INDEPENDENT PROOF; CAUSAL HYPOTHESIS ≠ ESTABLISHED CAUSE; SOFTWARE ENGINE PASS ≠ PRODUCTION VALIDATION; NO DETECTED ISSUE ≠ VERIFIED SHIFT
 - CLAIMED OBSERVATION ≠ VERIFIED KNOWLEDGE; AUDITED ≠ VERIFIED PHYSICAL; REPEATED ≠ APPROVED NORM; KNOWLEDGE CANDIDATE ≠ APPROVED PRODUCTION KNOWLEDGE; SUGGESTED REUSE ≠ AUTHORIZED REUSE; SCENARIO COST ≠ ACTUAL COST KNOWLEDGE; MULTIPLE AUDITS ≠ MULTIPLE PHYSICAL OBSERVATIONS
 - Constructor handoff_store / governance baseline string — PRE_EXISTING defects (baseline `2c038a3`)
-- Full autonomous auditor — **not created**; 12/12 engines ≠ production readiness
+- Query Port architecture `shadow_runtime_stores` import FAIL — PRE_EXISTING_NOT_I1_REGRESSION (baseline `e810eff`)
+- I1: caller-supplied resolver untrusted; process-local result ≠ durable history; `month_key` compatibility seam; `get_result` internal-only
+- Full autonomous auditor — **not created**; 12/12 engines ≠ production readiness; I1 ≠ production readiness
 
 ## 13. Failure Conditions
 
@@ -250,19 +258,23 @@ PDF.js + SVG/Canvas overlay + Django/Supabase.
 
 ## 15. Next increment
 
-**Integration Preflight** (NEXT; separate read-only stage).
+**I2 Supabase & Durable History** (NEXT; separate stage after compact reuse research).
 
-Professional Core v0.1 is **FROZEN** — see
+Proposed split: **I2-A** Trusted Production Source Acquisition · **I2-B** Full
+Professional Audit Durable History. See
+[`PSAA_I1_MANAGED_RUNTIME_CHECKPOINT.md`](PSAA_I1_MANAGED_RUNTIME_CHECKPOINT.md) §11.
+
+Professional Core v0.1 remains **FROZEN** — see
 [`PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md`](PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md).
+I1 Managed Runtime Integration is **DONE**.
 
 Do **not** start S13+.
-Do **not** create new runtime, knowledge platform, or parallel PSAA architecture.
-Preflight must classify reuse of existing Agent Runtime, EOS-SEC, trusted
-tools, durable stores, Human Decision Gate, Control Room, and Django Human
-Surface (REUSE AS IS / MINIMAL ADAPTATION / PSAA-SPECIFIC / NOT REQUIRED /
-ENVIRONMENT_BLOCKED). Compatibility is **not** asserted here.
+Do **not** create new runtime framework, knowledge platform, or parallel PSAA architecture.
+Do **not** start I2 without separate authorization and reuse research of existing
+PSAA read/history/Supabase mechanisms.
 
 ## 16. Passport status
 
 **Professional Core v0.1 FROZEN** — S01 + PSAA-02 local history + S10 + S02 + S03 + S11 + S04 + S05 + S06 + S07 + S08 + S09 + S12 (**12 of 12 skill engines**; joint fixture PROVEN; production readiness NOT_PROVEN).
-Final industrial Passport — после production-grade history, production tech/physical knowledge, Integration Preflight и расширенного professional proof.
+**I1 Managed Runtime Integration DONE** — existing Run Control + `PsaaManagedRuntimeLauncher` + joint assess_shift; process-local result; production trusted source / durable history / production readiness NOT_PROVEN.
+Final industrial Passport — после production-grade history, production tech/physical knowledge и расширенного professional proof.

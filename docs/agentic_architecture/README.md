@@ -31,6 +31,8 @@
 | [PSAA_10_ROOT_CAUSE_CHECKPOINT.md](PSAA_10_ROOT_CAUSE_CHECKPOINT.md) | Checkpoint завершения PSAA-10 (S07 root cause analysis). |
 | [PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md](PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md) | Checkpoint завершения PSAA-11 (S08 evidence validation). |
 | [PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md](PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md) | Checkpoint завершения PSAA-12 (S09 shift acceptance recommendation). |
+| [PSAA_13_PRODUCTION_INTELLIGENCE_CHECKPOINT.md](PSAA_13_PRODUCTION_INTELLIGENCE_CHECKPOINT.md) | Checkpoint завершения PSAA-13 (S12 production intelligence). |
+| [PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md](PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md) | Freeze профессионального ядра PSAA v0.1 (12/12 engines; production readiness NOT_PROVEN). |
 | [RECOVERY_CONTEXT.md](RECOVERY_CONTEXT.md) | Как восстановить контекст после паузы. |
 
 ---
@@ -110,6 +112,8 @@ Page52 **не отменяется**. Она остаётся каноном **�
 | [PSAA_10_ROOT_CAUSE_CHECKPOINT.md](PSAA_10_ROOT_CAUSE_CHECKPOINT.md) | Зафиксированное завершение PSAA-10 (S07 root cause analysis). |
 | [PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md](PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md) | Зафиксированное завершение PSAA-11 (S08 evidence validation). |
 | [PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md](PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md) | Зафиксированное завершение PSAA-12 (S09 shift acceptance recommendation). |
+| [PSAA_13_PRODUCTION_INTELLIGENCE_CHECKPOINT.md](PSAA_13_PRODUCTION_INTELLIGENCE_CHECKPOINT.md) | Зафиксированное завершение PSAA-13 (S12 production intelligence). |
+| [PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md](PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md) | Freeze PSAA Professional Core v0.1; матрица 12 навыков; technical debt; Integration Preflight NEXT. |
 | [ORCHESTRATION_AND_HANDOFF.md](ORCHESTRATION_AND_HANDOFF.md) | Оркестратор, shared state, structured handoff, pause/resume, Control Room, KPI routine removal. |
 | [LABOR_NORM_RESOLUTION.md](LABOR_NORM_RESOLUTION.md) | LaborNormResolver: иерархия источников, provenance, benchmark vs P50 vs planning norm, continuous learning. |
 | [DECISION_LOG.md](DECISION_LOG.md) | Принятые и отклонённые решения (ADR-like). |
@@ -142,5 +146,7 @@ Page52 **не отменяется**. Она остаётся каноном **�
 - PSAA-10 completion: [PSAA_10_ROOT_CAUSE_CHECKPOINT.md](PSAA_10_ROOT_CAUSE_CHECKPOINT.md)
 - PSAA-11 completion: [PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md](PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md)
 - PSAA-12 completion: [PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md](PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md)
+- PSAA-13 completion: [PSAA_13_PRODUCTION_INTELLIGENCE_CHECKPOINT.md](PSAA_13_PRODUCTION_INTELLIGENCE_CHECKPOINT.md)
+- PSAA Professional Core v0.1 freeze: [PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md](PSAA_PROFESSIONAL_CORE_COMPLETION_V0_1.md)
 
 Этот README не является журналом программы.

@@ -30,6 +30,7 @@
 | [PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md](PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md) | Checkpoint завершения PSAA-09 (S06 statistical anomaly). |
 | [PSAA_10_ROOT_CAUSE_CHECKPOINT.md](PSAA_10_ROOT_CAUSE_CHECKPOINT.md) | Checkpoint завершения PSAA-10 (S07 root cause analysis). |
 | [PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md](PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md) | Checkpoint завершения PSAA-11 (S08 evidence validation). |
+| [PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md](PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md) | Checkpoint завершения PSAA-12 (S09 shift acceptance recommendation). |
 | [RECOVERY_CONTEXT.md](RECOVERY_CONTEXT.md) | Как восстановить контекст после паузы. |
 
 ---
@@ -108,6 +109,7 @@ Page52 **не отменяется**. Она остаётся каноном **�
 | [PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md](PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md) | Зафиксированное завершение PSAA-09 (S06 statistical anomaly detection). |
 | [PSAA_10_ROOT_CAUSE_CHECKPOINT.md](PSAA_10_ROOT_CAUSE_CHECKPOINT.md) | Зафиксированное завершение PSAA-10 (S07 root cause analysis). |
 | [PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md](PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md) | Зафиксированное завершение PSAA-11 (S08 evidence validation). |
+| [PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md](PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md) | Зафиксированное завершение PSAA-12 (S09 shift acceptance recommendation). |
 | [ORCHESTRATION_AND_HANDOFF.md](ORCHESTRATION_AND_HANDOFF.md) | Оркестратор, shared state, structured handoff, pause/resume, Control Room, KPI routine removal. |
 | [LABOR_NORM_RESOLUTION.md](LABOR_NORM_RESOLUTION.md) | LaborNormResolver: иерархия источников, provenance, benchmark vs P50 vs planning norm, continuous learning. |
 | [DECISION_LOG.md](DECISION_LOG.md) | Принятые и отклонённые решения (ADR-like). |
@@ -139,5 +141,6 @@ Page52 **не отменяется**. Она остаётся каноном **�
 - PSAA-09 completion: [PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md](PSAA_09_STATISTICAL_ANOMALY_CHECKPOINT.md)
 - PSAA-10 completion: [PSAA_10_ROOT_CAUSE_CHECKPOINT.md](PSAA_10_ROOT_CAUSE_CHECKPOINT.md)
 - PSAA-11 completion: [PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md](PSAA_11_EVIDENCE_VALIDATION_CHECKPOINT.md)
+- PSAA-12 completion: [PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md](PSAA_12_SHIFT_ACCEPTANCE_CHECKPOINT.md)
 
 Этот README не является журналом программы.

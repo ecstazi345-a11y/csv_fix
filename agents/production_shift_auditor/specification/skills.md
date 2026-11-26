@@ -9,7 +9,7 @@
 | S05 | Temporal Integrity | CURRENT / PROVEN (deterministic; claimed time only) |
 | S06 | Statistical Anomaly Detection | CURRENT / PROVEN (deterministic; claimed signals only) |
 | S07 | Root Cause Analysis | CURRENT / PROVEN (deterministic; hypotheses only — cause not established) |
-| S08 | Evidence Verification | TARGET / FUTURE |
+| S08 | Evidence Validation (+ Spatial Execution Evidence compatibility) | CURRENT / PROVEN (deterministic; metadata/applicability only — content/physical verification NOT implemented) |
 | S09 | Shift Acceptance Conclusion | TARGET / FUTURE |
 | S10 | Operation Classification & Normalization | CURRENT / PROVEN (deterministic, insulation working catalog) |
 | S11 | Labor Benchmark & Observation Eligibility | CURRENT / PROVEN (deterministic; claimed metrics only) |
@@ -219,6 +219,43 @@ Readiness: `S07_ENGINE_IMPLEMENTED` ·
 `CAUSE_NOT_ESTABLISHED`.
 Cost path: `COST_DEVIATION_ENGINE_IMPLEMENTED=NO` ·
 `COST_DEVIATION_BOUNDARIES_ONLY=YES`.
+
+## S08 — Evidence Validation (CURRENT)
+
+Детерминированная проверка представленных доказательств: reference presence,
+metadata/applicability, sufficiency relative to explicit requirements,
+multiple drawing representations of one physical object, potential duplicate
+candidates, RD revision applicability, remaining-quantity checks.
+
+Вход: joint S01–S07 (+ optional `EvidenceItem`, `ExecutionClaimRef`,
+`EvidenceRequirementSpec`, `HistoricalExecutionRecord`, `QuantityContext`,
+`SpatialReference`). Метод: **deterministic**. LLM не используется.
+
+Слои: A Claimed execution · B Evidence reference · C Metadata validation.
+**Не** реализованы: D Content validation · E Physical execution verification ·
+F Acceptance (Human Gate).
+
+Законы: ATTACHED ≠ VALIDATED · MARKUP ≠ VERIFIED PHYSICAL EXECUTION ·
+ONE PHYSICAL OBJECT ≠ ONE DRAWING REPRESENTATION ·
+MISSING EVIDENCE ≠ NON-EXECUTION ·
+POTENTIAL DUPLICATE ≠ PROVEN DUPLICATION ·
+QUANTITY CHECK ≠ SPATIAL OVERLAP ·
+MISSING HISTORY ≠ ZERO PREVIOUS QUANTITY ·
+S07 HYPOTHESIS ≠ ESTABLISHED CAUSE.
+
+Spatial Execution Evidence: typed PLAN/AXONOMETRY/SECTION/BIM references
+and POINT/LINE/AREA/OBJECT geometry kinds — **compatibility only**;
+no coordinate engine, CAD, BIM, CV, or Django map editor.
+
+Readiness: `S08_ENGINE_IMPLEMENTED` ·
+`EVIDENCE_METADATA_VALIDATION_PROVEN` ·
+`TYPED_SPATIAL_REFERENCE_COMPATIBILITY_PROVEN` ·
+`MULTIPLE_REPRESENTATION_IDENTITY_HANDLING_PROVEN` ·
+`DEMONSTRATION_REMAINING_QUANTITY_CHECK_PROVEN` ·
+`PRODUCTION_EVIDENCE_VALIDATION_NOT_PROVEN` ·
+`EVIDENCE_CONTENT_VALIDATION_IMPLEMENTED=NO` ·
+`GEOMETRIC_OVERLAP_ENGINE_IMPLEMENTED=NO` ·
+`PHYSICAL_EXECUTION_VERIFIED=NO`.
 
 ## S11 — Labor Benchmark & Observation Eligibility (CURRENT)
 
